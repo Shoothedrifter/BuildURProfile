@@ -1,0 +1,43 @@
+{
+  "name": "buildurprofile-showcase-mvp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "npm run build:export && node server/dev.mjs",
+    "dev:server": "node server/index.mjs",
+    "start": "node server/index.mjs",
+    "test:payment": "npm run build:export && node --test server/*.test.mjs",
+    "test": "vitest run",
+    "build": "tsc --noEmit && npm run build:export && vite build",
+    "build:export": "vite build --config vite.export.config.ts",
+    "verify:export": "npm run build:export && node scripts/verify-export.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "alipay-sdk": "^4.14.0",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "overrides": {
+    "urllib": "4.9.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
+  }
+}

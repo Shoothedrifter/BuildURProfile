@@ -1,0 +1,11 @@
+node_modules/
+dist/
+public/export/
+coverage/
+.playwright-cli/
+.DS_Store
+data/
+.env
+/.alipay-sandbox.json
+docs/
+src/__fixtures__/
