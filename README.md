@@ -51,3 +51,12 @@ npm run verify:export
 
 沙箱数据默认写入 `data/buildurprofile.sqlite`，生产数据默认写入 `data/buildurprofile-production.sqlite`；也可用 `DATABASE_PATH` 指定独立持久盘。数据库在首次设置支付环境时会绑定到沙箱或生产，跨环境复用同一文件会拒绝启动。匿名会话签名密钥保存在 `data/session-secret`。这些文件都在 `.gitignore` 中。备份与部署时必须一起持久化；更换会话密钥会使原浏览器失去匿名项目归属。分享 token 只允许浏览已发布的快照，不能用于修改项目、查订单或下载。支付资格与交付状态分别记录；已付费但交付失败时资格仍保留，可重试；已下载的 ZIP 无法撤回。订单号与支付宝交易号可通过所属项目的 `GET /api/projects/:id/orders` 查询，供人工退款售后核对。仅在核实全额退款后才应撤销资格和有效分享；本次 demo 不提供自动退款后台。
 
+## 生产部署（2026-10-28 签约已提交）
+
+「AI 网页应用收款」签约已于 2026-10-28 经支付宝 Skill 提交（经营类目「在线工具」），正式应用 `2021007113619286` 已创建并提审、等待上线；两者生效前不能正式收款。生产配置只读 `.env`，不读取 `.alipay-sandbox.json`：
+
+1. `PAYMENT_ENV=production`；`ALIPAY_APP_ID=2021007113619286`；`ALIPAY_PRIVATE_KEY` 为用户自持的 PKCS#1 私钥并设 `ALIPAY_PRIVATE_KEY_TYPE=PKCS1`；`ALIPAY_PUBLIC_KEY` 取自 `~/.config/2021007113619286-alipayPublicKey.keytext`（Skill 导出的支付宝公钥）。
+2. `PUBLIC_BASE_URL` 为公网 HTTPS 域名；`ALIPAY_NOTIFY_URL` 指向无重定向的公网 HTTPS `/api/payment/notify`；网关自动切换为 `https://openapi.alipay.com/gateway.do`。
+3. 生产数据写入独立的 `data/buildurprofile-production.sqlite`，与沙箱库互不兼容复用。
+4. 上线前在支付宝商家平台「签约管理」补全收款信息，并完成公网通知验收、真实小额交易与退款售后核验。
+
