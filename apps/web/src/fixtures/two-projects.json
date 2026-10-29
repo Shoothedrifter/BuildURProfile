@@ -1,0 +1,84 @@
+{
+  "styleVector": {
+    "E": 0.82,
+    "K": 0.62,
+    "P": 0.42,
+    "S": 0.72,
+    "PChoice": "cool"
+  },
+  "skin": "dark-tech",
+  "marquee": {
+    "direction": "left",
+    "speed": 54,
+    "bindToScroll": false,
+    "rows": 2,
+    "tileSize": 272,
+    "pauseOnHover": true
+  },
+  "stackedCards": {
+    "scaleStep": 0.075,
+    "offsetStep": 22,
+    "stickyTop": 104,
+    "layout": "offset",
+    "cardRadius": 22,
+    "enableTilt": true,
+    "autoPlay": false
+  },
+  "content": {
+    "profile": {
+      "name": "Sample Two",
+      "role": "",
+      "location": "Brooklyn, NY · Available worldwide",
+      "availability": "Available for select projects",
+      "intro": "",
+      "summary": "I turn complex ideas into clear, memorable digital experiences—where thoughtful systems meet a little unexpected magic.",
+      "email": "two@example.test"
+    },
+    "expertise": {
+      "eyebrow": "A little about me",
+      "headline": "熟悉交互设计、前端开发和可访问性实践，能够独立完成从原型到上线的完整流程",
+      "summary": "熟悉交互设计、前端开发和可访问性实践，能够独立完成从原型到上线的完整流程",
+      "skills": [
+        "熟悉交互设计、前端开发和可访问性实践，能够独立完成从原型到上线的完整流程",
+        "熟悉数据可视化和复杂内容结构的设计，能够与跨职能团队协作交付项目"
+      ],
+      "disciplines": [
+        "熟悉交互设计、前端开发和可访问性实践，能够独立完成从原型到上线的完整流程",
+        "熟悉数据可视化和复杂内容结构的设计，能够与跨职能团队协作交付项目"
+      ]
+    },
+    "projects": [
+      {
+        "id": "aperture",
+        "index": "01",
+        "title": "Aperture Studio",
+        "category": "Brand + Digital",
+        "year": "2026",
+        "description": "A living identity and immersive web experience for a new kind of creative studio.",
+        "tags": [
+          "Art direction",
+          "Web experience",
+          "Motion"
+        ],
+        "visual": "mint"
+      },
+      {
+        "id": "forma",
+        "index": "02",
+        "title": "Forma Archive",
+        "category": "Product Design",
+        "year": "2025",
+        "description": "A calmer way to explore, collect and connect the objects that shape our culture.",
+        "tags": [
+          "Product strategy",
+          "Interface",
+          "System"
+        ],
+        "visual": "lilac"
+      }
+    ],
+    "workExperience": [
+      "Example Lab · Creative developer · 2023–2025"
+    ]
+  }
+}

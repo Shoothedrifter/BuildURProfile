@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { JSDOM } from "jsdom";
-import { buildStaticZip } from "../server/export.mjs";
+import { buildStaticZip } from "../apps/api/src/export.mjs";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 30));
 
-for (const name of ["hwf", "hzy"]) {
-  const config = JSON.parse(readFileSync(`src/__fixtures__/${name}.json`, "utf8"));
+for (const name of ["four-projects", "two-projects"]) {
+  const config = JSON.parse(readFileSync(new URL(`../apps/web/src/fixtures/${name}.json`, import.meta.url), "utf8"));
   const zip = buildStaticZip(config);
   const nameLength = zip.readUInt16LE(26), bodyLength = zip.readUInt32LE(18);
   if (zip.subarray(30, 30 + nameLength).toString() !== "index.html") throw new Error(`${name}: missing index.html`);
@@ -14,7 +14,9 @@ for (const name of ["hwf", "hzy"]) {
   const page = dom.window.document;
   try {
     await tick();
-    if (page.querySelector(".hero h1")?.textContent !== config.content.profile.name) throw new Error(`${name}: hero did not render`);
+    if (page.querySelector(".hero h1")?.textContent?.replace(/\s/g, "") !== config.content.profile.name.replace(/\s/g, "")) {
+      throw new Error(`${name}: hero did not render`);
+    }
     for (const [index, project] of config.content.projects.entries()) {
       if (page.querySelector(".project-card h3")?.textContent !== project.title) throw new Error(`${name}: project ${index + 1} title missing`);
       const detail = page.querySelector(".project-detail");

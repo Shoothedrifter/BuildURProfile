@@ -7,10 +7,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "npm run build:export && node server/dev.mjs",
-    "dev:server": "node server/index.mjs",
-    "start": "node server/index.mjs",
-    "test:payment": "npm run build:export && node --test server/*.test.mjs",
+    "dev": "npm run build:export && node apps/api/src/dev.mjs",
+    "dev:server": "node apps/api/src/index.mjs",
+    "start": "node apps/api/src/index.mjs",
+    "test:payment": "npm run build && node --test apps/api/src/*.test.mjs",
     "test": "vitest run",
     "build": "tsc --noEmit && npm run build:export && vite build",
     "build:export": "vite build --config vite.export.config.ts",

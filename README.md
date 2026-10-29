@@ -1,5 +1,7 @@
 # BuildURProfile MVP
 
+目标 Agent 架构与阶段迁移见 [AGENT_ARCHITECTURE.md](AGENT_ARCHITECTURE.md)，当前执行清单见 [REFACTOR_PLAN.md](REFACTOR_PLAN.md)。当前代码已分为 `apps/web`、`apps/api` 和 `packages/contracts`；LangGraph worker 与异步生成 API 尚未接入。
+
 浏览器内完成 **PDF → Resume JSON → Style Vector → Design Config JSON → Showcase 预览**。渲染骨架固定为 Marquee + StackedCards，使用 React、TypeScript、Vite、Tailwind CSS 和原生 CSS transition。
 
 ## 运行
@@ -9,7 +11,7 @@ npm install
 npm run dev
 ```
 
-打开 Vite 打印的本地地址。上传可选中文本的 PDF 后，必须核对姓名、工作经历、项目、技能、教育，才能进入 8 题测评。生成页可改展示文案、跑马灯图片、项目图片和交互强度；改动立即进入预览、Design Config JSON 与静态网站导出。首页的“查看视觉样例”使用 `src/data/config.json` 中的三板块 mock，保留三套皮肤切换。
+打开 Vite 打印的本地地址。上传可选中文本的 PDF 后，必须核对姓名、工作经历、项目、技能、教育，才能进入 8 题测评。生成页可改展示文案、跑马灯图片、项目图片和交互强度；改动立即进入预览、Design Config JSON 与静态网站导出。首页的“查看视觉样例”使用 `apps/web/src/demo/config.json` 中的三板块 mock，保留三套皮肤切换。
 
 PDF.js 和 worker 随页面本地打包，文件字节、提取文本和确认表单只存在浏览器内存中；应用没有 PDF 上传接口或 LLM 调用。每个展示字段在 JSON 的 `content.sourceRefs` 中保留 PDF 页码和原文摘录；在结果页手动修改文字后，对应的原文出处会从配置中移除，避免错误归因。当前分段规则已针对 `docs/黄琬斐_算法_大模型_Agent_副本.pdf` 和 `docs/个人简历（黄禹哲）.pdf` 验证；后者需要按 PDF 文字坐标恢复章节顺序，并识别没有日期的项目、条目式技能和校园经历。校园经历在导出 JSON 中单列。其他版式可能需要扩展规则。扫描件 OCR 尚未接入。触屏会保留卡片手动切换，并将滚动绑定的跑马灯降级为恒定滚动。
 
@@ -21,17 +23,17 @@ PDF.js 和 worker 随页面本地打包，文件字节、提取文本和确认�
 
 ## 代码入口
 
-- `src/lib/pdf.ts`：浏览器端 PDF 文字提取。
-- `src/lib/resume.ts`：简历分段、原文出处与数字校验。
-- `src/lib/assessment.ts`：8 题答案与 E/K/P/S 归一化。
-- `src/lib/mapping.ts`：纯函数 `styleToConfig(vector, jobRole)`。
-- `src/components/EditorPanel.tsx`：结果页文字、图片与交互强度编辑。
-- `server/service.mjs` 与 `server/http.mjs`：项目归属、订单、支付资格、分享和下载的服务端校验。
-- `server/export.mjs` 与 `src/export/standalone.tsx`：服务端离线 ZIP 打包与独立渲染入口。
-- `types/config.ts`：完整的 `DesignConfig` 合同。
-- `src/ShowcasePage.tsx`：固定骨架和三套 CSS 变量皮肤。
-- `src/lib/presentation.ts` 与 `src/lib/resumePresentation.ts`：项目概述/详情、技能短标签和经历层级的保守展示规则。项目正文、完整技能和无法可靠分段的经历原文始终可读。
-- `docs/qa/REPORT.md`：两份真实配置、极端内容和分享/离线导出的验证记录与截图。
+- `apps/web/src/lib/pdf.ts`：浏览器端 PDF 文字提取。
+- `apps/web/src/lib/resume.ts`：简历分段、原文出处与数字校验。
+- `apps/web/src/lib/assessment.ts`：8 题答案与 E/K/P/S 归一化。
+- `apps/web/src/lib/mapping.ts`：纯函数 `styleToConfig(vector, jobRole)`。
+- `apps/web/src/components/EditorPanel.tsx`：结果页文字、图片与交互强度编辑。
+- `apps/api/src/service.mjs` 与 `apps/api/src/http.mjs`：项目归属、订单、支付资格、分享和下载的服务端校验。
+- `apps/api/src/export.mjs` 与 `apps/web/src/export/standalone.tsx`：服务端离线 ZIP 打包与独立渲染入口。
+- `packages/contracts/src/config.ts`：完整的 `DesignConfig` 合同。
+- `apps/web/src/ShowcasePage.tsx`：固定骨架和三套 CSS 变量皮肤。
+- `apps/web/src/lib/presentation.ts` 与 `apps/web/src/lib/resumePresentation.ts`：项目概述/详情、技能短标签和经历层级的保守展示规则。项目正文、完整技能和无法可靠分段的经历原文始终可读。
+- `apps/web/src/fixtures/`：可提交的合成样例，用于前端与离线导出回归；本机真实简历样例继续忽略，不是构建依赖。
 
 ```bash
 npm test

@@ -1,6 +1,7 @@
 node_modules/
 dist/
-public/export/
+apps/web/dist/
+apps/web/public/export/
 coverage/
 .playwright-cli/
 .DS_Store
@@ -8,4 +9,4 @@ data/
 .env
 /.alipay-sandbox.json
 docs/
-src/__fixtures__/
+apps/web/src/__fixtures__/

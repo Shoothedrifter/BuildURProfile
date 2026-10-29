@@ -1,6 +1,6 @@
 # BuildURProfile 接手记录
 
-更新：2026-10-28。此文件记录当前 MVP 的代码入口、支付沙箱事实、生产开通进展和下一步联调，供后续开发者接手；`PROJECT.md`、`README.md` 与 `docs/qa/PAYMENT_SANDBOX.md` 是产品和验收背景。不要把这里的状态描述当作已经完成真实付款的证明。
+支付状态更新：2026-10-28；代码路径更新：2026-10-30。此文件记录当前 MVP 的代码入口、支付沙箱事实、生产开通进展和下一步联调，供后续开发者接手；`PROJECT.md`、`AGENT_ARCHITECTURE.md`、`README.md` 与 `docs/qa/PAYMENT_SANDBOX.md` 是产品和验收背景。不要把这里的状态描述当作已经完成真实付款的证明。
 
 ## 运行与安全边界
 
@@ -10,11 +10,11 @@
 
 ## 代码入口
 
-- `src/App.tsx`：PDF 确认、测评、编辑、付费说明、支付返回后恢复原分享或导出动作。
-- `src/lib/paymentApi.ts`：带 CSRF 的项目与交付 API；仅提交官方 SDK 生成且网关地址经过校验的 POST 支付表单。
-- `server/index.mjs`、`server/config.mjs`、`server/gateway.mjs`：服务启动、环境配置、官方 `alipay-sdk` 的页面支付/验签/查单。
-- `server/database.mjs`、`server/service.mjs`、`server/http.mjs`：持久项目/订单/资格/交付、订单核对、分享和下载的权限校验。
-- `server/export.mjs`、`src/export/standalone.tsx`：服务端 ZIP 及离线展示。`types/config.ts` 是配置合同。
+- `apps/web/src/App.tsx`：PDF 确认、测评、编辑、付费说明、支付返回后恢复原分享或导出动作。
+- `apps/web/src/lib/paymentApi.ts`：带 CSRF 的项目与交付 API；仅提交官方 SDK 生成且网关地址经过校验的 POST 支付表单。
+- `apps/api/src/index.mjs`、`apps/api/src/config.mjs`、`apps/api/src/gateway.mjs`：服务启动、环境配置、官方 `alipay-sdk` 的页面支付/验签/查单。
+- `apps/api/src/database.mjs`、`apps/api/src/service.mjs`、`apps/api/src/http.mjs`：持久项目/订单/资格/交付、订单核对、分享和下载的权限校验。
+- `apps/api/src/export.mjs`、`apps/web/src/export/standalone.tsx`：服务端 ZIP 及离线展示。`packages/contracts/src/config.ts` 是配置合同。
 
 ## 生产开通进展（2026-10-28）
 
@@ -28,7 +28,7 @@
 生产上线剩余待办：
 
 1. 在支付宝商家平台「签约管理」补全收款信息，否则收款受限：<https://b.alipay.com/page/ar-center/ar-manage>。
-2. 公网 HTTPS 部署；生产模式强制 `PUBLIC_BASE_URL` 为 HTTPS，`ALIPAY_NOTIFY_URL` 为无重定向的公网 HTTPS `/api/payment/notify`（`server/config.mjs` 校验）。
+2. 公网 HTTPS 部署；生产模式强制 `PUBLIC_BASE_URL` 为 HTTPS，`ALIPAY_NOTIFY_URL` 为无重定向的公网 HTTPS `/api/payment/notify`（`apps/api/src/config.mjs` 校验）。
 3. 生产 `.env`：`PAYMENT_ENV=production`、`ALIPAY_APP_ID=2021007113619286`、`ALIPAY_PRIVATE_KEY=<用户自持 PKCS#1 私钥>`、`ALIPAY_PRIVATE_KEY_TYPE=PKCS1`、`ALIPAY_PUBLIC_KEY=<上述导出文件内容>`；网关由 `config.mjs` 自动切换为生产网关。
 4. 完成公网通知验收：验签、`app_id`/`out_trade_no`/`total_amount`/`trade_status` 校验、幂等 `success` 回写与丢通知查单补偿；再做真实小额交易与退款售后核验。
 
@@ -38,7 +38,7 @@
 
 已安装的支付宝 Skill 说明：沙箱支付宝客户端仅支持 Android；普通支付宝或 iOS 客户端扫码不能作为沙箱验收方式。优先请用户在当前电脑收银台的“登录支付宝账户付款”区域使用**沙箱买家**账号及**支付密码**（页面提示这里不是登录密码）自行完成。不要代用户输入密码或点击最终付款。若必须扫码，使用 Skill 指向的官方 Android 沙箱支付宝，安装帮助在 <https://open.alipay.com/develop/sandbox/tool>。不要使用真实支付宝或真实收款码。沙箱买家账号信息只能按 Skill 已校验配置提供，不从猜测或示例取得；本机 `.alipay-sandbox.json` 已核实的沙箱买家登录名为 `blgqds0563@sandbox.com`（支付密码以沙箱控制台为准）。
 
-若电脑账号支付也失败，记录收银台可见错误、重新签名查单、检查网关与商户身份；不要直接修改数据库为 `PAID`。付款说明区已增加仅在沙箱显示的扫码限制和电脑账号支付提示。`server/service.mjs` 当前会复用同项目任意 `PENDING` 订单；后续可针对**已由支付宝核实关闭或过期**的订单增加安全刷新逻辑，但不能仅因二维码报错就把可能已付款的订单作废。保留旧订单以查单追回迟到付款，防止重复收费。
+若电脑账号支付也失败，记录收银台可见错误、重新签名查单、检查网关与商户身份；不要直接修改数据库为 `PAID`。付款说明区已增加仅在沙箱显示的扫码限制和电脑账号支付提示。`apps/api/src/service.mjs` 当前会复用同项目任意 `PENDING` 订单；后续可针对**已由支付宝核实关闭或过期**的订单增加安全刷新逻辑，但不能仅因二维码报错就把可能已付款的订单作废。保留旧订单以查单追回迟到付款，防止重复收费。
 
 ## 付款后必须完成的验收
 
@@ -50,3 +50,5 @@
 ## 当前验证口径
 
 当前本地记录：增加沙箱提示后 `npm run build`、`npm test`（84 项）、`npm run test:payment`（26 项）通过；之前 `npm run verify:export` 通过，但提示修改后未重跑。上述均是付款之前的结果。沙箱实付、支付后分享及 ZIP 闭环**尚未验证**。最新事实以数据库、支付宝签名查单和浏览器实际交付为准，不能用模拟通知测试替代。
+
+2026-10-30 结构迁移后，代码入口位于 `apps/web`、`apps/api`、`packages/contracts`；自动化导出验收已改用可提交的合成样例。根 `npm run build`、`npm test`（84 项）、`npm run test:payment`（27 项，包含生产静态页烟测）、`npm run verify:export` 已重新通过。它们仅验证代码行为，不证明新一轮沙箱实付或公网回调。

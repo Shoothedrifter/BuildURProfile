@@ -1,12 +1,12 @@
-# BuildURProfile Agent 架构方向（设计草案）
+# BuildURProfile Agent 架构与仓库重构
 
-日期：2026-10-30。此文记录已确定的第一版边界与后续目标；不是实现完成记录。
+日期：2026-10-30。本文是目标架构和迁移依据；未完成的阶段不代表现有代码已经具备该能力。
 
 ## 已确定的方向
 
-- 第一版沿用 `PROJECT.md` 的固定 Marquee + StackedCards 骨架，生成可预览、可编辑、可导出的 HTML 网站。
+- 第一版沿用 `PROJECT.md` 的固定 Marquee + StackedCards 骨架、八题测评和三套皮肤，生成可预览、可编辑、可导出的 HTML 网站。**不提供自然语言风格输入框，也不调用模型。**
 - 采用 `apps/web`、`apps/api`、`apps/worker` 与共享 `packages/*` 的分层。生成任务由 LangGraph.js 组织为显式节点；支付和发布保持确定性的服务端业务逻辑。
-- 用户上传 PDF 后启动生成流程；PDF 字节与原始解析结果留在浏览器。用户确认展示内容后，才把交付所需的公开副本保存到服务端。付款与正式发布仍是独立的主动操作。
+- PDF 字节与原始解析结果留在浏览器；用户确认后，只有展示所需的公开副本可进入任务和服务端。付款与正式发布仍是独立的主动操作。
 - 后续目标是支持生成任意 HTML 模板。该目标单列为第二阶段，届时需重新评估 `PROJECT.md` 的固定骨架限制，并增加隔离代码生成、构建和安全验收流程。
 
 ## 为什么 LangGraph 不必强制调用模型
@@ -35,6 +35,75 @@ LangGraph 管理状态、分支、暂停、重试和恢复。一个节点可以�
 2. **LangGraph 加按需模型节点（推荐演进）：** 自然语言风格要求、参考图或多个设计参考的适配有更大空间；增加成本、延迟和不确定性，因此输出必须受 `SiteSpec` schema 与视觉验收约束。
 3. **自由代码生成 Agent：** 能接近任意模板目标，但改变第一版固定骨架合同，需要独立沙箱、依赖白名单、离线构建、视觉及安全验收。留到第二阶段。
 
-## 待确认
+## 仓库分层与依赖方向
 
-第一版是否要支持用户用自然语言描述想要的网站风格？若不支持，首个正式版本可完全不调用模型，先建立 LangGraph 节点与状态合同。若支持，先只加入 `interpretDesignIntent` / `adaptDesignRecipe` 中确有需要的模型节点。
+```text
+apps/
+  web/                 React/Vite 页面、浏览器 PDF、确认、测评、编辑、预览、离线入口
+  api/                 Node HTTP、会话/CSRF、项目、支付宝、资格、发布、ZIP
+  worker/              LangGraph 生成图、任务领取、检查点与外部设计参考适配器（待接入）
+packages/
+  contracts/           DesignConfig、SiteSpec、任务/API 合同及运行时 schema
+  design/              纯函数评分、token、固定骨架映射（第二批迁移）
+  renderer/            网页与离线导出共享的可信渲染器（第二批迁移）
+scripts/               端到端/离线验收脚本
+```
+
+允许的依赖是 `web → contracts/design/renderer`、`api → contracts/renderer`、`worker → contracts/design/renderer`。支付和项目归属只能由 API 写入；worker 不接触支付密钥，不直接发放资格或分享 token。第一轮继续使用根 `package.json`，避免路径迁移和工作区依赖变更叠加；稳定后再评估 npm workspaces。前端保留 React/Vite/TypeScript，API 暂保留 Node 24 原生 HTTP/SQLite，生成图使用 LangGraph.js。Node API 在路由增长后再评估 Hono/Fastify，避免为分层而改动已验证的支付流程。
+
+现有 `apps/web/src/App.tsx` 同时管理五个界面阶段、支付返回和项目状态，下一轮按 `intake`、`assessment`、`studio` 拆出；`apps/api/src/service.mjs` 的项目/订单/资格/交付也应按领域拆出。首轮只做可验证的物理分层和路径修正，不在一次修改中重写全部行为。`PROJECT.md` 是固定骨架的产品基线；本文件记录新增的 Agent 设计决策。
+
+## 运行链路与边界
+
+```mermaid
+flowchart LR
+  A[浏览器内 PDF 提取] --> B[用户核对公开展示字段]
+  B --> C[八题测评 E/K/P/S]
+  C --> D[API 创建生成任务]
+  D --> E[Worker LangGraph 确定性节点]
+  E --> F[SiteSpecV1 + 可信渲染]
+  F --> G[用户预览和编辑]
+  G --> H[项目 revision]
+  H --> I[主动支付 / 签名核实]
+  I --> J[7 天分享快照或离线 ZIP]
+```
+
+当前代码仍是浏览器本地 `styleToConfig` 直接生成配置；接入图以后，浏览器只提交已确认的展示字段、职业与分数。不得提交 PDF 字节、页级提取结果、原始全文或 `sourceRefs`。用户确认发生在图启动前，暂不使用 LangGraph `interrupt()` 重复实现。图产生候选预览，用户编辑形成新的项目 revision。正式交付与图分离，API 继续核验会话、CSRF、所有权、支付资格。付款事实只由支付宝签名通知或签名查单产生，不接受图或客户端自报。免费预览不授予正式分享和 ZIP。
+
+## 第一版生成图合同
+
+`GenerationRequestV1 = {requestId, schemaVersion: 1, role, styleVector, confirmedContent}`；`ownerSessionId` 由 API 会话注入，不接受客户端字段。图状态仅保留跨节点必需的请求 ID、版本、职业、风格向量、已确认公开内容、候选 `siteSpec`、验证结果和错误码。模型提示词、支付密钥、HTTP 原始请求和 PDF 不进入状态或 checkpoint。
+
+```text
+START → validateInput → scoreAndMap → buildSiteSpec
+      → validateSiteSpec → renderPreview → verifyArtifact → END
+```
+
+`validateInput` 核对字段、长度和所属会话；`scoreAndMap` 沿用现有纯函数；`buildSiteSpec` 只允许 `templateId: "marquee-stacked-v1"`；`validateSiteSpec` 检查枚举、数值、图片/链接与无可执行代码；`renderPreview` 使用可信组件；`verifyArtifact` 检查可读性、键盘操作、降动效和离线资源。输出 `SiteSpecV1` 是结构化数据，不是任意 HTML/CSS/JS。每个节点可单测，图整体须和旧映射结果做黄金对比。LangGraph 节点可以是普通函数；checkpoint 在节点边界保存状态，[官方文档](https://docs.langchain.com/oss/javascript/langgraph/thinking-in-langgraph) 对此有说明。
+
+任务 API 规划为 `POST /api/generations` → `202 {id,status}`、`GET /api/generations/:id` → 所属会话可读的状态/诊断/结果、`POST /api/generations/:id/retry` → 可重试失败。`(owner_session_id,idempotency_key)` 唯一约束阻止重复任务；任务带 `schema_version`、`attempt`、`lease_until`、时间戳。worker 租约领取并心跳，按有限次数退避重试；checkpoint 必须持久化，生产环境不能使用纯内存 checkpointer。首个单机实现使用 [LangGraph SQLite checkpointer](https://www.npmjs.com/package/@langchain/langgraph-checkpoint-sqlite) 和稳定的 `thread_id = generation.id`，任务表与 checkpoint 分离。API 创建任务后立即返回，worker 独立进程领取；worker TypeScript 用单独 tsconfig 编译为 Node ESM，再由 Node 24 运行。输入错误直接反馈，基础设施错误重试，非法生成物回退确定性配方或让用户编辑，未知代码错误记录并停止。旧任务不得覆盖新项目 revision。单机先用 SQLite；多实例部署前需迁移适合并发领取的队列/数据库。
+
+## MotionSites、skills 与未来模型
+
+第一版不需要模型节点。只有自由描述、参考图或多个参考的非确定性取舍进入产品时，才增加 `interpretDesignIntent` / `adaptDesignRecipe` 节点。模型只看精简设计意图和允许的 token/组件参数，返回受 schema 约束的设计数据；不得传姓名、邮箱、履历或 PDF。输出无效时回退已有规则配方。
+
+MotionSites MCP 与 GitHub skills 放在 `worker/adapters` 的受限设计参考层，不是可自由访问项目/支付系统的工具。每条参考保存来源 ID、版本或获取时间、许可证、摘要、适用组件参数和内容哈希；设置超时、缓存、速率限制和允许来源。外部 prompt 是不可信材料，只能提炼为 `SiteSpec` 允许的 recipe，不能覆盖系统指令。GitHub skill 需先审查来源、许可、依赖、网络与代码执行范围，固定版本后注册成内部 recipe。参考服务不可用时，固定骨架仍能生成。
+
+任意 HTML 模板目标单列 V2：引入新 `templateId`/`SiteSpecV2`，在隔离沙箱运行代码生成与构建，限定依赖、网络、CPU/内存/时间；再做 CSP、静态分析、浏览器视觉/交互检查和人工预览。旧项目继续按 V1 合同读取；任意代码不可塞进 V1 `DesignConfig`，也不能绕开付款和项目归属。
+
+## 数据与安全合同
+
+- `DesignConfig` 是现有网页与 ZIP 合同；首轮迁移字段保持兼容。后续 `SiteSpecV1` 须带 schema/template 版本，并经服务端运行时 schema 校验。当前 `apps/api/src/service.mjs` 只有部分白名单与范围检查，严格 schema 是第二批工作。
+- 项目 `revision` 表示编辑版本；分享使用不可变 `config_json` 快照。当前下载 token 存 revision 却读取最新配置，应在服务端后续修正为快照绑定。
+- `data/`、`.env`、`.alipay-sandbox.json` 保持私有；沙箱文件权限 `0600`，生产和沙箱分库分密钥。日志只记录任务 ID、节点、时长、错误码，不记录用户内容或密钥。checkpoint 与任务输入需配置保留期和清理。
+- 匿名会话、CSRF、项目所有权、已核实支付资格、分享过期/撤销与 ZIP 权限都留在 API。沙箱实付及生产回调验收仍按 `AGENTS.md`，自动化测试不等于真实付款。
+
+## 迁移步骤与验收
+
+1. **本次开始：物理分层。** 建立 `apps/web`、`apps/api`、`packages/contracts`，修改 Vite/TypeScript/npm/服务端根路径；保持页面、API 和支付行为。公开 demo 配置移到可跟踪目录，自动化测试改用合成 fixture；真实简历 fixture 继续私有，不得意外提交。
+2. **领域与合同。** 拆 `App`、`service`，抽纯函数和 renderer；加入共享运行时 schema，替换宽松字段检查。此时解决下载 token 的 revision 快照问题。
+3. **任务和生成图。** 实现 `apps/worker`、持久任务/检查点和确定性 LangGraph；前端切换为异步状态、可恢复重试；验证重复请求、断线、重启和并发编辑。
+4. **设计参考扩展。** 按受限适配器接入 MotionSites recipe/skill 注册表，再按用户输入需求决定是否加入模型节点。
+5. **任意模板 V2。** 独立设计隔离执行与安全/视觉验收，保持旧分享快照只读兼容。
+
+每一步都运行 `npm run build`、`npm test`、`npm run test:payment`、`npm run verify:export`；人工抽查 PDF 无上传、未付费交付被拒和支付签名查单。自动化样例已合成化，原来针对两份真实简历的特殊版式覆盖仍须用本机私有 PDF 单独回归，不能把这些文件提交。第一阶段代码迁移后的实际状态以 `REFACTOR_PLAN.md` 与测试输出为准。
