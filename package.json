@@ -13,6 +13,7 @@
     "test:payment": "npm run build && node --test apps/api/src/*.test.mjs",
     "test": "vitest run",
     "build": "tsc --noEmit && npm run build:export && vite build",
+    "build:pages": "tsc --noEmit && vite build --mode pages",
     "build:export": "vite build --config vite.export.config.ts",
     "verify:export": "npm run build:export && node scripts/verify-export.mjs",
     "preview": "vite preview"

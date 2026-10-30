@@ -60,8 +60,10 @@ function touchSafe(config: DesignConfig): DesignConfig {
 }
 
 export default function App() {
+  const staticPreview = import.meta.env.MODE === "pages";
   const [shareView, setShareView] = useState<{ requested: boolean; config: DesignConfig | null; loading: boolean }>(
-    () => ({ requested: window.location.hash.startsWith("#share="), config: null, loading: window.location.hash.startsWith("#share=") }));
+    () => ({ requested: !staticPreview && window.location.hash.startsWith("#share="), config: null,
+      loading: !staticPreview && window.location.hash.startsWith("#share=") }));
   const [phase, setPhase] = useState<Phase>("upload");
   const [fileName, setFileName] = useState("");
   const [progress, setProgress] = useState("");
@@ -84,6 +86,7 @@ export default function App() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
+    if (staticPreview) return;
     let sequence = 0;
     const onHashChange = () => {
       const current = ++sequence;
@@ -98,14 +101,16 @@ export default function App() {
     onHashChange();
     window.addEventListener("hashchange", onHashChange);
     return () => { sequence++; window.removeEventListener("hashchange", onHashChange); };
-  }, []);
+  }, [staticPreview]);
 
   useEffect(() => {
+    if (staticPreview) return;
     void paymentApi.offer().then(setOffer).catch(() => {});
     void paymentApi.projects().then(setProjects).catch(() => {});
-  }, []);
+  }, [staticPreview]);
 
   useEffect(() => {
+    if (staticPreview) return;
     if (window.location.pathname !== "/payment/return") return;
     const id = new URLSearchParams(window.location.search).get("project_id");
     window.history.replaceState(null, "", "/#work");
@@ -136,7 +141,7 @@ export default function App() {
         setResultError(cause instanceof Error ? cause.message : "交付失败，请重试原操作。");
       }
     })();
-  }, []);
+  }, [staticPreview]);
 
   useEffect(() => {
     const onTouch = () => setIsTouch(true);
@@ -384,7 +389,7 @@ export default function App() {
         <div className="stage-actions"><p>已回答 {Object.keys(answers).length} / 8 题</p><button className="primary-button" type="button" disabled={!isAssessmentComplete(answers)} onClick={generate}>生成 Design Config <span>↗</span></button></div>
       </section>}
 
-      {phase === "result" && generated && <section className="builder-stage result-stage"><div className="stage-heading"><div><p className="stage-kicker">04 / DESIGN CONFIG</p><h1>已生成，<br /><em>开始探索。</em></h1></div><p>在编辑面板改文字、换图或调整交互强度，预览会实时更新。分享与导出都使用当前配置。</p></div>
+      {phase === "result" && generated && <section className="builder-stage result-stage"><div className="stage-heading"><div><p className="stage-kicker">04 / DESIGN CONFIG</p><h1>已生成，<br /><em>开始探索。</em></h1></div><p>{staticPreview ? "在编辑面板改文字、换图或调整交互强度，预览会实时更新。静态预览版不会保存作品；刷新后需重新上传 PDF。" : "在编辑面板改文字、换图或调整交互强度，预览会实时更新。分享与导出都使用当前配置。"}</p></div>
         <div className="result-stats"><span>SKIN <strong>{generated.skin}</strong></span><span>MARQUEE <strong>{generated.marquee.speed} px/s</strong></span><span>STACK DEPTH <strong>{generated.stackedCards.scaleStep}</strong></span><span>PROJECTS <strong>{generated.content.projects.length}</strong></span></div>
         {isTouch && <p className="touch-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
         <div className="result-workspace">
@@ -395,10 +400,10 @@ export default function App() {
             <div hidden={resultTab !== "preview"} className="preview-frame"><ShowcasePage config={generated} /></div>
           </div>
         </div>
-        <div className="publish-bar"><div><span>PUBLISH / 02</span><h2>分享或带走你的作品集</h2><p>正式分享与离线 ZIP 由同一项目的一次付款解锁。静态网站解压后可直接打开 index.html。</p></div><div className="publish-actions"><button type="button" className="ghost-button" disabled={exporting} onClick={() => void requestDelivery("share")}>{share ? "更新分享链接 ↗" : "发布并分享 ↗"}</button><button type="button" className="primary-button" disabled={exporting} onClick={() => void requestDelivery("export")}>{exporting ? "正在处理…" : "导出静态网站 ZIP"} <span>↓</span></button></div></div>
-        {paymentIntent && <section className="share-card" role="region" aria-label="确认购买"><div><strong>解锁作品发布与导出</strong></div><p>{offer?.service ?? "正式托管分享与静态导出，一次解锁当前项目两项能力。"}</p><p>本项目价格：<strong>{quotedAmountYuan ? `¥${quotedAmountYuan}` : "服务端尚未配置价格"}</strong>。公开分享链接默认 7 天有效，可撤销；到期后同项目重新发布无需再次付款。已下载 ZIP 无法撤回。</p>{offer?.mode === "sandbox" && <p>沙箱测试：普通支付宝无法支付沙箱订单。请在电脑收银台使用沙箱买家账号和支付密码；扫码仅使用 Android 沙箱支付宝。</p>}{offer?.configurationError && <p role="alert">支付配置：{offer.configurationError}</p>}<div className="share-actions"><button type="button" onClick={() => setPaymentIntent(null)}>暂不付款，保留草稿</button><button type="button" disabled={!offer?.configured || exporting} onClick={() => void startPayment()}>{offer?.mode === "production" ? "前往支付宝收银台（正式付款）" : "前往支付宝沙箱收银台"} ↗</button></div></section>}
-        {share && <div className="share-card"><div><strong>正式链接已创建</strong><span>有效至 {new Date(share.expiresAt).toLocaleString("zh-CN")}</span></div><p>任何接收者可免费访问有效链接。链接到期或被撤销后失效。</p>{shareSnapshot !== JSON.stringify(generated) && <p className="share-stale">预览已更新。点击“更新分享链接”可同步当前版本。</p>}<label className="share-url"><span>分享链接</span><input readOnly value={share.url} onFocus={(event) => event.currentTarget.select()} /></label><div className="share-actions"><a href={share.url} target="_blank" rel="noopener noreferrer">在新标签页打开 ↗</a><button type="button" onClick={() => void copyShare()}>复制链接</button><button type="button" onClick={() => void removeShare()}>撤销链接</button></div></div>}
-        {savedShareList}
+        {!staticPreview && <div className="publish-bar"><div><span>PUBLISH / 02</span><h2>分享或带走你的作品集</h2><p>正式分享与离线 ZIP 由同一项目的一次付款解锁。静态网站解压后可直接打开 index.html。</p></div><div className="publish-actions"><button type="button" className="ghost-button" disabled={exporting} onClick={() => void requestDelivery("share")}>{share ? "更新分享链接 ↗" : "发布并分享 ↗"}</button><button type="button" className="primary-button" disabled={exporting} onClick={() => void requestDelivery("export")}>{exporting ? "正在处理…" : "导出静态网站 ZIP"} <span>↓</span></button></div></div>}
+        {!staticPreview && paymentIntent && <section className="share-card" role="region" aria-label="确认购买"><div><strong>解锁作品发布与导出</strong></div><p>{offer?.service ?? "正式托管分享与静态导出，一次解锁当前项目两项能力。"}</p><p>本项目价格：<strong>{quotedAmountYuan ? `¥${quotedAmountYuan}` : "服务端尚未配置价格"}</strong>。公开分享链接默认 7 天有效，可撤销；到期后同项目重新发布无需再次付款。已下载 ZIP 无法撤回。</p>{offer?.mode === "sandbox" && <p>沙箱测试：普通支付宝无法支付沙箱订单。请在电脑收银台使用沙箱买家账号和支付密码；扫码仅使用 Android 沙箱支付宝。</p>}{offer?.configurationError && <p role="alert">支付配置：{offer.configurationError}</p>}<div className="share-actions"><button type="button" onClick={() => setPaymentIntent(null)}>暂不付款，保留草稿</button><button type="button" disabled={!offer?.configured || exporting} onClick={() => void startPayment()}>{offer?.mode === "production" ? "前往支付宝收银台（正式付款）" : "前往支付宝沙箱收银台"} ↗</button></div></section>}
+        {!staticPreview && share && <div className="share-card"><div><strong>正式链接已创建</strong><span>有效至 {new Date(share.expiresAt).toLocaleString("zh-CN")}</span></div><p>任何接收者可免费访问有效链接。链接到期或被撤销后失效。</p>{shareSnapshot !== JSON.stringify(generated) && <p className="share-stale">预览已更新。点击“更新分享链接”可同步当前版本。</p>}<label className="share-url"><span>分享链接</span><input readOnly value={share.url} onFocus={(event) => event.currentTarget.select()} /></label><div className="share-actions"><a href={share.url} target="_blank" rel="noopener noreferrer">在新标签页打开 ↗</a><button type="button" onClick={() => void copyShare()}>复制链接</button><button type="button" onClick={() => void removeShare()}>撤销链接</button></div></div>}
+        {!staticPreview && savedShareList}
         {resultError && <p role="alert" className="builder-error">{resultError}</p>}
       </section>}
 

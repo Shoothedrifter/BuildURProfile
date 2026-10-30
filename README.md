@@ -4,6 +4,8 @@
 
 浏览器内完成 **PDF → Resume JSON → Style Vector → Design Config JSON → Showcase 预览**。渲染骨架固定为 Marquee + StackedCards，使用 React、TypeScript、Vite、Tailwind CSS 和原生 CSS transition。
 
+只发布浏览器预览时，使用 `npm run build:pages` 构建 GitHub Pages 版本；该版本不请求后端，也不显示分享、支付或 ZIP 交付入口。完整发布步骤见 [GitHub Pages 静态预览部署](GITHUB_PAGES.md)。
+
 ## 运行
 
 ```bash
