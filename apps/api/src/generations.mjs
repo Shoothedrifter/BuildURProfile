@@ -6,11 +6,11 @@ import { ServiceError, cleanConfig } from "./service.mjs";
 import { listAvatarStyles } from "../../worker/src/styles.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
-const MAX_IMAGE = 5 * 1024 * 1024;
+const MAX_IMAGE = 10 * 1024 * 1024;
 const MIMES = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
 
 function validateImage(bytes, declaredMime, minPixels) {
-  if (!Buffer.isBuffer(bytes) || bytes.length < 40 || bytes.length > MAX_IMAGE) throw new ServiceError(400, "照片大小或内容无效（最大 5 MiB）。");
+  if (!Buffer.isBuffer(bytes) || bytes.length < 40 || bytes.length > MAX_IMAGE) throw new ServiceError(400, "照片大小或内容无效（最大 10 MiB）。");
   let info;
   try { info = imageSize(bytes); } catch { throw new ServiceError(400, "图片格式无效。"); }
   const mime = MIMES[info.type];
@@ -36,7 +36,7 @@ export function createGenerationService({ db, assetRoot = "data/avatar-assets", 
   }
   function savePortrait(sessionId, dataUrl) {
     const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl ?? "");
-    if (!match || match[2].length > MAX_IMAGE * 4 / 3 + 8) throw new ServiceError(400, "请选择 PNG、JPEG 或 WebP 照片（最大 5 MiB）。");
+    if (!match || match[2].length > MAX_IMAGE * 4 / 3 + 8) throw new ServiceError(400, "请选择 PNG、JPEG 或 WebP 照片（最大 10 MiB）。");
     const bytes = Buffer.from(match[2], "base64");
     const mime = validateImage(bytes, match[1], minPixels);
     return store(sessionId, "portrait", bytes, mime);

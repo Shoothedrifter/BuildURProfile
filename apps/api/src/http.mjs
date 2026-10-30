@@ -38,8 +38,8 @@ async function readBody(req, limit = 9 * 1024 * 1024) {
   }
   return Buffer.concat(chunks).toString("utf8");
 }
-async function bodyJson(req) {
-  const raw = await readBody(req);
+async function bodyJson(req, limit) {
+  const raw = await readBody(req, limit);
   try { return JSON.parse(raw); } catch { throw new ServiceError(400, "请求 JSON 无效。"); }
 }
 function sessionFromCookie(req, db, secret) {
@@ -100,7 +100,7 @@ export function createPaymentHttpServer({ db, service, generationService = null,
           sendJson(res, 200, { styles: listAvatarStyles() }); return;
         }
         if (generationService && req.method === "POST" && url.pathname === "/api/portraits") {
-          sendJson(res, 201, generationService.savePortrait(sessionId, (await bodyJson(req)).dataUrl)); return;
+          sendJson(res, 201, generationService.savePortrait(sessionId, (await bodyJson(req, 14 * 1024 * 1024)).dataUrl)); return;
         }
         if (generationService && req.method === "POST" && url.pathname === "/api/generations") {
           sendJson(res, 201, generationService.enqueue(sessionId, await bodyJson(req))); return;

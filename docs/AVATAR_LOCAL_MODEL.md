@@ -21,11 +21,13 @@ Wibi Style 提供三种固定版本的视觉规则与风格参考图，**本身�
 2. 在本机 `.env` 设 `PAYMENT_ENV=sandbox`，运行 `npm run dev`；开发脚本会给 API 和 worker 设置 `AVATAR_DEMO_ENABLED=1`。单独调试 worker 可运行 `AVATAR_DEMO_ENABLED=1 npm run dev:worker`。无需图像服务密钥。
 3. 首次实际提交肖像时，模型会下载到 `data/avatar-model-cache`。当前机器上的 Xet 下载曾停滞，因此 worker 默认使用 Hugging Face 支持的非 Xet 路径；可通过 `HF_HUB_DISABLE_XET=0` 改回。源图和 prompt 仅写入权限为 `0700` 的系统临时目录，推理结束后删除；成图继续沿用会话绑定和过期清理。
 
-当前 worker 只接受项目私有 CLI，环境变量 `AVATAR_MFLUX_COMMAND` 和 `AVATAR_MODEL_CACHE_ROOT` 可覆盖其路径。输出固定为 1024×1024 PNG、4 步、预量化 8 位权重、M1 的 float16 计算和低内存模式。重试时种子由照片与风格 ID 导出，便于复现。Wibi 风格参考不会变成生成内容白名单：人物身份、姿态、衣服仍以用户照片为准。
+当前 worker 只接受项目私有 CLI，环境变量 `AVATAR_MFLUX_COMMAND` 和 `AVATAR_MODEL_CACHE_ROOT` 可覆盖其路径。输出固定为 1024×1024 PNG、4 步、预量化 8 位权重、M1 的 float16 计算和低内存模式。重试时种子由照片与风格 ID 导出，便于复现。照片上传上限为 10 MiB，独立的肖像 API 请求上限为 14 MiB，以容纳 Base64 编码；其他请求保持原有上限。Wibi 风格参考不应变成生成内容白名单：人物身份、姿态、衣服仍应以用户照片为准，需人工检查模型是否遵守。
 
 ## 验收与限制
 
-自动测试验证 LangGraph 节点接口、Wibi 哈希、参考图顺序、命令参数、临时文件清理和 API 资产约束。2026-10-31 在本机 Metal 环境用合成肖像完成真实推理：MFLUX CLI 输出 512×512 PNG，4 步推理约 66 秒、峰值 MLX 内存 6.03 GB；项目 provider 加载已校验的 Wibi 蜡笔规则并输出 1024×1024 PNG。人工查看后，后者保留了合成输入的黑发和蓝色衣服，并呈现白纸蜡笔风格。又用隔离的本机 API、LangGraph worker 和同一模型完成 `POST /api/portraits` → `POST /api/generations` → `SUCCEEDED` → `GET /api/hero-assets/:id`，取回有效 PNG；验收服务及测试数据库已关闭并清理。还需用用户授权的真人照片检查三种风格的身份保留、构图和首屏效果；合成肖像与自动测试都不能证明真人相似度。
+自动测试验证 LangGraph 节点接口、Wibi 哈希、参考图顺序、命令参数、临时文件清理和 API 资产约束。2026-10-31 在本机 Metal 环境用合成肖像完成真实推理：MFLUX CLI 输出 512×512 PNG，4 步推理约 66 秒、峰值 MLX 内存 6.03 GB；项目 provider 加载已校验的 Wibi 蜡笔规则并输出 1024×1024 PNG。人工查看后，后者保留了合成输入的黑发和蓝色衣服，并呈现白纸蜡笔风格。又用隔离的本机 API、LangGraph worker 和同一模型完成 `POST /api/portraits` → `POST /api/generations` → `SUCCEEDED` → `GET /api/hero-assets/:id`，取回有效 PNG；验收服务及测试数据库已关闭并清理。
+
+同日用用户提供的 `docs/myprofile.jpg`（3024×4032、9,641,241 字节）进行离线真人图像测试：原图经临时本机 HTTP API 上传成功，私有存储字节数与原图相同；三种 Wibi 风格均由 MFLUX 输出 1024×1024 PNG，分别耗时约 94、150、104 秒。又用同一张原图跑通 `savePortrait → enqueue → LangGraph 8 节点 → SUCCEEDED → readAsset`，蜡笔风格成图与直接调用 provider 的成图 SHA-256 完全一致。三张测试结果仅保存在忽略的 `data/avatar-real-results/`，不进入 Git 或静态发布。人工检查：蜡笔风格保留了照片人物的刘海、双辫、颈饰、衣服色块和手部姿态，当前最适合作为 demo；复古动画风格凭空加了眼镜；纺织玩偶风格复制了参考图的耳状装饰和橙色发团。后两者表明当前四步本地模型尚不能稳定遵守“只借鉴风格，不复制配饰”的规则，不能把三张成图都视为通过身份保真验收。首屏在真实浏览器中的最终排版仍需人工检查。
 
 Wibi 风格规则和参考图的许可仅覆盖个人非商业用途；当前图片不进入付费分享或 ZIP。透明抠图与指针跟随均属后续工作。
 

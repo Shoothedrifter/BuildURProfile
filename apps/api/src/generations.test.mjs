@@ -25,6 +25,21 @@ test("portrait storage validates bytes and binds assets to a session", () => {
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("portrait storage accepts a 9 MiB photo but rejects one above 10 MiB", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
+  const root = mkdtempSync(join(tmpdir(), "burp-avatar-size-"));
+  try {
+    const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
+    const header = Buffer.from(png.split(",")[1], "base64");
+    const accepted = Buffer.concat([header, Buffer.alloc(9 * 1024 * 1024 - header.length)]);
+    const asset = service.savePortrait("a", `data:image/png;base64,${accepted.toString("base64")}`);
+    assert.equal(service.readAsset("a", asset.id, "portrait").bytes.length, accepted.length);
+    const rejected = Buffer.concat([header, Buffer.alloc(10 * 1024 * 1024 + 1 - header.length)]);
+    assert.throws(() => service.savePortrait("a", `data:image/png;base64,${rejected.toString("base64")}`), /最大 10 MiB/);
+  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
 test("failed asset metadata insert does not leave a private portrait file", () => {
   const db = openDatabase(":memory:");
   db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);

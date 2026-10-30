@@ -236,8 +236,8 @@ export default function App() {
     const file = event.currentTarget.files?.[0];
     if (!file) return;
     setError("");
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      setError("请选择 5 MiB 以内的 PNG、JPEG 或 WebP 单人照片。"); return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+      setError("请选择 10 MiB 以内的 PNG、JPEG 或 WebP 单人照片。"); return;
     }
     generationVersion.current++;
     generationApi.clearSavedGeneration();
@@ -426,7 +426,7 @@ export default function App() {
     }
   };
   const savedShareList = savedShares.length > 0 && <section className="saved-shares" aria-labelledby="saved-shares-heading"><div><h2 id="saved-shares-heading">已发布链接</h2><p>服务端保存，默认 7 天后失效。项目已付费可重新发布。</p></div><ul>{savedShares.map((saved) => <li key={saved.id}><div><strong>{saved.id.slice(0, 12)}…</strong><span>有效至 {new Date(saved.expiresAt).toLocaleString("zh-CN")}</span></div><a href={saved.url} target="_blank" rel="noopener noreferrer">打开分享 ↗</a><button type="button" aria-label={"删除分享 " + saved.id} onClick={() => void removeSavedShare(saved.id)}>删除</button></li>)}</ul></section>;
-  const avatarPicker = avatarDemo && <section className="avatar-picker" aria-label="虚拟形象风格"><div className="avatar-picker-heading"><div><span>OPTIONAL / AVATAR</span><h2>上传个人肖像，生成动画风格 IP</h2></div><p>照片仅在点击生成后上传至本机服务，并交由图像服务处理。Wibi Style 仅供个人非商业本机预览。</p></div><div className="avatar-picker-grid"><label className="avatar-photo"><strong>选择一张个人肖像</strong><small>单人、正面或轻微侧面；PNG / JPEG / WebP，最多 5 MiB</small><input aria-label="选择个人肖像照片" type="file" accept="image/png,image/jpeg,image/webp" onChange={onPhoto} />{photoDataUrl && <img src={photoDataUrl} alt="待生成的肖像照片预览" />}{photoName && <span>{photoName}</span>}</label><div className="avatar-style-options">{avatarStyles.map((style) => <button key={style.id} type="button" aria-pressed={avatarStyle === style.id} className={avatarStyle === style.id ? "avatar-style selected" : "avatar-style"} onClick={() => setAvatarStyle(style.id)}><strong>{style.label}</strong><small>{style.hint}</small></button>)}</div></div><p className="avatar-credit">Visual Skill by @威比 Hunter Wei. · <a href="https://github.com/Vieeeeeee/wibi-style" target="_blank" rel="noreferrer">Wibi Style 来源 ↗</a></p></section>;
+  const avatarPicker = avatarDemo && <section className="avatar-picker" aria-label="虚拟形象风格"><div className="avatar-picker-heading"><div><span>OPTIONAL / AVATAR</span><h2>上传个人肖像，生成动画风格 IP</h2></div><p>照片仅在点击生成后上传至本机服务，由本机图像模型处理。Wibi Style 仅供个人非商业本机预览。</p></div><div className="avatar-picker-grid"><label className="avatar-photo"><strong>选择一张个人肖像</strong><small>单人、正面或轻微侧面；PNG / JPEG / WebP，最多 10 MiB</small><input aria-label="选择个人肖像照片" type="file" accept="image/png,image/jpeg,image/webp" onChange={onPhoto} />{photoDataUrl && <img src={photoDataUrl} alt="待生成的肖像照片预览" />}{photoName && <span>{photoName}</span>}</label><div className="avatar-style-options">{avatarStyles.map((style) => <button key={style.id} type="button" aria-pressed={avatarStyle === style.id} className={avatarStyle === style.id ? "avatar-style selected" : "avatar-style"} onClick={() => setAvatarStyle(style.id)}><strong>{style.label}</strong><small>{style.hint}</small></button>)}</div></div><p className="avatar-credit">Visual Skill by @威比 Hunter Wei. · <a href="https://github.com/Vieeeeeee/wibi-style" target="_blank" rel="noreferrer">Wibi Style 来源 ↗</a></p></section>;
 
   if (shareView.requested) {
     return shareView.loading ? <div className="share-unavailable"><p>正在读取分享作品…</p></div> : shareView.config
