@@ -3,7 +3,7 @@
 **阶段：** Phase 0（设计文档，2026-10-26）  
 **目标：** 让 UI/UX 设计师、前端/创意开发、品牌/动效/文案这三类用户，从文本型 PDF 简历得到可预览、可主动发布的桌面端 Showcase。产品签名始终是 **Marquee + StackedCards**；个性化只能调参数和 Design Tokens，不能改骨架。
 
-**实现进度（PDF → 配置切片，2026-10-26）：** 已实现配置类型、两种骨架组件、三套 CSS 变量皮肤，以及浏览器内的文本型 PDF 提取、必经的字段确认表单、8 题测评、确定性 `styleToConfig` 映射、JSON 下载和本地预览。真实分享发布、扫描件 OCR 与 LLM 调用截至 2026-10-26 尚未接入；2026-10-28 起服务端项目保存、支付宝「AI 网页应用收款」下单/验签/查单、付费分享与离线 ZIP 导出已实现（沙箱实付与生产上线待验证，见 `AGENT.md` 与 `README.md`）。下文五层架构仍是完整产品规划，部分 Phase 1 表述保留为原始规划记录；当前可运行范围以此进度说明和 README 为准。
+**实现进度（PDF → 配置切片，2026-10-26）：** 已实现配置类型、两种骨架组件、三套 CSS 变量皮肤，以及浏览器内的文本型 PDF 提取、必经的字段确认表单、8 题测评、确定性 `styleToConfig` 映射、JSON 下载和本地预览。真实分享发布、扫描件 OCR 与 LLM 调用截至 2026-10-26 尚未接入；2026-10-28 起服务端项目保存、支付宝「AI 网页应用收款」下单/验签/查单、付费分享与离线 ZIP 导出已实现（沙箱实付与生产上线待验证，见 `AGENTS.md` 与 `README.md`）。2026-10-30 另行发布的 GitHub Pages 版本只开放浏览器静态预览，不含上述服务端交付能力，见 `GITHUB_PAGES.md`。下文五层架构仍是原始产品规划，其中 LLM 翻译层不是首版正式 Agent 的必需节点；当前决定以 `AGENT_ARCHITECTURE.md` 为准。
 
 ## 1. 五层架构
 
@@ -35,7 +35,7 @@ flowchart LR
 
 ## 2. 固定骨架的参数合同
 
-当前渲染切片的 TypeScript 合同在 [`types/config.ts`](types/config.ts)。`DesignConfig` 的五个顶层字段为 `styleVector`、`skin`、`marquee`、`stackedCards`、`content`。`content` 是三板块 mock Resume JSON；组件从其中接收 `items` 和 `cards`，避免在配置中复制内容。下表以当前请求为准，Phase 0 提议的其他参数留待后续版本。
+当前渲染切片的 TypeScript 合同在 [`packages/contracts/src/config.ts`](packages/contracts/src/config.ts)。`DesignConfig` 的五个顶层字段为 `styleVector`、`skin`、`marquee`、`stackedCards`、`content`。`content` 是三板块 mock Resume JSON；组件从其中接收 `items` 和 `cards`，避免在配置中复制内容。下表以当前请求为准，Phase 0 提议的其他参数留待后续版本。
 
 | Marquee 参数 | 建议范围/枚举 | 作用 |
 | --- | --- | --- |

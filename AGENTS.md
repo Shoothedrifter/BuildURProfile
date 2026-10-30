@@ -1,12 +1,19 @@
 # BuildURProfile 接手记录
 
-支付状态更新：2026-10-28；代码路径更新：2026-10-30。此文件记录当前 MVP 的代码入口、支付沙箱事实、生产开通进展和下一步联调，供后续开发者接手；`PROJECT.md`、`AGENT_ARCHITECTURE.md`、`README.md` 与 `docs/qa/PAYMENT_SANDBOX.md` 是产品和验收背景。不要把这里的状态描述当作已经完成真实付款的证明。
+支付状态更新：2026-10-28；代码路径与静态发布状态更新：2026-10-30。此文件记录当前 MVP 的代码入口、GitHub Pages 静态预览、支付沙箱事实、生产开通进展和下一步联调，供后续开发者接手；`PROJECT.md`、`AGENT_ARCHITECTURE.md`、`README.md`、`GITHUB_PAGES.md` 与 `docs/qa/PAYMENT_SANDBOX.md` 是产品和验收背景。不要把这里的状态描述当作已经完成真实付款的证明。
 
 ## 运行与安全边界
 
 - Node.js 24+；`npm run dev` 同时启动 Vite `http://127.0.0.1:5173` 和后端 `http://127.0.0.1:8787`。`npm run build` 包含 TypeScript 检查；`npm test`、`npm run test:payment`、`npm run verify:export` 分别覆盖前端、支付后端和离线导出。
 - `.env`、`.alipay-sandbox.json`、`data/` 属于本机私有配置或持久状态，不得提交、贴入日志或复制到前端。根目录 `.alipay-sandbox.json` 由已安装的 `alipay-aipay` Skill 创建，权限必须是 `0600`。生产配置、数据库和沙箱隔离；本机 1 分价格仅用于沙箱。
 - PDF 字节与解析结果留在浏览器内存；确认后的展示配置才会保存到服务端。免费预览不授予正式分享和 ZIP 下载。项目所有权绑定服务端匿名会话；支付事实由签名通知或签名查单核实，不接受客户端自报。
+
+## GitHub Pages 静态预览（2026-10-30）
+
+- `npm run build:pages` 使用 Vite `pages` 模式，资源基路径为 `/BuildURProfile/`；`.github/workflows/pages.yml` 在 `main` 推送或手动触发时运行前端测试、构建和 Pages 发布。普通 `npm run dev` / `npm run build` 仍保留 Node API 流程。
+- 静态版只提供浏览器内 PDF 解析、字段确认、8 题测评、编辑和网页预览。`apps/web/src/App.tsx` 在该模式跳过 API 请求，隐藏分享、ZIP 和支付入口；刷新后作品消失。Pages 不运行 Node API，不存 SQLite、会话或支付状态，也不提供正式分享和下载。
+- 提交 `496f4a3` 已推送到 GitHub `main`；对应 [CI](https://github.com/Shoothedrifter/BuildURProfile/actions/runs/41000252698) 与 [Pages 发布](https://github.com/Shoothedrifter/BuildURProfile/actions/runs/41000252695) 均于 2026-10-30 成功。公开地址应为 <https://shoothedrifter.github.io/BuildURProfile/>，但尚无公开网址上完整 PDF 流程的人工验收记录；按 `GITHUB_PAGES.md` 逐项核对。
+- 后续需要服务端草稿、付费、正式分享和 ZIP 时，要另行部署 Node API，并为 SQLite 与 `data/session-secret` 提供持久存储。Pages 发布成功不等于完整项目或支付系统上线。
 
 ## 代码入口
 
@@ -52,3 +59,5 @@
 当前本地记录：增加沙箱提示后 `npm run build`、`npm test`（84 项）、`npm run test:payment`（26 项）通过；之前 `npm run verify:export` 通过，但提示修改后未重跑。上述均是付款之前的结果。沙箱实付、支付后分享及 ZIP 闭环**尚未验证**。最新事实以数据库、支付宝签名查单和浏览器实际交付为准，不能用模拟通知测试替代。
 
 2026-10-30 结构迁移后，代码入口位于 `apps/web`、`apps/api`、`packages/contracts`；自动化导出验收已改用可提交的合成样例。根 `npm run build`、`npm test`（84 项）、`npm run test:payment`（27 项，包含生产静态页烟测）、`npm run verify:export` 已重新通过。它们仅验证代码行为，不证明新一轮沙箱实付或公网回调。
+
+2026-10-30 Pages 切片后，根 `npm test`（86 项）及 `npm run build:pages` 已再次通过；GitHub 对提交 `496f4a3` 的 CI 和 Pages 工作流也均成功。此记录不证明公开网址上的 PDF 完整流程、沙箱实付、支付后交付或公网回调已验收。

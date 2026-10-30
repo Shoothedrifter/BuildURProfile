@@ -64,3 +64,11 @@
 
 - [x] Search for stale imports and old path references; inspect `git diff --check`, `git status --short` and changed file list.
 - [x] Document the next LangGraph/worker slice clearly in `AGENT_ARCHITECTURE.md`.
+
+## Follow-up: GitHub Pages static preview (2026-10-30)
+
+This is a deployment slice after the repository layering work, not the LangGraph worker phase. The static build uses Vite `pages` mode and `/BuildURProfile/` as its asset base. It keeps the browser PDF, assessment, editor and preview path, while disabling API requests and paid delivery controls. The Node API, SQLite and payment flow remain local/full-stack capabilities and are outside the Pages deployment.
+
+- [x] Add `npm run build:pages`, static-mode UI behavior, front-end tests and `.github/workflows/pages.yml`.
+- [x] Push commit `496f4a3` to `main`; GitHub CI and Pages deployment runs both concluded successfully on 2026-10-30. Links and checks are recorded in `GITHUB_PAGES.md`.
+- [ ] Complete a manual PDF → confirmation → assessment → preview check at the public Pages URL and record the result. The successful workflow alone does not establish this user-flow check.
