@@ -2,7 +2,7 @@
 
 日期：2026-10-30。本文是目标架构和迁移依据；未完成的阶段不代表现有代码已经具备该能力。
 
-**2026-10-31 实施切片：** 当前 `codex/avatar-skill-demo` 分支新增本机私有肖像 demo：`apps/worker` 使用 LangGraph.js、SQLite checkpoint 和固定版本的三款 Wibi 肖像规则，通过图像编辑 API 生成静态角色画面。该图编排肖像分支、配置校验和首屏资产引用；八题评分与 `styleToConfig` 仍在浏览器，PDF-only 路径不经过图。图片不能进入付费分享或 ZIP。以下未特别注明的 `SiteSpecV1`、完整生成图、任意模板及生产队列仍是目标设计。
+**2026-10-31 实施切片：** 当前 `codex/avatar-skill-demo` 分支新增本机私有肖像 demo：`apps/worker` 使用 LangGraph.js、SQLite checkpoint 和固定版本的三款 Wibi 肖像规则，由本机 MFLUX/FLUX.2 Klein 4B 图像编辑生成静态角色画面。该图编排肖像分支、配置校验和首屏资产引用；八题评分与 `styleToConfig` 仍在浏览器，PDF-only 路径不经过图。图片不能进入付费分享或 ZIP。本机生图的模型、环境与验收见 [本地生图方案](docs/AVATAR_LOCAL_MODEL.md)。以下未特别注明的 `SiteSpecV1`、完整生成图、任意模板及生产队列仍是目标设计。
 
 ## 已确定的方向
 

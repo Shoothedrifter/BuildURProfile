@@ -15,17 +15,17 @@ npm run dev
 
 ### 本机肖像 Skill Demo
 
-首次使用先运行 `npm run setup:avatar`，把 Wibi Style 仓库固定在 commit `17880b82ea35c1fe1ec4b8f907a053d314df464f`，只取三款肖像风格到 Git 忽略的 `data/wibi-style-pinned`。安装脚本会验证风格规则与参考图的哈希。把自己的图像服务密钥填入本机 `.env` 的 `OPENAI_API_KEY`；可用 `AVATAR_IMAGE_MODEL` 覆盖默认 `gpt-image-2.5-flare`。不要把密钥发到聊天或提交仓库。
+Apple Silicon Mac 首次使用先运行 `npm run setup:avatar:local`。脚本会把 Wibi Style 固定在 commit `17880b82ea35c1fe1ec4b8f907a053d314df464f`，校验三款肖像风格的规则和参考图，并在 Git 忽略的 `data/avatar-venv` 安装 MFLUX 0.23.0。首次成图会下载约 8.6 GB 的 FLUX.2 Klein 4B 预量化权重到 `data/avatar-model-cache`；后续复用本机缓存。无需图像服务 API Key。详细选型和验证见 [本地生图方案](docs/AVATAR_LOCAL_MODEL.md)。
 
-`npm run dev` 在回环地址同时启动前端、API 和 LangGraph worker。首页可选择一张本人照片与复古扁平动画头、蜡笔极简扁平画、颗粒绒感玩偶之一；照片在点击生成前只留在浏览器。确认 PDF 内容并完成测评后，服务端将照片交给图像编辑 API，成图位于作品首屏。源照片和成图属于当前匿名会话，分别在 1 天和 7 天后过期，worker 定时清理文件；每个会话 24 小时最多发起 5 次肖像生成。此功能仅在本机开发模式启用，GitHub Pages 与生产启动不提供该入口。
+`npm run dev` 在回环地址同时启动前端、API 和 LangGraph worker。首页可选择一张本人照片与复古扁平动画头、蜡笔极简扁平画、颗粒绒感玩偶之一；照片在点击生成前只留在浏览器。确认 PDF 内容并完成测评后，worker 在本机用照片、Wibi 风格规则和风格参考图运行图像编辑，成图位于作品首屏。源照片和成图属于当前匿名会话，分别在 1 天和 7 天后过期，worker 定时清理文件；每个会话 24 小时最多发起 5 次肖像生成。此功能仅在本机开发模式启用，GitHub Pages 与生产启动不提供该入口。
 
 若默认端口已被占用，可用 `SERVER_PORT=8788 VITE_PORT=5174 npm run dev` 启动另一组本机端口；Vite 会把 `/api` 代理到所选 API 端口。若两组服务同时运行，还应为后一组设置独立的 `DATABASE_PATH`、`AVATAR_ASSET_ROOT` 和 `AVATAR_CHECKPOINT_PATH`。
 
-Wibi 的视觉规则仅许可个人非商业使用。当前成图保留原风格背景，只作本机预览，服务端拒绝带肖像的付费作品配置；透明抠图和 [oil-motion](https://github.com/oil-oil/oil-motion) 指针交互留待后续。Wibi Style 原作者：@威比 Hunter Wei.，来源：[Vieeeeeee/wibi-style](https://github.com/Vieeeeeee/wibi-style)。如果没有配置密钥，任务会明确失败，不会展示伪造的成图。
+Wibi 的视觉规则仅许可个人非商业使用。当前成图保留原风格背景，只作本机预览，服务端拒绝带肖像的付费作品配置；透明抠图和 [oil-motion](https://github.com/oil-oil/oil-motion) 指针交互留待后续。Wibi Style 原作者：@威比 Hunter Wei.，来源：[Vieeeeeee/wibi-style](https://github.com/Vieeeeeee/wibi-style)。本机模型安装或生成失败时，任务会明确失败，不会展示伪造的成图。
 
 打开 Vite 打印的本地地址。上传可选中文本的 PDF 后，必须核对姓名、工作经历、项目、技能、教育，才能进入 8 题测评。生成页可改展示文案、跑马灯图片、项目图片和交互强度；改动立即进入预览、Design Config JSON 与静态网站导出。首页的“查看视觉样例”使用 `apps/web/src/demo/config.json` 中的三板块 mock，保留三套皮肤切换。
 
-PDF.js 和 PDF worker 随页面本地打包，PDF 文件字节、提取文本和确认表单只存在浏览器内存中；应用没有 PDF 上传接口，PDF 流程不调用模型。只有用户主动提交本机肖像 demo 后，照片才会发送给服务端图像编辑 API。每个展示字段在 JSON 的 `content.sourceRefs` 中保留 PDF 页码和原文摘录；在结果页手动修改文字后，对应的原文出处会从配置中移除，避免错误归因。当前分段规则已针对 `docs/黄琬斐_算法_大模型_Agent_副本.pdf` 和 `docs/个人简历（黄禹哲）.pdf` 验证；后者需要按 PDF 文字坐标恢复章节顺序，并识别没有日期的项目、条目式技能和校园经历。校园经历在导出 JSON 中单列。其他版式可能需要扩展规则。扫描件 OCR 尚未接入。触屏会保留卡片手动切换，并将滚动绑定的跑马灯降级为恒定滚动。
+PDF.js 和 PDF worker 随页面本地打包，PDF 文件字节、提取文本和确认表单只存在浏览器内存中；应用没有 PDF 上传接口，PDF 流程不调用模型。只有用户主动提交本机肖像 demo 后，照片才会发送给本机 API 与 LangGraph worker。每个展示字段在 JSON 的 `content.sourceRefs` 中保留 PDF 页码和原文摘录；在结果页手动修改文字后，对应的原文出处会从配置中移除，避免错误归因。当前分段规则已针对 `docs/黄琬斐_算法_大模型_Agent_副本.pdf` 和 `docs/个人简历（黄禹哲）.pdf` 验证；后者需要按 PDF 文字坐标恢复章节顺序，并识别没有日期的项目、条目式技能和校园经历。校园经历在导出 JSON 中单列。其他版式可能需要扩展规则。扫描件 OCR 尚未接入。触屏会保留卡片手动切换，并将滚动绑定的跑马灯降级为恒定滚动。
 
 ## 分享与离线导出
 

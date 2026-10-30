@@ -4,7 +4,7 @@ import { openDatabase } from "../../api/src/database.mjs";
 import { createGenerationService } from "../../api/src/generations.mjs";
 import { buildGenerationGraph } from "./graph.mjs";
 import { loadStyleRecipe } from "./styles.mjs";
-import { createOpenAIImageProvider } from "./provider.mjs";
+import { createLocalImageProvider } from "./provider-local.mjs";
 import { openPrivateCheckpointer, runNextGeneration } from "./runner.mjs";
 
 const localEnvFile = fileURLToPath(new URL("../../../.env", import.meta.url));
@@ -20,7 +20,7 @@ const service = createGenerationService({ db, assetRoot: process.env.AVATAR_ASSE
 service.recoverRunning();
 service.purgeExpired();
 const checkpointer = openPrivateCheckpointer(process.env.AVATAR_CHECKPOINT_PATH || fileURLToPath(new URL("../../../data/avatar-checkpoints.sqlite", import.meta.url)));
-const graph = buildGenerationGraph({ styleLoader: loadStyleRecipe, provider: createOpenAIImageProvider(), checkpointer,
+const graph = buildGenerationGraph({ styleLoader: loadStyleRecipe, provider: createLocalImageProvider(), checkpointer,
   assets: { readPortrait: (id) => service.readAssetForWorker(id), storeOutput: service.storeOutput,
     outputExists: service.outputExists, existingOutput: service.existingOutput } });
 let active = false;

@@ -9,7 +9,7 @@ import { openDatabase } from "../../api/src/database.mjs";
 import { createGenerationService } from "../../api/src/generations.mjs";
 import { buildGenerationGraph } from "./graph.mjs";
 import { openPrivateCheckpointer, runNextGeneration } from "./runner.mjs";
-import { createOpenAIImageProvider } from "./provider.mjs";
+import { createLocalImageProvider } from "./provider-local.mjs";
 
 test("LangGraph invokes selected style and provider, then verifies hero output", async () => {
   const calls = [];
@@ -79,22 +79,22 @@ test("expired running job resumes with SQLite checkpoint after restart", async (
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("missing image key fails the task without checkpointing photo bytes", async () => {
-  const root = mkdtempSync(join(tmpdir(), "burp-no-key-"));
+test("missing local image runtime fails the task without checkpointing photo bytes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "burp-no-mflux-"));
   const db = openDatabase(join(root, "tasks.sqlite"));
   db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const service = createGenerationService({ db, assetRoot: join(root, "assets"), minPixels: 1 });
   try {
     const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=";
     const photo = service.savePortrait("owner", dataUrl);
-    const task = service.enqueue("owner", { portraitAssetId: photo.id, styleId: "retro-flat-anime-head", idempotencyKey: "no-key" });
+    const task = service.enqueue("owner", { portraitAssetId: photo.id, styleId: "retro-flat-anime-head", idempotencyKey: "no-mflux" });
     const graph = buildGenerationGraph({ checkpointer: SqliteSaver.fromConnString(join(root, "checkpoints.sqlite")),
       styleLoader: () => ({ id: "retro-flat-anime-head", version: "pinned", instructions: "rules", referencePaths: [] }),
-      provider: createOpenAIImageProvider({ apiKey: "" }), assets: { readPortrait: service.readAssetForWorker,
+      provider: createLocalImageProvider({ command: join(root, "missing-cli") }), assets: { readPortrait: service.readAssetForWorker,
         storeOutput: service.storeOutput, outputExists: service.outputExists, existingOutput: service.existingOutput } });
     await runNextGeneration({ service, graph });
     assert.equal(service.getTask("owner", task.id).status, "FAILED");
-    assert.match(service.getTask("owner", task.id).error, /OPENAI_API_KEY/);
+    assert.match(service.getTask("owner", task.id).error, /MFLUX/);
     const checkpoint = JSON.stringify((await graph.getState({ configurable: { thread_id: task.id } })).values);
     assert.ok(!checkpoint.includes(dataUrl.split(",")[1]));
     assert.ok(!checkpoint.includes("rules"));

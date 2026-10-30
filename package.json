@@ -11,6 +11,7 @@
     "dev:server": "node apps/api/src/index.mjs",
     "dev:worker": "node apps/worker/src/index.mjs",
     "setup:avatar": "node scripts/install-wibi-demo.mjs",
+    "setup:avatar:local": "node scripts/setup-avatar-local.mjs",
     "start": "node apps/api/src/index.mjs",
     "test:payment": "npm run build && node --test apps/api/src/*.test.mjs",
     "test:worker": "node --test apps/worker/src/*.test.mjs",
@@ -26,7 +27,6 @@
     "@langchain/langgraph-checkpoint-sqlite": "^1.1.0",
     "alipay-sdk": "^4.14.0",
     "image-size": "^2.0.4",
-    "openai": "^7.45.1",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

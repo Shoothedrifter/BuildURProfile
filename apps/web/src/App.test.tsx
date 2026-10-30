@@ -129,7 +129,7 @@ describe("showcase builder", () => {
   });
 
   it("lets a failed avatar request fall back to a text-only preview", async () => {
-    vi.mocked(generationApi.generateAvatar).mockRejectedValueOnce(new Error("未配置 OPENAI_API_KEY"));
+    vi.mocked(generationApi.generateAvatar).mockRejectedValueOnce(new Error("本地 MFLUX 尚未安装"));
     render(<App />);
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
@@ -138,7 +138,7 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
     document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    await screen.findByText("未配置 OPENAI_API_KEY");
+    await screen.findByText("本地 MFLUX 尚未安装");
     fireEvent.click(screen.getByRole("button", { name: "移除肖像，继续生成文字作品" }));
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
     expect(screen.getByTestId("design-config-json")).toBeInTheDocument();

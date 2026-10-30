@@ -20,8 +20,10 @@ export async function runNextGeneration({ service, graph }) {
       styleId: task.style_id, configJson: task.config_json, outputAssetId: task.output_asset_id }, config);
     service.complete(task.id);
   } catch (error) {
-    const message = error instanceof Error && error.message.includes("OPENAI_API_KEY")
-      ? "未配置 OPENAI_API_KEY，无法生成肖像。" : "生成失败；请检查图像服务、风格资源或照片后重新提交。";
+    process.stderr.write(`Avatar generation ${task.id} failed: ${error?.code || "UNKNOWN"}${error?.cause?.code ? ` (${error.cause.code})` : ""}\n`);
+    const message = error?.code === "MFLUX_NOT_INSTALLED"
+      ? "本地 MFLUX 尚未安装。请运行 npm run setup:avatar:local。"
+      : "生成失败；请检查本地图像模型、风格资源或照片后重新提交。";
     service.fail(task.id, message);
   }
   return true;
