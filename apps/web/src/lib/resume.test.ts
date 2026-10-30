@@ -63,6 +63,11 @@ ARM 体系结构及编程、嵌入式 Linux 系统设计
 • 哈尔滨理工大学百度飞桨领航团 社团长`;
 
 describe("resume parser", () => {
+  it("recognizes PDF compatibility ideographs in section headings", () => {
+    const draft = parseResumePages(["Demo Person\ndemo@example.com\n项⽬经历\n2025.01 - 2025.06 示例作品集\n项目描述：合成测试内容。\n专业技能\nReact"]);
+    expect(draft.name.value).toBe("Demo Person");
+    expect(draft.projects).toHaveLength(1);
+  });
   it("recognizes a decorated header and an email wrapped after its local part", () => {
     const draft = parseResumePages([onePageSections]);
     expect(draft.name.value).toBe("黄禹哲");

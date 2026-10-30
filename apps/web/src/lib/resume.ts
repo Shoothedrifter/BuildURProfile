@@ -56,7 +56,7 @@ function splitBlocks(lines: string[], starts: number[], page: number): DraftFiel
 }
 
 function sectionOf(line: string): Section | undefined {
-  return sectionNames[line.replace(/\s/g, "").replace(/^[•●·\uF000-\uF8FF]/, "").replace(/[：:]$/, "")];
+  return sectionNames[line.normalize("NFKC").replace(/\s/g, "").replace(/^[•●·\uF000-\uF8FF]/, "").replace(/[：:]$/, "")];
 }
 
 function splitAt(lines: string[], page: number, isStart: (line: string) => boolean): DraftField[] {

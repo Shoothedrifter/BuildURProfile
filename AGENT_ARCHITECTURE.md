@@ -2,16 +2,18 @@
 
 日期：2026-10-30。本文是目标架构和迁移依据；未完成的阶段不代表现有代码已经具备该能力。
 
+**2026-10-31 实施切片：** 当前 `codex/avatar-skill-demo` 分支新增本机私有肖像 demo：`apps/worker` 使用 LangGraph.js、SQLite checkpoint 和固定版本的三款 Wibi 肖像规则，通过图像编辑 API 生成静态角色画面。该图编排肖像分支、配置校验和首屏资产引用；八题评分与 `styleToConfig` 仍在浏览器，PDF-only 路径不经过图。图片不能进入付费分享或 ZIP。以下未特别注明的 `SiteSpecV1`、完整生成图、任意模板及生产队列仍是目标设计。
+
 ## 已确定的方向
 
-- 第一版沿用 `PROJECT.md` 的固定 Marquee + StackedCards 骨架、八题测评和三套皮肤，生成可预览、可编辑、可导出的 HTML 网站。**不提供自然语言风格输入框，也不调用模型。**
+- PDF-only 第一版沿用 `PROJECT.md` 的固定 Marquee + StackedCards 骨架、八题测评和三套皮肤，生成可预览、可编辑、可导出的 HTML 网站；不提供自然语言风格输入框。可选肖像 demo 单独调用图像编辑模型。
 - 采用 `apps/web`、`apps/api`、`apps/worker` 与共享 `packages/*` 的分层。生成任务由 LangGraph.js 组织为显式节点；支付和发布保持确定性的服务端业务逻辑。
 - PDF 字节与原始解析结果留在浏览器；用户确认后，只有展示所需的公开副本可进入任务和服务端。付款与正式发布仍是独立的主动操作。
 - 后续目标是支持生成任意 HTML 模板。该目标单列为第二阶段，届时需重新评估 `PROJECT.md` 的固定骨架限制，并增加隔离代码生成、构建和安全验收流程。
 
 ## 当前发布形态与目标架构的关系
 
-2026-10-30 新增的 GitHub Pages 发布只托管 `apps/web` 的静态预览构建。它让用户体验浏览器内的 PDF → 确认 → 测评 → 固定骨架预览；`pages` 模式不请求 API、不保存项目，也不显示付费分享或 ZIP 入口。该发布不包含 `apps/api`，更没有接入 `apps/worker`、LangGraph 或模型节点。完整范围与发布检查见 `GITHUB_PAGES.md`，已核实的工作流状态见 `AGENTS.md`。
+2026-10-30 新增的 GitHub Pages 发布只托管 `apps/web` 的静态预览构建。它让用户体验浏览器内的 PDF → 确认 → 测评 → 固定骨架预览；`pages` 模式不请求 API、不保存项目，也不显示付费分享或 ZIP 入口。该发布不包含 `apps/api`，也不运行 `apps/worker`、LangGraph 或模型节点。完整范围与发布检查见 `GITHUB_PAGES.md`，已核实的工作流状态见 `AGENTS.md`。
 
 恢复服务端能力时，Web 与 API 需有可访问的同源路由或明确的跨域配置；API 运行在支持 Node 24 的服务环境，SQLite 数据库和匿名会话密钥必须在持久存储上。单实例可延续现有 SQLite 方案；增加多实例或独立 worker 前，须先设计共享数据库、任务领取与持久 checkpoint。GitHub Pages 的前端自动发布不能代替这些运行条件。
 

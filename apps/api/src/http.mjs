@@ -5,6 +5,7 @@ import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ServiceError } from "./service.mjs";
 import { buildStaticZip } from "./export.mjs";
+import { listAvatarStyles } from "../../worker/src/styles.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const COOKIE = "burp_session";
@@ -38,7 +39,8 @@ async function readBody(req, limit = 9 * 1024 * 1024) {
   return Buffer.concat(chunks).toString("utf8");
 }
 async function bodyJson(req) {
-  try { return JSON.parse(await readBody(req)); } catch { throw new ServiceError(400, "请求 JSON 无效。"); }
+  const raw = await readBody(req);
+  try { return JSON.parse(raw); } catch { throw new ServiceError(400, "请求 JSON 无效。"); }
 }
 function sessionFromCookie(req, db, secret) {
   const raw = req.headers.cookie?.split(";").map((entry) => entry.trim()).find((entry) => entry.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
@@ -59,7 +61,7 @@ function requireCsrf(req, secret, sessionId) {
 }
 function parseRoute(path) { return path.split("/").filter(Boolean); }
 
-export function createPaymentHttpServer({ db, service, paymentConfig, priceFen, configurationError = null,
+export function createPaymentHttpServer({ db, service, generationService = null, paymentConfig, priceFen, configurationError = null,
   secret = loadSessionSecret(), staticDir = join(root, "apps/web/dist"), zipBuilder = buildStaticZip }) {
   return createServer(async (req, res) => {
     try {
@@ -94,6 +96,24 @@ export function createPaymentHttpServer({ db, service, paymentConfig, priceFen, 
       if (parts[0] === "api") {
         const sessionId = requireSession(req, db, secret);
         if (!["GET", "HEAD"].includes(req.method)) requireCsrf(req, secret, sessionId);
+        if (generationService && req.method === "GET" && url.pathname === "/api/avatar-styles") {
+          sendJson(res, 200, { styles: listAvatarStyles() }); return;
+        }
+        if (generationService && req.method === "POST" && url.pathname === "/api/portraits") {
+          sendJson(res, 201, generationService.savePortrait(sessionId, (await bodyJson(req)).dataUrl)); return;
+        }
+        if (generationService && req.method === "POST" && url.pathname === "/api/generations") {
+          sendJson(res, 201, generationService.enqueue(sessionId, await bodyJson(req))); return;
+        }
+        if (generationService && req.method === "GET" && parts[1] === "generations" && parts.length === 3) {
+          sendJson(res, 200, generationService.getTask(sessionId, parts[2])); return;
+        }
+        if (generationService && req.method === "GET" && parts[1] === "hero-assets" && parts.length === 3) {
+          const asset = generationService.readAsset(sessionId, parts[2]);
+          res.writeHead(200, { "content-type": asset.mime, "content-length": asset.bytes.length,
+            "cache-control": "private, no-store", "x-content-type-options": "nosniff" });
+          res.end(asset.bytes); return;
+        }
         if (req.method === "GET" && url.pathname === "/api/projects") { sendJson(res, 200, service.listProjects(sessionId)); return; }
         if (req.method === "POST" && url.pathname === "/api/projects") {
           sendJson(res, 201, service.createProject(sessionId, (await bodyJson(req)).config)); return;

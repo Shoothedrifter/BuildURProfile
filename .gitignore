@@ -6,6 +6,7 @@ coverage/
 .playwright-cli/
 .DS_Store
 data/
+.superpowers/
 .env
 /.alipay-sandbox.json
 docs/

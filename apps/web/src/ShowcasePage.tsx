@@ -80,12 +80,14 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
       <main id="top">
         <section className="hero page-container" aria-labelledby="hero-title">
           <div className="hero-meta">{profile.role.trim() && <span>{profile.role}</span>}<span>PROFILE / {new Date().getFullYear()}</span></div>
-          <div className="hero-content">
+          <div className={config.heroArtwork ? "hero-content hero-content--artwork" : "hero-content"}>
             <div>
               <p className="hero-eyebrow"><span className="hero-eyebrow-line" /> PROFILE</p>
               <h1 id="hero-title" aria-label={profile.name}><span>{firstName}</span>{restOfName && <span className="hero-last">{restOfName}</span>}</h1>
             </div>
-            <div className="hero-aside"><div className="hero-stamp" aria-hidden="true"><span>WORK<br />IN<br />MOTION</span><span className="stamp-arrow">↗</span></div>{profile.intro && <p>{profile.intro}</p>}</div>
+            {config.heroArtwork && /^\/api\/hero-assets\/[0-9a-f-]{36}$/.test(config.heroArtwork.assetUrl) &&
+              <figure className="hero-artwork"><img src={config.heroArtwork.assetUrl} alt={config.heroArtwork.alt} /><figcaption>{config.heroArtwork.styleId.replaceAll("-", " ")} · Visual Skill by @威比 Hunter Wei.</figcaption></figure>}
+            <div className={config.heroArtwork && !profile.intro ? "hero-aside hero-aside--empty" : "hero-aside"}><div className="hero-stamp" aria-hidden="true"><span>WORK<br />IN<br />MOTION</span><span className="stamp-arrow">↗</span></div>{profile.intro && <p>{profile.intro}</p>}</div>
           </div>
           <div className="hero-bottom"><div className="hero-identity">{(profile.role.trim() || profile.location.trim()) && <p>{profile.role}{profile.role.trim() && profile.location.trim() && <br />}{profile.location.trim() && <span>{profile.location}</span>}</p>}{profile.availability.trim() && <p className="hero-availability">{profile.availability}</p>}</div><div className="hero-links">{projects.length > 0 && <a className="hero-project-link" href="#work">查看项目 ↗</a>}<a className="scroll-hint" href={exploreTarget}>EXPLORE <span>↓</span></a></div></div>
         </section>

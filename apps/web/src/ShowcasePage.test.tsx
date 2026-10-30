@@ -7,6 +7,12 @@ import { ShowcasePage } from "./ShowcasePage";
 const defaultConfig = rawConfig as DesignConfig;
 
 describe("ShowcasePage image content", () => {
+  it("places preview artwork in the first hero section", () => {
+    const config = { ...defaultConfig, heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" } } as DesignConfig;
+    const { container } = render(<ShowcasePage config={config} />);
+    const hero = container.querySelector(".hero");
+    expect(hero?.querySelector("img[alt='动画肖像']")).toHaveAttribute("src", config.heroArtwork?.assetUrl);
+  });
   it("prefers marquee items from config and counts those items", () => {
     const config: DesignConfig = {
       ...defaultConfig,

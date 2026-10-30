@@ -6,8 +6,10 @@ import { ShowcasePage } from "./ShowcasePage";
 import rawConfig from "./demo/config.json";
 import { extractPdfText } from "./lib/pdf";
 import { paymentApi } from "./lib/paymentApi";
+import { generationApi } from "./lib/generationApi";
 
 vi.mock("./lib/pdf", () => ({ extractPdfText: vi.fn() }));
+vi.mock("./lib/generationApi", () => ({ generationApi: { generateAvatar: vi.fn(), resumeGeneration: vi.fn().mockResolvedValue(null), clearSavedGeneration: vi.fn() } }));
 vi.mock("./lib/paymentApi", () => ({
   paymentApi: {
     offer: vi.fn().mockResolvedValue({ configured: true, mode: "sandbox", priceFen: 199, priceYuan: "1.99", service: "正式托管分享与静态网站导出", shareDays: 7 }),
@@ -32,8 +34,12 @@ const pages = [
 ];
 
 beforeEach(() => {
+  sessionStorage.clear();
   vi.stubGlobal("scrollTo", vi.fn());
   vi.mocked(extractPdfText).mockResolvedValue({ pages, text: pages.join("\n\n") });
+  vi.mocked(generationApi.generateAvatar).mockReset();
+  vi.mocked(generationApi.resumeGeneration).mockReset().mockResolvedValue(null);
+  vi.mocked(generationApi.clearSavedGeneration).mockClear();
   vi.mocked(paymentApi.createProject).mockClear();
   vi.mocked(paymentApi.publish).mockClear();
   vi.mocked(paymentApi.export).mockClear();
@@ -42,6 +48,101 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("does not let a restored old task replace a newly uploaded PDF", async () => {
+    let finish!: (value: { config: DesignConfig; heroArtwork: NonNullable<DesignConfig["heroArtwork"]> }) => void;
+    vi.mocked(generationApi.resumeGeneration).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), { target: { files: [new File(["pdf"], "new.pdf", { type: "application/pdf" })] } });
+    await screen.findByRole("heading", { name: /确认并修正/ });
+    finish({ config: rawConfig as DesignConfig,
+      heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "旧肖像" } });
+    await waitFor(() => expect(screen.queryByAltText("旧肖像")).not.toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: /确认并修正/ })).toBeInTheDocument();
+  });
+
+  it("does not restore an avatar after its pending generation was removed", async () => {
+    let finish!: (value: NonNullable<DesignConfig["heroArtwork"]>) => void;
+    vi.mocked(generationApi.generateAvatar).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
+    await screen.findByAltText("待生成的肖像照片预览");
+    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), { target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] } });
+    await screen.findByRole("heading", { name: /确认并修正/ });
+    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
+    document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
+    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    fireEvent.click(screen.getByRole("button", { name: "移除肖像，继续生成文字作品" }));
+    finish({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "已移除肖像" });
+    await waitFor(() => expect(screen.queryByAltText("已移除肖像")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    expect(screen.getByTestId("design-config-json")).toBeInTheDocument();
+  });
+
+  it("can regenerate a restored avatar while keeping edits to the current config", async () => {
+    const oldArtwork = { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "旧肖像" };
+    vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig, heroArtwork: oldArtwork });
+    vi.mocked(generationApi.generateAvatar).mockResolvedValueOnce({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789013", styleId: "crayon-flat-naive", alt: "新肖像" });
+    render(<App />);
+    await screen.findByAltText("旧肖像");
+    fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
+    fireEvent.click(screen.getByText("更换肖像或风格 ↗"));
+    fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "new.png", { type: "image/png" })] } });
+    await screen.findByAltText("待生成的肖像照片预览");
+    fireEvent.click(screen.getByRole("button", { name: /蜡笔极简扁平画/ }));
+    fireEvent.click(screen.getByRole("button", { name: /重新生成形象/ }));
+    expect(await screen.findByAltText("新肖像")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
+    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].content.profile.name).toBe("Edited Person");
+    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].heroArtwork).toBeUndefined();
+  });
+
+  it("restores a completed local avatar task after refresh", async () => {
+    vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig,
+      heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "恢复的动画肖像" } });
+    render(<App />);
+    expect(await screen.findByAltText("恢复的动画肖像")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "网页预览" })).toHaveAttribute("aria-selected", "true");
+  });
+  it("offers three portrait styles and keeps the photo local until Generate", async () => {
+    render(<App />);
+    expect(screen.getAllByRole("button", { name: /复古扁平动画头|蜡笔极简扁平画|颗粒绒感玩偶/ })).toHaveLength(3);
+    fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
+    expect(await screen.findByAltText("待生成的肖像照片预览")).toBeInTheDocument();
+    expect(generationApi.generateAvatar).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "移除肖像照片" }));
+    expect(screen.queryByAltText("待生成的肖像照片预览")).not.toBeInTheDocument();
+  });
+
+  it("adds generated portrait to hero and hides paid delivery", async () => {
+    vi.mocked(generationApi.generateAvatar).mockResolvedValueOnce({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" });
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
+    await screen.findByAltText("待生成的肖像照片预览");
+    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), { target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] } });
+    await screen.findByRole("heading", { name: /确认并修正/ });
+    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
+    document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
+    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    expect(await screen.findByAltText("动画肖像")).toHaveAttribute("src", "/api/hero-assets/12345678-1234-1234-1234-123456789012");
+    expect(screen.queryByRole("button", { name: /发布并分享/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/仅供本机预览/)).toBeInTheDocument();
+  });
+
+  it("lets a failed avatar request fall back to a text-only preview", async () => {
+    vi.mocked(generationApi.generateAvatar).mockRejectedValueOnce(new Error("未配置 OPENAI_API_KEY"));
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
+    await screen.findByAltText("待生成的肖像照片预览");
+    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), { target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] } });
+    await screen.findByRole("heading", { name: /确认并修正/ });
+    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
+    document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
+    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    await screen.findByText("未配置 OPENAI_API_KEY");
+    fireEvent.click(screen.getByRole("button", { name: "移除肖像，继续生成文字作品" }));
+    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    expect(screen.getByTestId("design-config-json")).toBeInTheDocument();
+  });
   it("opens the static preview without requesting server data or following a share hash", () => {
     const originalHash = window.location.hash;
     vi.stubEnv("MODE", "pages");

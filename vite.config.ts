@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => ({
   root: "apps/web",
   base: mode === "pages" ? "/BuildURProfile/" : "/",
   plugins: [react(), tailwindcss()],
-  server: { proxy: { "/api": "http://127.0.0.1:8787" } },
+  server: { proxy: { "/api": `http://127.0.0.1:${process.env.SERVER_PORT || "8787"}` } },
   test: {
     exclude: ["../api/**", "node_modules/**", "dist/**"],
     environment: "jsdom",

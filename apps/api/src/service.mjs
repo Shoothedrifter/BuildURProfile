@@ -28,7 +28,8 @@ function publicProject(project, db) {
     paid: entitlement?.status === "ACTIVE", pendingAction: project.pending_action,
     pendingAmountFen: pending?.amount_fen ?? null };
 }
-function cleanConfig(config) {
+export function cleanConfig(config) {
+  if (config?.heroArtwork) throw new ServiceError(403, "Wibi 肖像仅供本机预览，不能用于付费分享或导出。");
   if (!config || typeof config !== "object" || Array.isArray(config) ||
     !config.styleVector || !config.skin || !config.marquee || !config.stackedCards ||
     !config.content?.profile || !config.content?.expertise || !Array.isArray(config.content?.projects)) {

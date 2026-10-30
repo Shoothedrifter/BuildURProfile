@@ -5,6 +5,7 @@ import { loadSandboxPaymentEnv, paymentConfig, priceFenFromEnv } from "./config.
 import { createAlipayGateway } from "./gateway.mjs";
 import { createPaymentService } from "./service.mjs";
 import { createPaymentHttpServer } from "./http.mjs";
+import { createGenerationService } from "./generations.mjs";
 
 const localEnvFile = fileURLToPath(new URL("../../../.env", import.meta.url));
 if (existsSync(localEnvFile)) process.loadEnvFile(localEnvFile);
@@ -19,9 +20,12 @@ if (process.env.PAYMENT_ENV === "sandbox" || process.env.PAYMENT_ENV === "produc
 }
 const gateway = config ? createAlipayGateway(config) : null;
 const service = createPaymentService(db, { gateway, paymentConfig: config, configurationError });
-const server = createPaymentHttpServer({ db, service, paymentConfig: config, priceFen, configurationError });
-const port = Number(process.env.SERVER_PORT ?? 8787);
 const host = process.env.SERVER_HOST ?? "127.0.0.1";
+const avatarDemoEnabled = process.env.AVATAR_DEMO_ENABLED === "1" &&
+  ["127.0.0.1", "localhost", "::1"].includes(host) && process.env.PAYMENT_ENV !== "production";
+const generationService = avatarDemoEnabled ? createGenerationService({ db, assetRoot: process.env.AVATAR_ASSET_ROOT || "data/avatar-assets" }) : null;
+const server = createPaymentHttpServer({ db, service, generationService, paymentConfig: config, priceFen, configurationError });
+const port = Number(process.env.SERVER_PORT ?? 8787);
 server.listen(port, host, () => {
   process.stdout.write(`BuildURProfile server listening on ${host}:${port}\n`);
   if (!config) process.stdout.write(`Payment checkout unavailable: ${configurationError}\n`);

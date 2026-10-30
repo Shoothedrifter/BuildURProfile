@@ -9,8 +9,11 @@
   "scripts": {
     "dev": "npm run build:export && node apps/api/src/dev.mjs",
     "dev:server": "node apps/api/src/index.mjs",
+    "dev:worker": "node apps/worker/src/index.mjs",
+    "setup:avatar": "node scripts/install-wibi-demo.mjs",
     "start": "node apps/api/src/index.mjs",
     "test:payment": "npm run build && node --test apps/api/src/*.test.mjs",
+    "test:worker": "node --test apps/worker/src/*.test.mjs",
     "test": "vitest run",
     "build": "tsc --noEmit && npm run build:export && vite build",
     "build:pages": "tsc --noEmit && vite build --mode pages",
@@ -19,7 +22,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@langchain/langgraph": "^1.5.3",
+    "@langchain/langgraph-checkpoint-sqlite": "^1.1.0",
     "alipay-sdk": "^4.14.0",
+    "image-size": "^2.0.4",
+    "openai": "^7.45.1",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
@@ -32,6 +39,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",

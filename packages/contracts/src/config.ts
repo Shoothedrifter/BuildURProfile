@@ -78,4 +78,6 @@ export type DesignConfig = Readonly<{
   marquee: MarqueeConfig;
   stackedCards: StackedCardsConfig;
   content: ResumeContent;
+  /** Session-scoped local demo asset. Never sent to paid project APIs. */
+  heroArtwork?: Readonly<{ assetUrl: string; styleId: string; alt: string }>;
 }>;

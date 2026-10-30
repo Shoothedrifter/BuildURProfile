@@ -49,6 +49,18 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
       trade_status TEXT NOT NULL, accepted_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS avatar_assets (
+      id TEXT PRIMARY KEY, owner_session_id TEXT NOT NULL REFERENCES sessions(id), kind TEXT NOT NULL,
+      mime TEXT NOT NULL, path TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS generations (
+      id TEXT PRIMARY KEY, owner_session_id TEXT NOT NULL REFERENCES sessions(id),
+      portrait_asset_id TEXT REFERENCES avatar_assets(id), style_id TEXT, config_json TEXT,
+      idempotency_key TEXT NOT NULL, status TEXT NOT NULL, output_asset_id TEXT REFERENCES avatar_assets(id),
+      error TEXT, lease_until INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      UNIQUE(owner_session_id,idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS generation_queue ON generations(status, lease_until, created_at);
   `);
   const orderColumns = new Set(db.prepare("PRAGMA table_info(orders)").all().map((column) => column.name));
   for (const column of ["payment_env", "app_id", "seller_id", "seller_email"]) {

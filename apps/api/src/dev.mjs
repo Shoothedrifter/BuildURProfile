@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 
 const children = [
-  spawn(process.execPath, ["apps/api/src/index.mjs"], { stdio: "inherit" }),
-  spawn(process.execPath, ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "5173", "--strictPort"], { stdio: "inherit" })
+  spawn(process.execPath, ["apps/api/src/index.mjs"], { stdio: "inherit", env: { ...process.env, AVATAR_DEMO_ENABLED: "1" } }),
+  spawn(process.execPath, ["apps/worker/src/index.mjs"], { stdio: "inherit", env: { ...process.env, AVATAR_DEMO_ENABLED: "1" } }),
+  spawn(process.execPath, ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", process.env.VITE_PORT || "5173", "--strictPort"], { stdio: "inherit" })
 ];
 let stopping = false;
 function stop(code = 0) {
