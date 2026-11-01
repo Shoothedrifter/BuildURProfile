@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateKeyPairSync } from "node:crypto";
@@ -197,6 +197,21 @@ test("production HTTP serves the relocated web build and offer endpoint", async 
     assert.equal(page.status, 200);
     assert.match(page.headers.get("content-type"), /text\/html/);
     assert.match(await page.text(), /\/assets\/index-/);
+    const worker = readdirSync(new URL("../../web/dist/assets/", import.meta.url)).find((name) => name.startsWith("pdf.worker") && name.endsWith(".mjs"));
+    assert.ok(worker, "PDF.js worker must be present in the built web assets");
+    const workerResponse = await fetch(`${base}/assets/${worker}`, { method: "HEAD" });
+    assert.equal(workerResponse.status, 200);
+    assert.equal(workerResponse.headers.get("content-type"), "text/javascript; charset=utf-8");
+    const pdfChunk = readdirSync(new URL("../../web/dist/assets/", import.meta.url)).find((name) => /^pdf-.*\.js$/.test(name));
+    assert.ok(pdfChunk, "PDF.js code chunk must be present in the built web assets");
+    for (const asset of [worker, pdfChunk]) {
+      const source = readFileSync(new URL(`../../web/dist/assets/${asset}`, import.meta.url));
+      const response = await fetch(`${base}/assets/${asset}`, { headers: { "accept-encoding": "gzip" } });
+      assert.equal(response.headers.get("content-encoding"), "gzip");
+      assert.equal(response.headers.get("cache-control"), "public, max-age=31536000, immutable");
+      assert.ok(Number(response.headers.get("content-length")) < source.length);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), source);
+    }
     const offer = await fetch(`${base}/api/offer`);
     assert.equal(offer.status, 200);
     assert.equal((await offer.json()).priceFen, 199);

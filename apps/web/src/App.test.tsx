@@ -7,9 +7,11 @@ import rawConfig from "./demo/config.json";
 import { extractPdfText } from "./lib/pdf";
 import { paymentApi } from "./lib/paymentApi";
 import { generationApi } from "./lib/generationApi";
+import { preparePortrait } from "./lib/portrait";
 
 vi.mock("./lib/pdf", () => ({ extractPdfText: vi.fn() }));
 vi.mock("./lib/generationApi", () => ({ generationApi: { generateAvatar: vi.fn(), resumeGeneration: vi.fn().mockResolvedValue(null), clearSavedGeneration: vi.fn() } }));
+vi.mock("./lib/portrait", () => ({ preparePortrait: vi.fn().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=") }));
 vi.mock("./lib/paymentApi", () => ({
   paymentApi: {
     offer: vi.fn().mockResolvedValue({ configured: true, mode: "sandbox", priceFen: 199, priceYuan: "1.99", service: "正式托管分享与静态网站导出", shareDays: 7 }),
@@ -40,6 +42,7 @@ beforeEach(() => {
   vi.mocked(generationApi.generateAvatar).mockReset();
   vi.mocked(generationApi.resumeGeneration).mockReset().mockResolvedValue(null);
   vi.mocked(generationApi.clearSavedGeneration).mockClear();
+  vi.mocked(preparePortrait).mockReset().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=");
   vi.mocked(paymentApi.createProject).mockClear();
   vi.mocked(paymentApi.publish).mockClear();
   vi.mocked(paymentApi.export).mockClear();
@@ -159,6 +162,13 @@ describe("showcase builder", () => {
     } finally {
       window.history.replaceState(null, "", originalHash || window.location.pathname);
     }
+  });
+
+  it("shows the local avatar controls in a tunnel production build", () => {
+    vi.stubEnv("MODE", "tunnel");
+    vi.stubEnv("DEV", false);
+    render(<App />);
+    expect(screen.getByLabelText("选择个人肖像照片")).toBeInTheDocument();
   });
 
   it("keeps PDF preview available in static mode without showing server delivery actions", async () => {

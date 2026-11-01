@@ -17,6 +17,7 @@
     "test:worker": "node --test apps/worker/src/*.test.mjs",
     "test": "vitest run",
     "build": "tsc --noEmit && npm run build:export && vite build",
+    "build:tunnel": "tsc --noEmit && vite build --mode tunnel",
     "build:pages": "tsc --noEmit && vite build --mode pages",
     "build:export": "vite build --config vite.export.config.ts",
     "verify:export": "npm run build:export && node scripts/verify-export.mjs",

@@ -3,6 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import { ServiceError } from "./service.mjs";
 import { buildStaticZip } from "./export.mjs";
 import { listAvatarStyles } from "../../worker/src/styles.mjs";
@@ -10,7 +11,7 @@ import { listAvatarStyles } from "../../worker/src/styles.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const COOKIE = "burp_session";
 const SESSION_TTL = 365 * 24 * 60 * 60 * 1000;
-const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
+const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".ico": "image/x-icon" };
 
 export function loadSessionSecret(path = join(root, "data/session-secret")) {
   mkdirSync(join(root, "data"), { recursive: true, mode: 0o700 });
@@ -171,8 +172,17 @@ export function createPaymentHttpServer({ db, service, generationService = null,
       const file = candidate.startsWith(staticDir + "/") && existsSync(candidate) && extname(candidate)
         ? candidate : join(staticDir, "index.html");
       if (!existsSync(file)) throw new ServiceError(404, "页面未构建。请先运行 npm run build。");
-      res.writeHead(200, { "content-type": mime[extname(file)] ?? "application/octet-stream", "cache-control": "no-store" });
-      if (req.method === "HEAD") res.end(); else res.end(readFileSync(file));
+      const contentType = mime[extname(file)] ?? "application/octet-stream";
+      const hashedAsset = relative.startsWith("assets/") && /-[A-Za-z0-9_-]{8,}\.[^.]+$/.test(relative);
+      const source = readFileSync(file);
+      const useGzip = hashedAsset && /(?:javascript|text\/css)/.test(contentType) &&
+        (req.headers["accept-encoding"] ?? "").includes("gzip");
+      const body = useGzip ? gzipSync(source) : source;
+      res.writeHead(200, { "content-type": contentType, "content-length": body.length,
+        "cache-control": hashedAsset ? "public, max-age=31536000, immutable" : "no-store",
+        "x-content-type-options": "nosniff", ...(hashedAsset ? { vary: "Accept-Encoding" } : {}),
+        ...(useGzip ? { "content-encoding": "gzip" } : {}) });
+      if (req.method === "HEAD") res.end(); else res.end(body);
     } catch (error) {
       const isNotify = req.url?.startsWith("/api/payment/notify");
       if (isNotify) { res.writeHead(400, { "content-type": "text/plain; charset=utf-8" }); res.end("fail"); return; }

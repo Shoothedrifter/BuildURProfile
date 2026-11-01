@@ -8,6 +8,7 @@ coverage/
 data/
 .superpowers/
 .env
+/env
 /.alipay-sandbox.json
 docs/
 apps/web/src/__fixtures__/
