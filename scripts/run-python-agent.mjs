@@ -7,7 +7,8 @@ const env = { ...process.env };
 for (const key of Object.keys(env)) if (key.startsWith("ALIPAY_") || key.startsWith("PAYMENT_")) delete env[key];
 if (existsSync(".env.agent")) {
   const file = parseEnv(readFileSync(".env.agent", "utf8"));
-  for (const key of ["OPENAI_API_KEY", "OPENAI_IMAGE_MODEL", "IMAGE_PROVIDER", "AGENT_CHECKPOINT_PATH"]) {
+  for (const key of ["OPENAI_API_KEY", "OPENAI_IMAGE_MODEL", "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN", "IMAGE_PROVIDER", "AGENT_CHECKPOINT_PATH"]) {
     if (file[key] !== undefined) env[key] = file[key];
   }
 }

@@ -10,7 +10,7 @@ from contextlib import suppress
 from typing import Any
 
 from .graph import WORKFLOW_VERSION, build_generation_graph, task_input
-from .providers.openai_images import ImageProviderError
+from .providers.base import ImageProviderError
 from .skills.registry import SkillRegistry, default_registry
 from .transport.node_api import AgentTask, CancelRequested, LeaseLost, NodeAgentClient
 

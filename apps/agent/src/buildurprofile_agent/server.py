@@ -12,7 +12,7 @@ import uvicorn
 from fastapi import FastAPI, Response
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-from .providers.openai_images import OpenAIImageProvider
+from .providers import create_image_provider
 from .transport.node_api import NodeAgentClient
 from .worker import worker_loop
 
@@ -30,10 +30,7 @@ async def lifespan(app: FastAPI):
     client = NodeAgentClient(api_url, token)
     async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as saver:
         await saver.setup()
-        provider_name = os.getenv("IMAGE_PROVIDER", "openai")
-        if provider_name != "openai":
-            raise ValueError("Unsupported IMAGE_PROVIDER")
-        provider = OpenAIImageProvider()
+        provider = create_image_provider(os.getenv("IMAGE_PROVIDER", "cloudflare"))
         worker = asyncio.create_task(worker_loop(client, provider, saver,
             worker_id=os.getenv("AGENT_WORKER_ID") or None))
         app.state.worker = worker

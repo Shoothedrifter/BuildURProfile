@@ -44,4 +44,4 @@ packages/contracts/schema/ 版本化 JSON 合同
 
 ## 部署与验证
 
-Docker Compose 分 `web-api`、`agent` 两个服务及私有持久卷；`agent` 的 `.env.agent` 才包含 `OPENAI_API_KEY`，Node 的 `.env.api` 才包含支付配置，二者都不 COPY 入镜像。单机 Node 管理 SQLite/资产卷，Python 只走内部 API，不直接挂载支付数据库；LangGraph SQLite checkpoint 单独挂载给 Python。多副本生产需要迁移 PostgreSQL 与对象存储。CI 验收覆盖 TS/Python 评分映射黄金样例、无照片完整图、带模拟图像 API 的肖像图、Node↔Python 内部接口、支付与 ZIP 回归、Docker 构建。没有可用图像 API Key 时只能完成模拟路径，不能声称真实生图验收。
+Docker Compose 分 `web-api`、`agent` 两个服务及私有持久卷；`agent` 的 `.env.agent` 才包含 Cloudflare 的 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN`（可选 OpenAI 配置），Node 的 `.env.api` 才包含支付配置，二者都不 COPY 入镜像。单机 Node 管理 SQLite/资产卷，Python 只走内部 API，不直接挂载支付数据库；LangGraph SQLite checkpoint 单独挂载给 Python。多副本生产需要迁移 PostgreSQL 与对象存储。CI 验收覆盖 TS/Python 评分映射黄金样例、无照片完整图、带模拟图像 API 的肖像图、Node↔Python 内部接口、支付与 ZIP 回归、Docker 构建。没有可用图像服务凭据时只能完成模拟路径，不能声称真实生图验收。

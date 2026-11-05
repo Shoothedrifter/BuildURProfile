@@ -5,25 +5,11 @@ from __future__ import annotations
 import base64
 import io
 import os
-from dataclasses import dataclass
-
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI
 from PIL import Image
 
 from ..transport.node_api import Portrait
-
-
-@dataclass(frozen=True)
-class GeneratedImage:
-    bytes: bytes
-    mime: str = "image/png"
-
-
-class ImageProviderError(RuntimeError):
-    def __init__(self, code: str, retryable: bool = False) -> None:
-        super().__init__(code)
-        self.code = code
-        self.retryable = retryable
+from .base import GeneratedImage, ImageProviderError
 
 
 def _image_file(data: bytes, mime: str, name: str) -> tuple[str, bytes, str]:

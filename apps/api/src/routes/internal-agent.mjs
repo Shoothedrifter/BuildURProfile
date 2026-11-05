@@ -10,6 +10,7 @@ const RETRYABLE_CODES = new Set(["PROVIDER_RATE_LIMIT", "PROVIDER_UNAVAILABLE"])
 const ERROR_MESSAGES = {
   PROVIDER_RATE_LIMIT: "图像服务暂时繁忙，系统会在限定次数内重试。",
   PROVIDER_UNAVAILABLE: "图像服务暂时不可用，系统会在限定次数内重试。",
+  PROVIDER_AUTH: "图像服务认证失败，请检查 Agent 的 Cloudflare Account ID 和 API Token。",
   PROVIDER_TIMEOUT: "图像生成超时。请检查任务状态后再尝试。",
   PROVIDER_REJECTED: "图像服务未能处理这张照片，请更换照片或风格。",
   STYLE_UNAVAILABLE: "所选风格资源暂不可用。",

@@ -27,7 +27,7 @@ npm run dev
 
 ### 肖像 Skill Demo
 
-首次使用运行 `npm run setup:avatar`，下载固定 commit `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 三种肖像风格并校验哈希。复制 `.env.agent.example` 为 `.env.agent`，只在该文件填写 `OPENAI_API_KEY`，Python Agent 使用图像编辑 API 生图；无照片作品无需该密钥。Node API 和浏览器不会接收图像密钥。
+首次使用运行 `npm run setup:avatar`，下载固定 commit `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 三种肖像风格并校验哈希。复制 `.env.agent.example` 为 `.env.agent`，在该文件填写 `CLOUDFLARE_ACCOUNT_ID` 和具备 Workers AI Read、Edit 权限的 `CLOUDFLARE_API_TOKEN`。Python Agent 默认使用 Cloudflare Workers AI 的 `@cf/black-forest-labs/flux-2-klein-4b`；该模型要求 multipart 输入，适配器会把肖像和风格参考图缩到 480 像素长边。无照片作品无需图像服务凭据。Node API 和浏览器不会接收图像密钥。
 
 `npm run dev` 在回环地址同时启动 Vite（5173）、Node API（8787）和 Python Agent（8788）。首页可选择一张本人照片与复古扁平动画头、蜡笔极简扁平画、颗粒绒感玩偶之一；照片在点击生成前只留在浏览器。确认 PDF 内容并完成测评后，无照片和有照片作品均由图执行；有照片时 Python Agent 调用配置的图像 API，成图位于作品首屏。源照片和成图属于当前匿名会话，分别在 1 天和 7 天后过期；每个会话 24 小时最多发起 5 次肖像生成。Wibi 功能仅在本机开发模式启用，GitHub Pages 与生产启动不提供该入口。
 
@@ -37,7 +37,7 @@ Wibi 的视觉规则仅许可个人非商业使用。当前成图保留原风格
 
 ### 单机容器部署
 
-分别从 `.env.api.example`、`.env.agent.example` 和 `.env.compose.example` 准备不提交的 `.env.api`、`.env.agent`、`.env`；若根目录已有 `.env`，保留现有支付配置并补入随机生成的 `AGENT_SERVICE_TOKEN`（至少 32 字符），不要覆盖原文件。把支付宝参数只填在 `.env.api`，图像 API 密钥只填在 `.env.agent`，共享服务令牌通过 Compose 注入两端。运行 `docker compose -f compose.agent.yml up --build`；Node API 在宿主机 `127.0.0.1:8787`，Agent 仅在容器网络中。公网部署需另配 HTTPS 反向代理，并拒绝转发 `/_internal/agent/`。当前容器部署默认关闭 Wibi 肖像入口，直到商业使用权和付费资产交付设计完成。
+分别从 `.env.api.example`、`.env.agent.example` 和 `.env.compose.example` 准备不提交的 `.env.api`、`.env.agent`、`.env`；若根目录已有 `.env`，保留现有支付配置并补入随机生成的 `AGENT_SERVICE_TOKEN`（至少 32 字符），不要覆盖原文件。把支付宝参数只填在 `.env.api`，Cloudflare Account ID 和 API Token 只填在 `.env.agent`，共享服务令牌通过 Compose 注入两端。运行 `docker compose -f compose.agent.yml up --build`；Node API 在宿主机 `127.0.0.1:8787`，Agent 仅在容器网络中。公网部署需另配 HTTPS 反向代理，并拒绝转发 `/_internal/agent/`。当前容器部署默认关闭 Wibi 肖像入口，直到商业使用权和付费资产交付设计完成。
 
 打开 Vite 打印的本地地址。上传可选中文本的 PDF 后，必须核对姓名、工作经历、项目、技能、教育，才能进入 8 题测评。生成页可改展示文案、跑马灯图片、项目图片和交互强度；改动立即进入预览、Design Config JSON 与静态网站导出。首页的“查看视觉样例”使用 `apps/web/src/demo/config.json` 中的三板块 mock，保留三套皮肤切换。
 
@@ -56,7 +56,7 @@ PDF.js 和 PDF worker 随页面本地打包；PDF 文件字节、提取文本和
 - `packages/skills/src/assessment.ts`、`mapping.ts`：Pages 浏览器预览的测评与设计规则；与 Python 规则用黄金样例校验一致性。
 - `apps/agent/src/buildurprofile_agent/graph.py`：完整作品生成 LangGraph。
 - `apps/agent/src/buildurprofile_agent/skills/registry.py`：Agent Skill 合同、能力隔离、版本和许可策略。
-- `apps/agent/src/buildurprofile_agent/providers/openai_images.py`：外部图像编辑 API 适配器。
+- `apps/agent/src/buildurprofile_agent/providers/cloudflare_images.py`：Cloudflare Workers AI 的 FLUX.2 Klein 4B multipart 适配器；`openai_images.py` 保留为可选适配器。
 - `packages/storage/src/generation/`：确认内容清洗、队列租约与资产存储。
 - `apps/web/src/components/EditorPanel.tsx`：结果页文字、图片与交互强度编辑。
 - `apps/api/src/service.mjs` 与 `apps/api/src/http.mjs`：项目归属、订单、支付资格、分享和下载的服务端校验。

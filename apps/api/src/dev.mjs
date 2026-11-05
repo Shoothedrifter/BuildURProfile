@@ -8,12 +8,15 @@ const token = process.env.AGENT_SERVICE_TOKEN || randomBytes(32).toString("hex")
 const apiEnv = { ...process.env, AGENT_SERVICE_TOKEN: token, AVATAR_DEMO_ENABLED: "1" };
 delete apiEnv.OPENAI_API_KEY;
 delete apiEnv.OPENAI_IMAGE_MODEL;
+delete apiEnv.CLOUDFLARE_API_TOKEN;
+delete apiEnv.CLOUDFLARE_ACCOUNT_ID;
 const agentEnv = { ...process.env, AGENT_SERVICE_TOKEN: token,
   AGENT_API_URL: `http://127.0.0.1:${process.env.SERVER_PORT || "8787"}` };
 for (const key of Object.keys(agentEnv)) if (key.startsWith("ALIPAY_") || key.startsWith("PAYMENT_")) delete agentEnv[key];
 if (existsSync(".env.agent")) {
   const file = parseEnv(readFileSync(".env.agent", "utf8"));
-  for (const key of ["OPENAI_API_KEY", "OPENAI_IMAGE_MODEL", "IMAGE_PROVIDER", "AGENT_CHECKPOINT_PATH"]) {
+  for (const key of ["OPENAI_API_KEY", "OPENAI_IMAGE_MODEL", "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN", "IMAGE_PROVIDER", "AGENT_CHECKPOINT_PATH"]) {
     if (file[key] !== undefined) agentEnv[key] = file[key];
   }
 }
