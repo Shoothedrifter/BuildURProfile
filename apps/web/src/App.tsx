@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import type { DesignConfig, JobRole } from "../../../packages/contracts/src/config";
+import type { DesignConfig, JobRole, ResumeContent } from "../../../packages/contracts/src/config";
 import rawConfig from "./demo/config.json";
 import { ShowcasePage } from "./ShowcasePage";
 import { EditorPanel } from "./components/EditorPanel";
-import { QUESTIONS, isAssessmentComplete, scoreAnswers } from "./lib/assessment";
+import { QUESTIONS, isAssessmentComplete } from "./lib/assessment";
 import { inlineConfigImages } from "./lib/export";
-import { styleToConfig } from "./lib/mapping";
 import { extractPdfText } from "./lib/pdf";
-import { parseResumePages, skillShortLabels, toResumeContent, validateResumeDraft } from "./lib/resume";
+import { parseResumePages, toResumeContent, validateResumeDraft } from "./lib/resume";
 import type { DraftField, ResumeDraft } from "./lib/resume";
 import { paymentApi, submitAlipayForm } from "./lib/paymentApi";
 import type { Offer, OwnedProject } from "./lib/paymentApi";
 import { toPublishedConfig } from "./lib/publication";
 import { generationApi } from "./lib/generationApi";
 import { preparePortrait } from "./lib/portrait";
-import type { AvatarStyleId } from "./lib/generationApi";
+import type { AvatarStyleId, GenerationStatus } from "./lib/generationApi";
+import { AVATAR_STYLES } from "../../../packages/skills/src/avatar-catalog";
+import { createDefaultSkillRegistry } from "../../../packages/skills/src/registry";
+
+const workflowSkills = createDefaultSkillRegistry();
+const agentStatusText = (status: GenerationStatus): string => status === "QUEUED"
+  ? "作品已排队，等待 Agent 工作流…"
+  : status === "CANCELLING" ? "正在取消任务；已发出的图像请求可能无法撤回。" : "Agent 工作流正在生成作品…";
 
 type Phase = "upload" | "confirm" | "quiz" | "result" | "mock";
 type DraftGroup = "workExperience" | "projects" | "skills" | "education";
@@ -31,12 +37,6 @@ const roles: { value: JobRole; label: string }[] = [
   { value: "frontend-creative-developer", label: "前端 / 创意开发" },
   { value: "brand-motion-copy", label: "品牌 / 动效 / 文案" }
 ];
-const avatarStyles: { id: AvatarStyleId; label: string; hint: string }[] = [
-  { id: "retro-flat-anime-head", label: "复古扁平动画头", hint: "动画特写 / 纯色背景" },
-  { id: "crayon-flat-naive", label: "蜡笔极简扁平画", hint: "手绘蜡笔 / 白纸背景" },
-  { id: "textile-toy-portrait", label: "颗粒绒感玩偶", hint: "纺织玩偶 / 白底棚拍" }
-];
-
 function confirmationGroupTitle(key: DraftGroup, title: string, entries: DraftField[]): string {
   return key === "workExperience" && entries.some((entry) => entry.experienceKind === "campus")
     ? "工作 / 校园经历"
@@ -56,15 +56,6 @@ function touchInput(): boolean {
 function shareToken(): string | null {
   const match = /^#share=([A-Za-z0-9_-]{43})$/.exec(window.location.hash);
   return match?.[1] ?? null;
-}
-
-function touchSafe(config: DesignConfig): DesignConfig {
-  // Touch readers keep manual card controls while marquee motion becomes a constant loop.
-  return {
-    ...config,
-    marquee: { ...config.marquee, bindToScroll: false, pauseOnHover: false },
-    stackedCards: { ...config.stackedCards, enableTilt: false, autoPlay: false }
-  };
 }
 
 export default function App() {
@@ -98,18 +89,27 @@ export default function App() {
   const [avatarStyle, setAvatarStyle] = useState<AvatarStyleId>("retro-flat-anime-head");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const generationVersion = useRef(0);
+  const pdfVersion = useRef(0);
 
   useEffect(() => {
-    if (!avatarDemo) return;
+    if (staticPreview || window.location.pathname === "/payment/return") return;
     let active = true;
     const version = generationVersion.current;
-    void generationApi.resumeGeneration().then((result) => {
+    void generationApi.resumeGeneration((status) => {
+      if (active && version === generationVersion.current) {
+        setProgress(agentStatusText(status));
+      }
+    }).then((result) => {
       if (!active || version !== generationVersion.current || !result) return;
-      setGenerated({ ...result.config, heroArtwork: result.heroArtwork });
-      setResultTab("preview"); setPhase("result");
-    }).catch((cause) => { if (active && version === generationVersion.current) setError(cause instanceof Error ? cause.message : "恢复肖像任务失败。"); });
+      setGenerated({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
+      setProgress(""); setResultTab(result.heroArtwork ? "preview" : "json"); setPhase("result");
+    }).catch((cause) => {
+      if (active && version === generationVersion.current) {
+        setProgress(""); setError(cause instanceof Error ? cause.message : "恢复生成任务失败，请重新上传简历。");
+      }
+    });
     return () => { active = false; };
-  }, [avatarDemo]);
+  }, [staticPreview]);
 
   useEffect(() => {
     if (staticPreview) return;
@@ -175,19 +175,11 @@ export default function App() {
     return () => window.removeEventListener("touchstart", onTouch);
   }, []);
 
-  useEffect(() => {
-    if (!isTouch) return;
-    setGenerated((previous) => previous ? {
-      ...previous,
-      marquee: { ...previous.marquee, bindToScroll: false, pauseOnHover: false },
-      stackedCards: { ...previous.stackedCards, enableTilt: false, autoPlay: false }
-    } : previous);
-  }, [isTouch]);
-
   const onFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     if (!file) return;
-    if (avatarDemo) { generationVersion.current++; generationApi.clearSavedGeneration(); setGeneratingAvatar(false); setProgress(""); }
+    const currentPdfVersion = ++pdfVersion.current;
+    if (!staticPreview) { generationVersion.current++; void generationApi.cancelSavedGeneration(); setGeneratingAvatar(false); setProgress(""); }
     setProjectId(null); setShare(null); setSavedShares([]);
     setError("");
     if (!file.name.toLowerCase().endsWith(".pdf")) {
@@ -197,9 +189,15 @@ export default function App() {
     setFileName(file.name);
     setProgress("正在读取 PDF…");
     try {
-      const extracted = await extractPdfText(file, (done, total) => setProgress(`正在读取第 ${done} / ${total} 页…`));
+      const extracted = await workflowSkills.run("resume.extract.v1", { file,
+        onProgress: (done: number, total: number) => {
+          if (currentPdfVersion === pdfVersion.current) setProgress(`正在读取第 ${done} / ${total} 页…`);
+        } },
+      { runtime: "browser", capabilities: { extractPdfText } }) as { text: string; pages: string[] };
+      if (currentPdfVersion !== pdfVersion.current) return;
       if (!extracted.text.trim()) throw new Error("这份 PDF 没有可提取文本。当前版本暂不支持扫描件 OCR。");
-      const nextDraft = parseResumePages(extracted.pages);
+      const { draft: nextDraft } = workflowSkills.runSync("resume.parse.v1", { pages: extracted.pages },
+        { runtime: "browser", capabilities: { parseResumePages } }) as { draft: ResumeDraft };
       if (!nextDraft.name.value || (!nextDraft.projects.length && !nextDraft.workExperience.length)) {
         throw new Error("PDF 文本已提取，但未能自动识别简历章节。请检查排版或换一份带清晰章节标题的 PDF。");
       }
@@ -207,6 +205,7 @@ export default function App() {
       setProgress("");
       setPhase("confirm");
     } catch (cause) {
+      if (currentPdfVersion !== pdfVersion.current) return;
       setProgress("");
       setError(cause instanceof Error ? cause.message : "PDF 读取失败，请重试。");
     }
@@ -224,7 +223,8 @@ export default function App() {
   };
   const confirm = () => {
     if (!draft) return;
-    const problems = validateResumeDraft(draft);
+    const { problems } = workflowSkills.runSync("resume.confirm.v1", { draft },
+      { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as { problems: string[] };
     if (problems.length) {
       setError(problems.slice(0, 3).join("；"));
       return;
@@ -238,7 +238,7 @@ export default function App() {
     if (!file) return;
     setError("");
     const version = ++generationVersion.current;
-    generationApi.clearSavedGeneration();
+    void generationApi.cancelSavedGeneration();
     setGeneratingAvatar(false); setProgress("正在压缩照片…");
     setPhotoDataUrl(null); setPhotoName("");
     void preparePortrait(file).then((dataUrl) => {
@@ -251,7 +251,7 @@ export default function App() {
   };
   const clearPhoto = () => {
     generationVersion.current++;
-    generationApi.clearSavedGeneration();
+    void generationApi.cancelSavedGeneration();
     setPhotoDataUrl(null); setPhotoName("");
     setGeneratingAvatar(false); setProgress("");
     setGenerated((previous) => {
@@ -291,24 +291,43 @@ export default function App() {
   };
   const generate = async () => {
     if (!draft || !isAssessmentComplete(answers)) return;
-    const vector = scoreAnswers(answers);
-    const mapped = styleToConfig(vector, role);
-    const content = toResumeContent(draft);
-    const config: DesignConfig = {
-      ...mapped,
-      marquee: {
-        ...mapped.marquee,
-        ...(isTouch ? { bindToScroll: false, pauseOnHover: false } : {}),
-        items: skillShortLabels(content.expertise.skills)
-      },
-      stackedCards: isTouch ? { ...mapped.stackedCards, enableTilt: false, autoPlay: false } : mapped.stackedCards,
-      content
-    };
-    if (avatarDemo && photoDataUrl) {
-      await runAvatarGeneration(config, false);
+    const confirmation = workflowSkills.runSync("resume.confirm.v1", { draft },
+      { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as
+      { problems: string[]; content?: ResumeContent };
+    if (confirmation.problems.length || !confirmation.content) {
+      setError(confirmation.problems.slice(0, 3).join("；") || "请重新确认简历内容。");
       return;
     }
-    showResult(config);
+    // resume.confirm.v1 strips sourceRefs before anything enters API or graph state.
+    const content = confirmation.content;
+    if (staticPreview) {
+      const { vector } = workflowSkills.runSync("assessment.score.v1", { answers },
+        { runtime: "browser" });
+      const { config: mapped } = workflowSkills.runSync("design.map.v1", { vector, role },
+        { runtime: "browser" });
+      const { config } = workflowSkills.runSync("resume.compose.v1", { config: mapped, content },
+        { runtime: "browser" });
+      showResult(config);
+      return;
+    }
+    const version = ++generationVersion.current;
+    void generationApi.cancelSavedGeneration();
+    setGeneratingAvatar(true); setError("");
+    setProgress(photoDataUrl ? "正在上传肖像，准备 Agent 工作流…" : "正在提交 Agent 工作流…");
+    try {
+      const result = await generationApi.generatePortfolio({ role, answers, content },
+        avatarDemo && photoDataUrl ? { dataUrl: photoDataUrl, styleId: avatarStyle } : undefined,
+        (status) => {
+          if (version === generationVersion.current) setProgress(agentStatusText(status));
+        });
+      if (version !== generationVersion.current) return;
+      showResult({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
+    } catch (cause) {
+      if (version !== generationVersion.current) return;
+      setError(cause instanceof Error ? cause.message : "作品生成失败，请重试。");
+    } finally {
+      if (version === generationVersion.current) { setProgress(""); setGeneratingAvatar(false); }
+    }
   };
   const editGenerated = (update: (current: DesignConfig) => DesignConfig) => {
     setGenerated((previous) => previous ? update(previous) : previous);
@@ -428,11 +447,11 @@ export default function App() {
     }
   };
   const savedShareList = savedShares.length > 0 && <section className="saved-shares" aria-labelledby="saved-shares-heading"><div><h2 id="saved-shares-heading">已发布链接</h2><p>服务端保存，默认 7 天后失效。项目已付费可重新发布。</p></div><ul>{savedShares.map((saved) => <li key={saved.id}><div><strong>{saved.id.slice(0, 12)}…</strong><span>有效至 {new Date(saved.expiresAt).toLocaleString("zh-CN")}</span></div><a href={saved.url} target="_blank" rel="noopener noreferrer">打开分享 ↗</a><button type="button" aria-label={"删除分享 " + saved.id} onClick={() => void removeSavedShare(saved.id)}>删除</button></li>)}</ul></section>;
-  const avatarPicker = avatarDemo && <section className="avatar-picker" aria-label="虚拟形象风格"><div className="avatar-picker-heading"><div><span>OPTIONAL / AVATAR</span><h2>上传个人肖像，生成动画风格 IP</h2></div><p>照片仅在点击生成后上传。使用公网演示网址时，照片会经该网址的 HTTPS 服务器转发到这台 Mac，由本机图像模型处理。Wibi Style 仅供个人非商业本机预览。</p></div><div className="avatar-picker-grid"><label className="avatar-photo"><strong>选择一张个人肖像</strong><small>单人、正面或轻微侧面；PNG / JPEG / WebP，最多 10 MiB，上传前自动压缩</small><input aria-label="选择个人肖像照片" type="file" accept="image/png,image/jpeg,image/webp" onChange={onPhoto} />{photoDataUrl && <img src={photoDataUrl} alt="待生成的肖像照片预览" />}{photoName && <span>{photoName}</span>}</label><div className="avatar-style-options">{avatarStyles.map((style) => <button key={style.id} type="button" aria-pressed={avatarStyle === style.id} className={avatarStyle === style.id ? "avatar-style selected" : "avatar-style"} onClick={() => setAvatarStyle(style.id)}><strong>{style.label}</strong><small>{style.hint}</small></button>)}</div></div><p className="avatar-credit">Visual Skill by @威比 Hunter Wei. · <a href="https://github.com/Vieeeeeee/wibi-style" target="_blank" rel="noreferrer">Wibi Style 来源 ↗</a></p></section>;
+  const avatarPicker = avatarDemo && <section className="avatar-picker" aria-label="虚拟形象风格"><div className="avatar-picker-heading"><div><span>OPTIONAL / AVATAR</span><h2>上传个人肖像，生成动画风格 IP</h2></div><p>照片仅在点击生成后上传到本机 API；Agent 会将照片和所选风格参考图发送给外部图像服务处理。Wibi Style 当前仅供个人非商业预览。</p></div><div className="avatar-picker-grid"><label className="avatar-photo"><strong>选择一张个人肖像</strong><small>单人、正面或轻微侧面；PNG / JPEG / WebP，最多 10 MiB，上传前自动压缩</small><input aria-label="选择个人肖像照片" type="file" accept="image/png,image/jpeg,image/webp" onChange={onPhoto} />{photoDataUrl && <img src={photoDataUrl} alt="待生成的肖像照片预览" />}{photoName && <span>{photoName}</span>}</label><div className="avatar-style-options">{AVATAR_STYLES.map((style) => <button key={style.id} type="button" aria-pressed={avatarStyle === style.id} className={avatarStyle === style.id ? "avatar-style selected" : "avatar-style"} onClick={() => setAvatarStyle(style.id)}><strong>{style.label}</strong><small>{style.hint}</small></button>)}</div></div><p className="avatar-credit">Visual Skill by @威比 Hunter Wei. · <a href="https://github.com/Vieeeeeee/wibi-style" target="_blank" rel="noreferrer">Wibi Style 来源 ↗</a></p></section>;
 
   if (shareView.requested) {
     return shareView.loading ? <div className="share-unavailable"><p>正在读取分享作品…</p></div> : shareView.config
-      ? <ShowcasePage config={isTouch ? touchSafe(shareView.config) : shareView.config} preserveShareHash touchDowngraded={isTouch} />
+      ? <ShowcasePage config={shareView.config} preserveShareHash touchDowngraded={isTouch} />
       : <div className="share-unavailable"><div className="builder-brand"><span>b<span>u</span>.</span><strong>BUILD YOUR PROFILE</strong></div><h1>分享链接已失效</h1><p>链接可能已过期或被发布者撤销。</p><a className="primary-button" href="#work" onClick={() => { window.location.hash = "work"; window.location.reload(); }}>返回生成器 <span>↗</span></a></div>;
   }
 
@@ -455,6 +474,7 @@ export default function App() {
         </div>
         {progress && <p className="builder-status" role="status">{progress}</p>}
         {projects.length > 0 && <section className="saved-shares"><div><h2>我的作品草稿</h2><p>草稿与付款资格绑定到当前浏览器的服务端匿名会话。</p></div><ul>{projects.map((project) => <li key={project.id}><div><strong>{project.config.content.profile.name || "未命名作品"}</strong><span>{project.paid ? "已解锁分享与导出" : "未付款 · 可继续编辑"}</span></div><button type="button" onClick={() => {
+          generationVersion.current++; void generationApi.cancelSavedGeneration(); setProgress("");
           setProjectId(project.id); setGenerated(project.config); setPhase("result"); setShare(null);
           void syncShares(project.id);
         }}>继续编辑 ↗</button></li>)}</ul></section>}
@@ -472,7 +492,7 @@ export default function App() {
         <div className="role-select"><label htmlFor="job-role">展示方向</label><select id="job-role" value={role} onChange={(event) => setRole(event.target.value as JobRole)}>{roles.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
         <div className="quiz-list">{QUESTIONS.map((question, index) => <fieldset className="quiz-question" key={question.id}><legend><span>{String(index + 1).padStart(2, "0")}</span>{question.prompt}</legend><div className="quiz-options">{question.options.map((option, optionIndex) => <label key={optionIndex} className={answers[question.id] === optionIndex ? "quiz-option selected" : "quiz-option"}><input type="radio" name={question.id} checked={answers[question.id] === optionIndex} onChange={() => setAnswers((previous) => ({ ...previous, [question.id]: optionIndex }))} /><span>{option.label}</span><b aria-hidden="true">↗</b></label>)}</div></fieldset>)}</div>
         {isTouch && <p className="touch-note">检测到触屏：卡片改为手动切换，跑马灯恒定滚动。</p>}
-        <div className="stage-actions"><p>已回答 {Object.keys(answers).length} / 8 题{photoDataUrl && " · 将生成肖像并调用图像服务"}</p><button className="primary-button" type="button" disabled={!isAssessmentComplete(answers) || generatingAvatar} onClick={() => void generate()}>{generatingAvatar ? "正在生成肖像…" : "生成 Design Config"} <span>↗</span></button></div>
+        <div className="stage-actions"><p>已回答 {Object.keys(answers).length} / 8 题{photoDataUrl && " · 将生成肖像并调用图像服务"}</p><button className="primary-button" type="button" disabled={!isAssessmentComplete(answers) || generatingAvatar} onClick={() => void generate()}>{generatingAvatar ? "正在生成作品…" : "生成 Design Config"} <span>↗</span></button></div>
         {photoDataUrl && <button type="button" className="avatar-remove" onClick={() => { clearPhoto(); setError(""); }}>移除肖像，继续生成文字作品</button>}
         {progress && <p className="builder-status" role="status">{progress}</p>}
       </section>}
@@ -487,7 +507,7 @@ export default function App() {
           <div className="result-display">
             <div className="result-toolbar"><div role="tablist" aria-label="结果视图"><button type="button" role="tab" aria-selected={resultTab === "json"} className={resultTab === "json" ? "selected" : ""} onClick={() => setResultTab("json")}>Design Config JSON</button><button type="button" role="tab" aria-selected={resultTab === "preview"} className={resultTab === "preview" ? "selected" : ""} onClick={() => setResultTab("preview")}>网页预览</button></div><div className="result-toolbar-actions"><button type="button" className="ghost-button" onClick={() => { setAnswers({}); setPhase("quiz"); }}>重新作答 ↗</button></div></div>
             <pre hidden={resultTab !== "json"} className="json-output" data-testid="design-config-json">{JSON.stringify(generated, null, 2)}</pre>
-            <div hidden={resultTab !== "preview"} className="preview-frame"><ShowcasePage config={generated} /></div>
+            <div hidden={resultTab !== "preview"} className="preview-frame"><ShowcasePage config={generated} touchDowngraded={isTouch} /></div>
           </div>
         </div>
         {!staticPreview && !generated.heroArtwork && <div className="publish-bar"><div><span>PUBLISH / 02</span><h2>分享或带走你的作品集</h2><p>正式分享与离线 ZIP 由同一项目的一次付款解锁。静态网站解压后可直接打开 index.html。</p></div><div className="publish-actions"><button type="button" className="ghost-button" disabled={exporting} onClick={() => void requestDelivery("share")}>{share ? "更新分享链接 ↗" : "发布并分享 ↗"}</button><button type="button" className="primary-button" disabled={exporting} onClick={() => void requestDelivery("export")}>{exporting ? "正在处理…" : "导出静态网站 ZIP"} <span>↓</span></button></div></div>}

@@ -1,31 +1,47 @@
-# BuildURProfile MVP
+# BuildURProfile
 
-目标 Agent 架构与阶段迁移见 [AGENT_ARCHITECTURE.md](AGENT_ARCHITECTURE.md)，当前执行清单见 [REFACTOR_PLAN.md](REFACTOR_PLAN.md)。当前代码已分为 `apps/web`、`apps/api`、`apps/worker` 和 `packages/contracts`；本机肖像 demo 已接入 LangGraph worker 与异步生成 API。
+当前 Agent 架构、隐私边界和上线限制见 [Agent 平台设计](docs/architecture/AGENT_PLATFORM.md) 与 [Python 迁移合同](docs/architecture/PYTHON_MIGRATION.md)。API 模式下，用户确认简历并完成 8 题测评后，所有作品（包括无照片作品）都进入 Python LangGraph；评分、设计映射、简历组装、可选肖像生成和 QA 由注册 Skill 执行。支付与交付由独立的 Node API 处理。
 
-浏览器内完成 **PDF → Resume JSON → Style Vector → Design Config JSON → Showcase 预览**。渲染骨架固定为 Marquee + StackedCards，使用 React、TypeScript、Vite、Tailwind CSS 和原生 CSS transition。
+```text
+apps/web       浏览器 PDF、确认、编辑和展示
+apps/api       会话、任务 API、支付和交付
+apps/agent     Python FastAPI、LangGraph 图、Skill 注册、图像 API 适配器
+packages/skills 浏览器 Skills、Wibi 三风格资源校验和目录
+packages/storage 任务、资产、数据库迁移与持久化适配
+packages/contracts 共享展示合同与运行时校验
+```
+
+本机使用 SQLite WAL、私有资产目录和 Python LangGraph SQLite checkpoint。生产单机部署见 `compose.agent.yml`；`/healthz` 检查 API，`/readyz` 检查 Agent 心跳。多主机部署需把数据库、队列、资产存储和 checkpoint 改为共享适配器，不能跨主机共享 SQLite 文件。
 
 只发布浏览器预览时，使用 `npm run build:pages` 构建 GitHub Pages 版本；该版本不请求后端，也不显示分享、支付或 ZIP 交付入口，刷新后作品不会保留。提交 `496f4a3` 的 Pages 发布工作流已成功；公开页面的完整 PDF 流程仍待人工验收。发布记录与操作步骤见 [GitHub Pages 静态预览部署](GITHUB_PAGES.md)。
 
 ## 运行
 
+需要 Node.js 24+、Python 3.11+ 和 `uv` 0.11.x。
+
 ```bash
 npm install
+uv sync --project apps/agent --frozen --extra test
 npm run dev
 ```
 
-### 本机肖像 Skill Demo
+### 肖像 Skill Demo
 
-Apple Silicon Mac 首次使用先运行 `npm run setup:avatar:local`。脚本会把 Wibi Style 固定在 commit `17880b82ea35c1fe1ec4b8f907a053d314df464f`，校验三款肖像风格的规则和参考图，并在 Git 忽略的 `data/avatar-venv` 安装 MFLUX 0.23.0。首次成图会下载约 8.6 GB 的 FLUX.2 Klein 4B 预量化权重到 `data/avatar-model-cache`；后续复用本机缓存。无需图像服务 API Key。详细选型和验证见 [本地生图方案](docs/AVATAR_LOCAL_MODEL.md)。
+首次使用运行 `npm run setup:avatar`，下载固定 commit `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 三种肖像风格并校验哈希。复制 `.env.agent.example` 为 `.env.agent`，只在该文件填写 `OPENAI_API_KEY`，Python Agent 使用图像编辑 API 生图；无照片作品无需该密钥。Node API 和浏览器不会接收图像密钥。
 
-`npm run dev` 在回环地址同时启动前端、API 和 LangGraph worker。首页可选择一张本人照片与复古扁平动画头、蜡笔极简扁平画、颗粒绒感玩偶之一；照片在点击生成前只留在浏览器。确认 PDF 内容并完成测评后，worker 在本机用照片、Wibi 风格规则和风格参考图运行图像编辑，成图位于作品首屏。源照片和成图属于当前匿名会话，分别在 1 天和 7 天后过期，worker 定时清理文件；每个会话 24 小时最多发起 5 次肖像生成。此功能仅在本机开发模式启用，GitHub Pages 与生产启动不提供该入口。
+`npm run dev` 在回环地址同时启动 Vite（5173）、Node API（8787）和 Python Agent（8788）。首页可选择一张本人照片与复古扁平动画头、蜡笔极简扁平画、颗粒绒感玩偶之一；照片在点击生成前只留在浏览器。确认 PDF 内容并完成测评后，无照片和有照片作品均由图执行；有照片时 Python Agent 调用配置的图像 API，成图位于作品首屏。源照片和成图属于当前匿名会话，分别在 1 天和 7 天后过期；每个会话 24 小时最多发起 5 次肖像生成。Wibi 功能仅在本机开发模式启用，GitHub Pages 与生产启动不提供该入口。
 
-若默认端口已被占用，可用 `SERVER_PORT=8788 VITE_PORT=5174 npm run dev` 启动另一组本机端口；Vite 会把 `/api` 代理到所选 API 端口。若两组服务同时运行，还应为后一组设置独立的 `DATABASE_PATH`、`AVATAR_ASSET_ROOT` 和 `AVATAR_CHECKPOINT_PATH`。
+若默认端口已被占用，可用 `SERVER_PORT=8790 AGENT_PORT=8791 VITE_PORT=5174 npm run dev` 启动另一组本机端口；Vite 会把 `/api` 代理到所选 API 端口。若两组服务同时运行，还应为后一组设置独立的 `DATABASE_PATH`、`AVATAR_ASSET_ROOT` 和 `AGENT_CHECKPOINT_PATH`。
 
-Wibi 的视觉规则仅许可个人非商业使用。当前成图保留原风格背景，只作本机预览，服务端拒绝带肖像的付费作品配置；透明抠图和 [oil-motion](https://github.com/oil-oil/oil-motion) 指针交互留待后续。Wibi Style 原作者：@威比 Hunter Wei.，来源：[Vieeeeeee/wibi-style](https://github.com/Vieeeeeee/wibi-style)。本机模型安装或生成失败时，任务会明确失败，不会展示伪造的成图。
+Wibi 的视觉规则仅许可个人非商业使用。当前成图保留原风格背景，只作本机预览，服务端拒绝带肖像的付费作品配置；透明抠图和 [oil-motion](https://github.com/oil-oil/oil-motion) 指针交互留待后续。Wibi Style 原作者：@威比 Hunter Wei.，来源：[Vieeeeeee/wibi-style](https://github.com/Vieeeeeee/wibi-style)。图像服务未配置或生成失败时，任务会明确失败，不会展示伪造的成图。
+
+### 单机容器部署
+
+分别从 `.env.api.example`、`.env.agent.example` 和 `.env.compose.example` 准备不提交的 `.env.api`、`.env.agent`、`.env`；若根目录已有 `.env`，保留现有支付配置并补入随机生成的 `AGENT_SERVICE_TOKEN`（至少 32 字符），不要覆盖原文件。把支付宝参数只填在 `.env.api`，图像 API 密钥只填在 `.env.agent`，共享服务令牌通过 Compose 注入两端。运行 `docker compose -f compose.agent.yml up --build`；Node API 在宿主机 `127.0.0.1:8787`，Agent 仅在容器网络中。公网部署需另配 HTTPS 反向代理，并拒绝转发 `/_internal/agent/`。当前容器部署默认关闭 Wibi 肖像入口，直到商业使用权和付费资产交付设计完成。
 
 打开 Vite 打印的本地地址。上传可选中文本的 PDF 后，必须核对姓名、工作经历、项目、技能、教育，才能进入 8 题测评。生成页可改展示文案、跑马灯图片、项目图片和交互强度；改动立即进入预览、Design Config JSON 与静态网站导出。首页的“查看视觉样例”使用 `apps/web/src/demo/config.json` 中的三板块 mock，保留三套皮肤切换。
 
-PDF.js 和 PDF worker 随页面本地打包，PDF 文件字节、提取文本和确认表单只存在浏览器内存中；应用没有 PDF 上传接口，PDF 流程不调用模型。只有用户主动提交本机肖像 demo 后，照片才会发送给本机 API 与 LangGraph worker。每个展示字段在 JSON 的 `content.sourceRefs` 中保留 PDF 页码和原文摘录；在结果页手动修改文字后，对应的原文出处会从配置中移除，避免错误归因。当前分段规则已针对 `docs/黄琬斐_算法_大模型_Agent_副本.pdf` 和 `docs/个人简历（黄禹哲）.pdf` 验证；后者需要按 PDF 文字坐标恢复章节顺序，并识别没有日期的项目、条目式技能和校园经历。校园经历在导出 JSON 中单列。其他版式可能需要扩展规则。扫描件 OCR 尚未接入。触屏会保留卡片手动切换，并将滚动绑定的跑马灯降级为恒定滚动。
+PDF.js 和 PDF worker 随页面本地打包；PDF 文件字节、提取文本和确认表单只存在浏览器内存中。浏览器的 PDF 提取、解析、确认也通过浏览器专用 Skill 运行。用户点击生成后，只有已确认的展示字段、角色和测评答案进入 API；服务端再次拒绝 `sourceRefs` 和多余字段。只有用户主动提交本机肖像 demo 后，照片才会发送给本机 API 与 Python Agent，并由外部图像供应商处理。当前简历解析针对两份本机样例验证，其他版式可能需要扩展规则；扫描件 OCR 尚未接入。
 
 ## 分享与离线导出
 
@@ -37,8 +53,11 @@ PDF.js 和 PDF worker 随页面本地打包，PDF 文件字节、提取文本和
 
 - `apps/web/src/lib/pdf.ts`：浏览器端 PDF 文字提取。
 - `apps/web/src/lib/resume.ts`：简历分段、原文出处与数字校验。
-- `apps/web/src/lib/assessment.ts`：8 题答案与 E/K/P/S 归一化。
-- `apps/web/src/lib/mapping.ts`：纯函数 `styleToConfig(vector, jobRole)`。
+- `packages/skills/src/assessment.ts`、`mapping.ts`：Pages 浏览器预览的测评与设计规则；与 Python 规则用黄金样例校验一致性。
+- `apps/agent/src/buildurprofile_agent/graph.py`：完整作品生成 LangGraph。
+- `apps/agent/src/buildurprofile_agent/skills/registry.py`：Agent Skill 合同、能力隔离、版本和许可策略。
+- `apps/agent/src/buildurprofile_agent/providers/openai_images.py`：外部图像编辑 API 适配器。
+- `packages/storage/src/generation/`：确认内容清洗、队列租约与资产存储。
 - `apps/web/src/components/EditorPanel.tsx`：结果页文字、图片与交互强度编辑。
 - `apps/api/src/service.mjs` 与 `apps/api/src/http.mjs`：项目归属、订单、支付资格、分享和下载的服务端校验。
 - `apps/api/src/export.mjs` 与 `apps/web/src/export/standalone.tsx`：服务端离线 ZIP 打包与独立渲染入口。
@@ -50,6 +69,7 @@ PDF.js 和 PDF worker 随页面本地打包，PDF 文件字节、提取文本和
 ```bash
 npm test
 npm run build
+npm run test:agent
 npm run verify:export
 ```
 # 支付沙箱联调（AI 网页应用收款）

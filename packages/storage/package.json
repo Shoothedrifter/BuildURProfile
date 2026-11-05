@@ -1,0 +1,10 @@
+{
+  "name": "@buildurprofile/storage",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./database": "./src/database.mjs",
+    "./generations": "./src/generations.mjs"
+  }
+}

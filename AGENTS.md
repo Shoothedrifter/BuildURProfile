@@ -2,6 +2,8 @@
 
 支付状态更新：2026-10-28；代码路径与静态发布状态更新：2026-10-30。此文件记录当前 MVP 的代码入口、GitHub Pages 静态预览、支付沙箱事实、生产开通进展和下一步联调，供后续开发者接手；`PROJECT.md`、`AGENT_ARCHITECTURE.md`、`README.md`、`GITHUB_PAGES.md` 与 `docs/qa/PAYMENT_SANDBOX.md` 是产品和验收背景。不要把这里的状态描述当作已经完成真实付款的证明。
 
+**2026-11-05 Agent 迁移切片（`codex/langgraph-agent-platform`，尚未合入 main）：** 生成任务现由 `apps/agent` 的 Python LangGraph + Skill 注册表处理；Node `apps/api` 仍负责会话、任务、资产、支付与交付，旧 JS worker 已移除。`npm run dev` 还启动 Python Agent 的 8788 端口；本机需 Python 3.11+ 和 `uv sync --project apps/agent --frozen --extra test`。无照片和模拟肖像的 Node↔Python 集成测试已通过；真实图像 API、Docker 守护进程构建、Wibi 商业许可及生产支付闭环未验收。当前实现说明以 `README.md`、`docs/architecture/AGENT_PLATFORM.md`、`docs/architecture/PYTHON_MIGRATION.md` 为准，以下旧状态按原日期理解。
+
 ## 运行与安全边界
 
 - Node.js 24+；`npm run dev` 同时启动 Vite `http://127.0.0.1:5173` 和后端 `http://127.0.0.1:8787`。`npm run build` 包含 TypeScript 检查；`npm test`、`npm run test:payment`、`npm run verify:export` 分别覆盖前端、支付后端和离线导出。
@@ -22,6 +24,8 @@
 - `apps/api/src/index.mjs`、`apps/api/src/config.mjs`、`apps/api/src/gateway.mjs`：服务启动、环境配置、官方 `alipay-sdk` 的页面支付/验签/查单。
 - `apps/api/src/database.mjs`、`apps/api/src/service.mjs`、`apps/api/src/http.mjs`：持久项目/订单/资格/交付、订单核对、分享和下载的权限校验。
 - `apps/api/src/export.mjs`、`apps/web/src/export/standalone.tsx`：服务端 ZIP 及离线展示。`packages/contracts/src/config.ts` 是配置合同。
+- `apps/api/src/routes/internal-agent.mjs`、`packages/storage/src/generation/`：私有 Agent 协议、版本化任务、租约与资产。
+- `apps/agent/src/buildurprofile_agent/graph.py`、`skills/`、`providers/`：Python LangGraph、Skill 合同与外部图像 API 适配器；`apps/agent/README.md` 说明扩展方式。
 
 ## 生产开通进展（2026-10-28）
 

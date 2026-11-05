@@ -1,0 +1,13 @@
+{
+  "name": "@buildurprofile/skills",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./registry": "./src/registry.ts",
+    "./assessment": "./src/assessment.ts",
+    "./mapping": "./src/mapping.ts",
+    "./avatar-catalog": "./src/avatar-catalog.ts",
+    "./wibi": "./src/wibi.ts"
+  }
+}

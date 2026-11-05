@@ -17,5 +17,5 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["vite/client", "vitest/globals", "node"]
   },
-  "include": ["apps/web/src", "packages/contracts/src", "vite.config.ts", "vite.export.config.ts"]
+  "include": ["apps/web/src", "packages/contracts/src", "packages/skills/src", "vite.config.ts", "vite.export.config.ts"]
 }

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { loadStyleRecipe, listAvatarStyles } from "../apps/worker/src/styles.mjs";
+import { loadStyleRecipe, listAvatarStyles } from "../packages/skills/src/wibi.ts";
 
 const root = join(process.cwd(), "data/wibi-style-pinned");
 const version = "17880b82ea35c1fe1ec4b8f907a053d314df464f";

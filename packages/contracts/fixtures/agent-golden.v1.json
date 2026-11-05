@@ -1,0 +1,102 @@
+{
+  "input": {
+    "role": "frontend-creative-developer",
+    "answers": {
+      "e-presence": 2,
+      "e-type": 2,
+      "k-pace": 2,
+      "k-cards": 2,
+      "p-tone": 0,
+      "p-strength": 2,
+      "s-browse": 2,
+      "s-control": 2
+    },
+    "content": {
+      "profile": {
+        "name": "合成样例",
+        "role": "前端开发",
+        "location": "",
+        "availability": "",
+        "intro": "",
+        "summary": "",
+        "email": ""
+      },
+      "expertise": {
+        "eyebrow": "技能",
+        "headline": "技能与专长",
+        "summary": "",
+        "skills": [
+          "前端：React"
+        ],
+        "disciplines": []
+      },
+      "projects": [],
+      "workExperience": [],
+      "campusExperience": [],
+      "education": []
+    }
+  },
+  "expected": {
+    "vector": {
+      "E": 0.5,
+      "K": 0.5,
+      "P": 0.5,
+      "S": 0.5,
+      "PChoice": "cool"
+    },
+    "config": {
+      "styleVector": {
+        "E": 0.5,
+        "K": 0.5,
+        "P": 0.5,
+        "S": 0.5,
+        "PChoice": "cool"
+      },
+      "skin": "dark-tech",
+      "marquee": {
+        "direction": "left",
+        "speed": 70,
+        "bindToScroll": false,
+        "rows": 3,
+        "tileSize": 256,
+        "pauseOnHover": true,
+        "items": [
+          "前端"
+        ]
+      },
+      "stackedCards": {
+        "scaleStep": 0.102,
+        "offsetStep": 26,
+        "stickyTop": 108,
+        "layout": "offset",
+        "cardRadius": 23,
+        "enableTilt": false,
+        "autoPlay": true
+      },
+      "content": {
+        "profile": {
+          "name": "合成样例",
+          "role": "前端开发",
+          "location": "",
+          "availability": "",
+          "intro": "",
+          "summary": "",
+          "email": ""
+        },
+        "expertise": {
+          "eyebrow": "技能",
+          "headline": "技能与专长",
+          "summary": "",
+          "skills": [
+            "前端：React"
+          ],
+          "disciplines": []
+        },
+        "projects": [],
+        "workExperience": [],
+        "campusExperience": [],
+        "education": []
+      }
+    }
+  }
+}

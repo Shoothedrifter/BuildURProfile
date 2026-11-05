@@ -1,0 +1,53 @@
+name: buildurprofile-agent
+
+services:
+  web-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - .env.api
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8787
+      DATABASE_PATH: /app/data/buildurprofile.sqlite
+      AVATAR_ASSET_ROOT: /app/data/avatar-assets
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set AGENT_SERVICE_TOKEN in .env}
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - app_data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks: [private, egress]
+
+  agent:
+    build:
+      context: .
+      dockerfile: apps/agent/Dockerfile
+    env_file:
+      - .env.agent
+    environment:
+      AGENT_API_URL: http://web-api:8787
+      AGENT_SERVICE_TOKEN: ${AGENT_SERVICE_TOKEN:?set AGENT_SERVICE_TOKEN in .env}
+      AGENT_CHECKPOINT_PATH: /app/checkpoints/agent.sqlite
+    volumes:
+      - agent_checkpoints:/app/checkpoints
+    depends_on:
+      web-api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [private, egress]
+
+networks:
+  private:
+    internal: true
+  egress: {}
+
+volumes:
+  app_data:
+  agent_checkpoints:

@@ -1,20 +1,21 @@
 {
-  "name": "buildurprofile-showcase-mvp",
+  "name": "buildurprofile",
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": ["packages/*"],
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "dev": "npm run build:export && node apps/api/src/dev.mjs",
     "dev:server": "node apps/api/src/index.mjs",
-    "dev:worker": "node apps/worker/src/index.mjs",
+    "dev:agent": "node scripts/run-python-agent.mjs",
     "setup:avatar": "node scripts/install-wibi-demo.mjs",
-    "setup:avatar:local": "node scripts/setup-avatar-local.mjs",
     "start": "node apps/api/src/index.mjs",
     "test:payment": "npm run build && node --test apps/api/src/*.test.mjs",
-    "test:worker": "node --test apps/worker/src/*.test.mjs",
+    "test:skills": "node --test packages/skills/src/*.test.mjs",
+    "test:agent": "node scripts/test-python-agent.mjs && node --test apps/api/src/internal-agent.test.mjs apps/api/src/generations.test.mjs",
     "test": "vitest run",
     "build": "tsc --noEmit && npm run build:export && vite build",
     "build:tunnel": "tsc --noEmit && vite build --mode tunnel",
@@ -24,8 +25,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@langchain/langgraph": "^1.5.3",
-    "@langchain/langgraph-checkpoint-sqlite": "^1.1.0",
     "alipay-sdk": "^4.14.0",
     "image-size": "^2.0.4",
     "pdfjs-dist": "^6.4.299",

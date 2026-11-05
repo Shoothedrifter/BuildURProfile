@@ -20,8 +20,18 @@ jobs:
         with:
           node-version: "24"
           cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
       - run: npm ci
+      - run: python -m pip install uv==0.11.12
+      - run: uv lock --check --project apps/agent
+      - run: uv sync --project apps/agent --frozen --extra test
       - run: npm run build
       - run: npm test
       - run: npm run test:payment
+      - run: npm run test:skills
+      - run: npm run test:agent
       - run: npm run verify:export
+      - run: docker build -f apps/api/Dockerfile -t buildurprofile-api:ci .
+      - run: docker build -f apps/agent/Dockerfile -t buildurprofile-agent:ci .

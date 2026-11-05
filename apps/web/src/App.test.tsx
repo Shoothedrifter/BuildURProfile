@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesignConfig } from "../../../packages/contracts/src/config";
 import App from "./App";
@@ -8,9 +8,14 @@ import { extractPdfText } from "./lib/pdf";
 import { paymentApi } from "./lib/paymentApi";
 import { generationApi } from "./lib/generationApi";
 import { preparePortrait } from "./lib/portrait";
+import { scoreAnswers } from "./lib/assessment";
+import { styleToConfig } from "./lib/mapping";
+import { skillShortLabels } from "./lib/resume";
 
 vi.mock("./lib/pdf", () => ({ extractPdfText: vi.fn() }));
-vi.mock("./lib/generationApi", () => ({ generationApi: { generateAvatar: vi.fn(), resumeGeneration: vi.fn().mockResolvedValue(null), clearSavedGeneration: vi.fn() } }));
+vi.mock("./lib/generationApi", () => ({ generationApi: { generatePortfolio: vi.fn(), generateAvatar: vi.fn(),
+  resumeGeneration: vi.fn().mockResolvedValue(null), clearSavedGeneration: vi.fn(),
+  cancelSavedGeneration: vi.fn().mockResolvedValue(null) } }));
 vi.mock("./lib/portrait", () => ({ preparePortrait: vi.fn().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=") }));
 vi.mock("./lib/paymentApi", () => ({
   paymentApi: {
@@ -39,9 +44,15 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.stubGlobal("scrollTo", vi.fn());
   vi.mocked(extractPdfText).mockResolvedValue({ pages, text: pages.join("\n\n") });
+  vi.mocked(generationApi.generatePortfolio).mockReset().mockImplementation(async (brief) => {
+    const mapped = styleToConfig(scoreAnswers(brief.answers), brief.role);
+    return { config: { ...mapped, marquee: { ...mapped.marquee, items: skillShortLabels(brief.content.expertise.skills) },
+      content: brief.content } };
+  });
   vi.mocked(generationApi.generateAvatar).mockReset();
   vi.mocked(generationApi.resumeGeneration).mockReset().mockResolvedValue(null);
   vi.mocked(generationApi.clearSavedGeneration).mockClear();
+  vi.mocked(generationApi.cancelSavedGeneration).mockClear();
   vi.mocked(preparePortrait).mockReset().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=");
   vi.mocked(paymentApi.createProject).mockClear();
   vi.mocked(paymentApi.publish).mockClear();
@@ -51,6 +62,24 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("keeps the latest PDF when an older extraction finishes afterwards", async () => {
+    let finishFirst!: (value: { pages: string[]; text: string }) => void;
+    vi.mocked(extractPdfText).mockReturnValueOnce(new Promise((resolve) => { finishFirst = resolve; }));
+    const latestPages = [pages[0].replace("黄琬斐", "李四"), pages[1]];
+    vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: latestPages, text: latestPages.join("\n\n") });
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
+      target: { files: [new File(["old"], "old.pdf", { type: "application/pdf" })] }
+    });
+    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
+      target: { files: [new File(["new"], "new.pdf", { type: "application/pdf" })] }
+    });
+    await screen.findByRole("heading", { name: /确认并修正/ });
+    expect(screen.getByLabelText("姓名")).toHaveValue("李四");
+    await act(async () => { finishFirst({ pages, text: pages.join("\n\n") }); });
+    expect(screen.getByLabelText("姓名")).toHaveValue("李四");
+  });
+
   it("does not let a restored old task replace a newly uploaded PDF", async () => {
     let finish!: (value: { config: DesignConfig; heroArtwork: NonNullable<DesignConfig["heroArtwork"]> }) => void;
     vi.mocked(generationApi.resumeGeneration).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
@@ -64,8 +93,8 @@ describe("showcase builder", () => {
   });
 
   it("does not restore an avatar after its pending generation was removed", async () => {
-    let finish!: (value: NonNullable<DesignConfig["heroArtwork"]>) => void;
-    vi.mocked(generationApi.generateAvatar).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    let finish!: (value: { config: DesignConfig; heroArtwork: NonNullable<DesignConfig["heroArtwork"]> }) => void;
+    vi.mocked(generationApi.generatePortfolio).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     render(<App />);
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
@@ -75,10 +104,10 @@ describe("showcase builder", () => {
     document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
     fireEvent.click(screen.getByRole("button", { name: "移除肖像，继续生成文字作品" }));
-    finish({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "已移除肖像" });
+    finish({ config: rawConfig as DesignConfig, heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "已移除肖像" } });
     await waitFor(() => expect(screen.queryByAltText("已移除肖像")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    expect(screen.getByTestId("design-config-json")).toBeInTheDocument();
+    expect(await screen.findByTestId("design-config-json")).toBeInTheDocument();
   });
 
   it("can regenerate a restored avatar while keeping edits to the current config", async () => {
@@ -106,6 +135,13 @@ describe("showcase builder", () => {
     expect(await screen.findByAltText("恢复的动画肖像")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "网页预览" })).toHaveAttribute("aria-selected", "true");
   });
+  it("restores a completed no-photo Agent task after refresh", async () => {
+    vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig });
+    render(<App />);
+    const json = await screen.findByTestId("design-config-json");
+    expect((JSON.parse(json.textContent ?? "") as DesignConfig).content.profile.name).toBe("Alex Morgan");
+    expect(screen.getByRole("tab", { name: "Design Config JSON" })).toHaveAttribute("aria-selected", "true");
+  });
   it("offers three portrait styles and keeps the photo local until Generate", async () => {
     render(<App />);
     expect(screen.getAllByRole("button", { name: /复古扁平动画头|蜡笔极简扁平画|颗粒绒感玩偶/ })).toHaveLength(3);
@@ -117,7 +153,10 @@ describe("showcase builder", () => {
   });
 
   it("adds generated portrait to hero and hides paid delivery", async () => {
-    vi.mocked(generationApi.generateAvatar).mockResolvedValueOnce({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" });
+    vi.mocked(generationApi.generatePortfolio).mockImplementationOnce(async (brief) => ({
+      config: { ...styleToConfig(scoreAnswers(brief.answers), brief.role), content: brief.content },
+      heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" }
+    }));
     render(<App />);
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
@@ -132,7 +171,7 @@ describe("showcase builder", () => {
   });
 
   it("lets a failed avatar request fall back to a text-only preview", async () => {
-    vi.mocked(generationApi.generateAvatar).mockRejectedValueOnce(new Error("本地 MFLUX 尚未安装"));
+    vi.mocked(generationApi.generatePortfolio).mockRejectedValueOnce(new Error("图像服务暂不可用"));
     render(<App />);
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
@@ -141,10 +180,10 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
     document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    await screen.findByText("本地 MFLUX 尚未安装");
+    await screen.findByText("图像服务暂不可用");
     fireEvent.click(screen.getByRole("button", { name: "移除肖像，继续生成文字作品" }));
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    expect(screen.getByTestId("design-config-json")).toBeInTheDocument();
+    expect(await screen.findByTestId("design-config-json")).toBeInTheDocument();
   });
   it("opens the static preview without requesting server data or following a share hash", () => {
     const originalHash = window.location.hash;
@@ -242,10 +281,13 @@ describe("showcase builder", () => {
     expect(questions).toHaveLength(8);
     questions.forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    const first = JSON.parse(screen.getByTestId("design-config-json").textContent ?? "") as DesignConfig;
+    const first = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     expect(first.content.profile.name).toBe("黄 琬斐");
     expect(first.content.projects).toHaveLength(2);
-    expect(first.content.sourceRefs?.["projects.0"].excerpt).toContain("嵌入式固件日志");
+    expect(first.content.sourceRefs).toBeUndefined();
+    expect(generationApi.generatePortfolio).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.not.objectContaining({ sourceRefs: expect.anything() })
+    }), undefined, expect.any(Function));
 
     fireEvent.click(screen.getByRole("button", { name: /重新作答/ }));
     document.querySelectorAll(".quiz-question").forEach((question) => {
@@ -253,7 +295,7 @@ describe("showcase builder", () => {
       fireEvent.click(options[options.length - 1]);
     });
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    const second = JSON.parse(screen.getByTestId("design-config-json").textContent ?? "") as DesignConfig;
+    const second = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     expect(second.skin).not.toBe(first.skin);
     expect(second.marquee.speed).not.toBe(first.marquee.speed);
     expect(second.stackedCards.scaleStep).not.toBe(first.stackedCards.scaleStep);
@@ -271,7 +313,7 @@ describe("showcase builder", () => {
       fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]);
     });
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    const before = JSON.parse(screen.getByTestId("design-config-json").textContent ?? "") as DesignConfig;
+    const before = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
     expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("slider", { name: "交互强度" }), { target: { value: "92" } });
@@ -308,7 +350,7 @@ describe("showcase builder", () => {
       fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]);
     });
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("paid-project"));
     fireEvent.click(screen.getByRole("button", { name: /导出静态网站 ZIP/ }));
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalledWith("paid-project"));
@@ -318,7 +360,7 @@ describe("showcase builder", () => {
       fireEvent.click(within(question as HTMLElement).getAllByRole("radio").at(-1)!);
     });
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledTimes(2));
     expect(paymentApi.createProject).toHaveBeenCalledTimes(1);
     expect(paymentApi.updateProject).toHaveBeenCalledWith("paid-project", expect.any(Object));
@@ -375,7 +417,7 @@ describe("showcase builder", () => {
       fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]);
     });
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     await screen.findByRole("region", { name: "确认购买" });
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "支付前改名" } });
     fireEvent.click(screen.getByRole("button", { name: /前往支付宝沙箱收银台/ }));
@@ -421,11 +463,12 @@ describe("showcase builder", () => {
         fireEvent.click(options[options.length - 1]);
       });
       fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-      const config = JSON.parse(screen.getByTestId("design-config-json").textContent ?? "") as DesignConfig;
+      const config = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
       expect(config.styleVector.S).toBe(1);
-      expect(config.marquee.bindToScroll).toBe(false);
-      expect(config.stackedCards.enableTilt).toBe(false);
+      expect(config.marquee.bindToScroll).toBe(true);
+      expect(config.stackedCards.enableTilt).toBe(true);
       expect(config.stackedCards.autoPlay).toBe(false);
+      expect(screen.getByTestId("marquee-track-0")).toHaveStyle({ animationName: "marquee-travel" });
       expect(screen.getAllByText(/检测到触屏/).length).toBeGreaterThan(0);
     } finally {
       Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 0 });
@@ -444,10 +487,13 @@ describe("showcase builder", () => {
       fireEvent.click(options[options.length - 1]);
     });
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    await screen.findByTestId("design-config-json");
     const output = () => JSON.parse(screen.getByTestId("design-config-json").textContent ?? "") as DesignConfig;
     expect(output().marquee.bindToScroll).toBe(true);
+    expect(screen.getByTestId("marquee-track-0")).toHaveStyle({ animationName: "none" });
     fireEvent.touchStart(window);
-    await waitFor(() => expect(output().marquee.bindToScroll).toBe(false));
+    await waitFor(() => expect(screen.getByTestId("marquee-track-0")).toHaveStyle({ animationName: "marquee-travel" }));
+    expect(output().marquee.bindToScroll).toBe(true);
     expect(output().stackedCards.autoPlay).toBe(false);
     expect(screen.getAllByText(/检测到触屏/).length).toBeGreaterThan(0);
   });

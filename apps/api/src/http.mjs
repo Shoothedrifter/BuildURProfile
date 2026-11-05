@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { ServiceError } from "./service.mjs";
 import { buildStaticZip } from "./export.mjs";
-import { listAvatarStyles } from "../../worker/src/styles.mjs";
+import { handleGenerationRoutes } from "./routes/generations.mjs";
+import { handleInternalAgentRoutes, validateAgentToken } from "./routes/internal-agent.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const COOKIE = "burp_session";
@@ -62,11 +63,28 @@ function requireCsrf(req, secret, sessionId) {
 }
 function parseRoute(path) { return path.split("/").filter(Boolean); }
 
-export function createPaymentHttpServer({ db, service, generationService = null, paymentConfig, priceFen, configurationError = null,
+export function createPaymentHttpServer({ db, service, generationService = null, portraitEnabled = true, agentToken = null,
+  agentStyleLoader, paymentConfig, priceFen, configurationError = null,
   secret = loadSessionSecret(), staticDir = join(root, "apps/web/dist"), zipBuilder = buildStaticZip }) {
+  const configuredAgentToken = validateAgentToken(agentToken);
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost"), parts = parseRoute(url.pathname);
+      if (req.method === "GET" && url.pathname === "/healthz") {
+        db.prepare("SELECT 1").get();
+        sendJson(res, 200, { ok: true, component: "api" }); return;
+      }
+      if (req.method === "GET" && url.pathname === "/readyz") {
+        db.prepare("SELECT 1").get();
+        const agentReady = generationService?.workerHealthy?.() ?? false;
+        sendJson(res, agentReady ? 200 : 503, { ok: agentReady, component: "api", agentReady }); return;
+      }
+      if (parts[0] === "_internal" && parts[1] === "agent") {
+        if (!configuredAgentToken || !generationService) throw new ServiceError(404, "接口不存在。");
+        if (await handleInternalAgentRoutes({ req, res, parts, service: generationService,
+          agentToken: configuredAgentToken, portraitEnabled, bodyJson, sendJson, styleLoader: agentStyleLoader })) return;
+        throw new ServiceError(404, "接口不存在。");
+      }
       if (req.method === "POST" && url.pathname === "/api/payment/notify") {
         const raw = await readBody(req, 64 * 1024), params = Object.fromEntries(new URLSearchParams(raw));
         await service.notify(params);
@@ -97,24 +115,8 @@ export function createPaymentHttpServer({ db, service, generationService = null,
       if (parts[0] === "api") {
         const sessionId = requireSession(req, db, secret);
         if (!["GET", "HEAD"].includes(req.method)) requireCsrf(req, secret, sessionId);
-        if (generationService && req.method === "GET" && url.pathname === "/api/avatar-styles") {
-          sendJson(res, 200, { styles: listAvatarStyles() }); return;
-        }
-        if (generationService && req.method === "POST" && url.pathname === "/api/portraits") {
-          sendJson(res, 201, generationService.savePortrait(sessionId, (await bodyJson(req, 14 * 1024 * 1024)).dataUrl)); return;
-        }
-        if (generationService && req.method === "POST" && url.pathname === "/api/generations") {
-          sendJson(res, 201, generationService.enqueue(sessionId, await bodyJson(req))); return;
-        }
-        if (generationService && req.method === "GET" && parts[1] === "generations" && parts.length === 3) {
-          sendJson(res, 200, generationService.getTask(sessionId, parts[2])); return;
-        }
-        if (generationService && req.method === "GET" && parts[1] === "hero-assets" && parts.length === 3) {
-          const asset = generationService.readAsset(sessionId, parts[2]);
-          res.writeHead(200, { "content-type": asset.mime, "content-length": asset.bytes.length,
-            "cache-control": "private, no-store", "x-content-type-options": "nosniff" });
-          res.end(asset.bytes); return;
-        }
+        if (generationService && await handleGenerationRoutes({ req, res, url, parts, sessionId,
+          service: generationService, portraitEnabled, bodyJson, sendJson })) return;
         if (req.method === "GET" && url.pathname === "/api/projects") { sendJson(res, 200, service.listProjects(sessionId)); return; }
         if (req.method === "POST" && url.pathname === "/api/projects") {
           sendJson(res, 201, service.createProject(sessionId, (await bodyJson(req)).config)); return;

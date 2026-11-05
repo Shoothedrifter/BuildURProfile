@@ -1,8 +1,13 @@
-import type { DesignConfig } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, JobRole, ResumeContent } from "../../../../packages/contracts/src/config";
+import type { AvatarStyleId } from "../../../../packages/skills/src/avatar-catalog";
 import { toPublishedConfig } from "./publication";
 
-export type AvatarStyleId = "retro-flat-anime-head" | "crayon-flat-naive" | "textile-toy-portrait";
+export type { AvatarStyleId } from "../../../../packages/skills/src/avatar-catalog";
 export type HeroArtwork = NonNullable<DesignConfig["heroArtwork"]>;
+export type GenerationBrief = { role: JobRole; answers: Record<string, number>; content: Omit<ResumeContent, "sourceRefs"> };
+export type GenerationResult = { config: DesignConfig; heroArtwork?: HeroArtwork };
+export type GenerationStatus = "QUEUED" | "RUNNING" | "CANCELLING";
+// Retain the old key so a task started before this migration can still be restored.
 const savedTaskKey = "burp-avatar-task";
 
 let csrfPromise: Promise<string> | null = null;
@@ -26,41 +31,77 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function retainTaskOrCancel(id: string, epoch: number): Promise<void> {
+  if (epoch !== generationEpoch) {
+    // The task may have been queued while the user switched input. Cancel it
+    // before it can consume an image API call.
+    await request(`/api/generations/${encodeURIComponent(id)}/cancel`, {}).catch(() => {});
+    throw new Error("肖像任务已取消。");
+  }
+  sessionStorage.setItem(savedTaskKey, id);
+}
+
 type GenerationTask = { status: string; error?: string; heroArtwork?: HeroArtwork; config?: DesignConfig };
-async function waitForTask(id: string, epoch: number): Promise<GenerationTask> {
-  const deadline = Date.now() + 5 * 60 * 1000;
+async function waitForTask(id: string, epoch: number, onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
+  // Local image generation may legitimately take longer than five minutes on Apple Silicon.
+  const deadline = Date.now() + 35 * 60 * 1000;
   while (Date.now() < deadline) {
     requireCurrent(epoch);
     const current = await request<GenerationTask>(`/api/generations/${encodeURIComponent(id)}`);
     requireCurrent(epoch);
-    if (current.status === "SUCCEEDED" && current.heroArtwork) {
-      return current;
+    if (current.status === "SUCCEEDED") {
+      if (!current.config) throw new Error("生成任务缺少作品配置，请重新生成。");
+      return { config: current.config, ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
     }
-    if (current.status === "FAILED" || current.status === "EXPIRED") {
+    if (current.status === "FAILED" || current.status === "EXPIRED" || current.status === "CANCELLED") {
       sessionStorage.removeItem(savedTaskKey);
-      throw new Error(current.error ?? "肖像生成失败，请重试。");
+      throw new Error(current.status === "CANCELLED" ? "作品生成已取消。" : current.error ?? "作品生成失败，请重试。");
     }
+    if (current.status === "QUEUED" || current.status === "RUNNING" || current.status === "CANCELLING") onStatus?.(current.status);
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
   throw new Error("生成仍在进行；刷新页面后会继续查询任务。");
 }
 
 export const generationApi = {
+  async generatePortfolio(brief: GenerationBrief, portrait?: { dataUrl: string; styleId: AvatarStyleId },
+    onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
+    const epoch = generationEpoch;
+    let portraitAssetId: string | null = null;
+    if (portrait) {
+      const uploaded = await request<{ id: string }>("/api/portraits", { dataUrl: portrait.dataUrl });
+      requireCurrent(epoch);
+      portraitAssetId = uploaded.id;
+    }
+    const task = await request<{ id: string }>("/api/generations", {
+      brief, portraitAssetId, styleId: portrait?.styleId ?? null, idempotencyKey: crypto.randomUUID()
+    });
+    await retainTaskOrCancel(task.id, epoch);
+    return waitForTask(task.id, epoch, onStatus);
+  },
   async generateAvatar(dataUrl: string, styleId: AvatarStyleId, config: DesignConfig): Promise<HeroArtwork> {
     const epoch = generationEpoch;
     const portrait = await request<{ id: string }>("/api/portraits", { dataUrl });
     requireCurrent(epoch);
     const task = await request<{ id: string }>("/api/generations", { portraitAssetId: portrait.id, styleId,
       idempotencyKey: crypto.randomUUID(), config: toPublishedConfig(config) });
-    requireCurrent(epoch);
-    sessionStorage.setItem(savedTaskKey, task.id);
-    return (await waitForTask(task.id, epoch)).heroArtwork!;
+    await retainTaskOrCancel(task.id, epoch);
+    const result = await waitForTask(task.id, epoch);
+    if (!result.heroArtwork) throw new Error("生成任务缺少肖像资产，请重新生成。");
+    return result.heroArtwork;
   },
-  async resumeGeneration(): Promise<{ config: DesignConfig; heroArtwork: HeroArtwork } | null> {
+  async resumeGeneration(onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult | null> {
     const id = sessionStorage.getItem(savedTaskKey);
     if (!id) return null;
-    const result = await waitForTask(id, generationEpoch);
-    return result.config && result.heroArtwork ? { config: result.config, heroArtwork: result.heroArtwork } : null;
+    return waitForTask(id, generationEpoch, onStatus);
+  },
+  async cancelSavedGeneration(): Promise<{ status: string } | null> {
+    const id = sessionStorage.getItem(savedTaskKey);
+    generationEpoch++;
+    sessionStorage.removeItem(savedTaskKey);
+    if (!id) return null;
+    try { return await request<{ status: string }>(`/api/generations/${encodeURIComponent(id)}/cancel`, {}); }
+    catch { return null; }
   },
   clearSavedGeneration(): void { generationEpoch++; sessionStorage.removeItem(savedTaskKey); }
 };

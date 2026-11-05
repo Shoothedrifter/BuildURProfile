@@ -9,6 +9,9 @@ import { createGenerationService } from "./generations.mjs";
 
 const localEnvFile = fileURLToPath(new URL("../../../.env", import.meta.url));
 if (existsSync(localEnvFile)) process.loadEnvFile(localEnvFile);
+if (process.env.NODE_ENV === "production" && !process.env.AGENT_SERVICE_TOKEN) {
+  throw new Error("AGENT_SERVICE_TOKEN is required in production.");
+}
 let config = null, priceFen = null, configurationError = null;
 try { priceFen = priceFenFromEnv(); } catch { /* Preview remains available until a price is configured. */ }
 try { config = paymentConfig(loadSandboxPaymentEnv()); } catch (error) { configurationError = error.message; }
@@ -23,8 +26,12 @@ const service = createPaymentService(db, { gateway, paymentConfig: config, confi
 const host = process.env.SERVER_HOST ?? "127.0.0.1";
 const avatarDemoEnabled = process.env.AVATAR_DEMO_ENABLED === "1" &&
   ["127.0.0.1", "localhost", "::1"].includes(host) && process.env.PAYMENT_ENV !== "production";
-const generationService = avatarDemoEnabled ? createGenerationService({ db, assetRoot: process.env.AVATAR_ASSET_ROOT || "data/avatar-assets" }) : null;
-const server = createPaymentHttpServer({ db, service, generationService, paymentConfig: config, priceFen, configurationError });
+// Every full-stack preview uses the graph. Wibi portraits remain a local-only
+// capability until a commercial licence and production image provider exist.
+const generationService = createGenerationService({ db, assetRoot: process.env.AVATAR_ASSET_ROOT || "data/avatar-assets",
+  allowPortraits: avatarDemoEnabled });
+const server = createPaymentHttpServer({ db, service, generationService, portraitEnabled: avatarDemoEnabled,
+  agentToken: process.env.AGENT_SERVICE_TOKEN, paymentConfig: config, priceFen, configurationError });
 const port = Number(process.env.SERVER_PORT ?? 8787);
 server.listen(port, host, () => {
   process.stdout.write(`BuildURProfile server listening on ${host}:${port}\n`);

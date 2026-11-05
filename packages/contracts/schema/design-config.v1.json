@@ -1,0 +1,420 @@
+{
+  "$defs": {
+    "Expertise": {
+      "additionalProperties": false,
+      "properties": {
+        "eyebrow": {
+          "maxLength": 12000,
+          "title": "Eyebrow",
+          "type": "string"
+        },
+        "headline": {
+          "maxLength": 12000,
+          "title": "Headline",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 12000,
+          "title": "Summary",
+          "type": "string"
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Skills",
+          "type": "array"
+        },
+        "disciplines": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Disciplines",
+          "type": "array"
+        }
+      },
+      "required": [
+        "eyebrow",
+        "headline",
+        "summary",
+        "skills",
+        "disciplines"
+      ],
+      "title": "Expertise",
+      "type": "object"
+    },
+    "Marquee": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "enum": [
+            "left",
+            "right"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "speed": {
+          "title": "Speed",
+          "type": "integer"
+        },
+        "bindToScroll": {
+          "title": "Bindtoscroll",
+          "type": "boolean"
+        },
+        "rows": {
+          "title": "Rows",
+          "type": "integer"
+        },
+        "tileSize": {
+          "title": "Tilesize",
+          "type": "integer"
+        },
+        "pauseOnHover": {
+          "title": "Pauseonhover",
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 100,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "direction",
+        "speed",
+        "bindToScroll",
+        "rows",
+        "tileSize",
+        "pauseOnHover"
+      ],
+      "title": "Marquee",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 12000,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 12000,
+          "title": "Role",
+          "type": "string"
+        },
+        "location": {
+          "maxLength": 12000,
+          "title": "Location",
+          "type": "string"
+        },
+        "availability": {
+          "maxLength": 12000,
+          "title": "Availability",
+          "type": "string"
+        },
+        "intro": {
+          "maxLength": 12000,
+          "title": "Intro",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 12000,
+          "title": "Summary",
+          "type": "string"
+        },
+        "email": {
+          "maxLength": 12000,
+          "title": "Email",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "location",
+        "availability",
+        "intro",
+        "summary",
+        "email"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "ProjectCard": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "title": "Id",
+          "type": "string"
+        },
+        "index": {
+          "maxLength": 30,
+          "title": "Index",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 12000,
+          "title": "Title",
+          "type": "string"
+        },
+        "category": {
+          "maxLength": 12000,
+          "title": "Category",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 30,
+          "title": "Year",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 12000,
+          "title": "Description",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Tags",
+          "type": "array"
+        },
+        "visual": {
+          "enum": [
+            "mint",
+            "lilac",
+            "peach"
+          ],
+          "title": "Visual",
+          "type": "string"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link"
+        }
+      },
+      "required": [
+        "id",
+        "index",
+        "title",
+        "category",
+        "year",
+        "description",
+        "tags",
+        "visual"
+      ],
+      "title": "ProjectCard",
+      "type": "object"
+    },
+    "ResumeContent": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "expertise": {
+          "$ref": "#/$defs/Expertise"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ProjectCard"
+          },
+          "maxItems": 100,
+          "title": "Projects",
+          "type": "array"
+        },
+        "workExperience": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Workexperience",
+          "type": "array"
+        },
+        "campusExperience": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Campusexperience",
+          "type": "array"
+        },
+        "education": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Education",
+          "type": "array"
+        }
+      },
+      "required": [
+        "profile",
+        "expertise",
+        "projects"
+      ],
+      "title": "ResumeContent",
+      "type": "object"
+    },
+    "StackedCards": {
+      "additionalProperties": false,
+      "properties": {
+        "scaleStep": {
+          "title": "Scalestep",
+          "type": "number"
+        },
+        "offsetStep": {
+          "title": "Offsetstep",
+          "type": "integer"
+        },
+        "stickyTop": {
+          "title": "Stickytop",
+          "type": "integer"
+        },
+        "layout": {
+          "enum": [
+            "center",
+            "offset",
+            "fan"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "cardRadius": {
+          "title": "Cardradius",
+          "type": "integer"
+        },
+        "enableTilt": {
+          "title": "Enabletilt",
+          "type": "boolean"
+        },
+        "autoPlay": {
+          "title": "Autoplay",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scaleStep",
+        "offsetStep",
+        "stickyTop",
+        "layout",
+        "cardRadius",
+        "enableTilt",
+        "autoPlay"
+      ],
+      "title": "StackedCards",
+      "type": "object"
+    },
+    "StyleVector": {
+      "additionalProperties": false,
+      "properties": {
+        "E": {
+          "title": "E",
+          "type": "number"
+        },
+        "K": {
+          "title": "K",
+          "type": "number"
+        },
+        "P": {
+          "title": "P",
+          "type": "number"
+        },
+        "S": {
+          "title": "S",
+          "type": "number"
+        },
+        "PChoice": {
+          "enum": [
+            "cool",
+            "neutral",
+            "warm",
+            "vivid"
+          ],
+          "title": "Pchoice",
+          "type": "string"
+        }
+      },
+      "required": [
+        "E",
+        "K",
+        "P",
+        "S",
+        "PChoice"
+      ],
+      "title": "StyleVector",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "styleVector": {
+      "$ref": "#/$defs/StyleVector"
+    },
+    "skin": {
+      "enum": [
+        "dark-tech",
+        "light-minimal",
+        "high-saturation"
+      ],
+      "title": "Skin",
+      "type": "string"
+    },
+    "marquee": {
+      "$ref": "#/$defs/Marquee"
+    },
+    "stackedCards": {
+      "$ref": "#/$defs/StackedCards"
+    },
+    "content": {
+      "$ref": "#/$defs/ResumeContent"
+    }
+  },
+  "required": [
+    "styleVector",
+    "skin",
+    "marquee",
+    "stackedCards",
+    "content"
+  ],
+  "title": "DesignConfigV1",
+  "type": "object"
+}

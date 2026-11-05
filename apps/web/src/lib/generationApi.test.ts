@@ -26,3 +26,64 @@ it("does not enqueue or retain a task after the user removes a pending portrait"
   expect(calls).not.toContain("/api/generations");
   expect(sessionStorage.getItem("burp-avatar-task")).toBeNull();
 });
+
+it("queues a no-photo portfolio through the generation API and restores its config", async () => {
+  const calls: string[] = [];
+  let submitted: Record<string, unknown> | undefined;
+  const config = rawConfig as DesignConfig;
+  vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
+    calls.push(path);
+    if (path === "/api/session") return new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 });
+    if (path === "/api/generations") {
+      submitted = JSON.parse(options?.body as string) as Record<string, unknown>;
+      return new Response(JSON.stringify({ id: "task-1", status: "QUEUED" }), { status: 201 });
+    }
+    if (path === "/api/generations/task-1") return new Response(JSON.stringify({ status: "SUCCEEDED", config }), { status: 200 });
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+  const result = await generationApi.generatePortfolio({ role: "ui-ux-designer", answers: { "e-presence": 0 },
+    content: config.content });
+  expect(result).toEqual({ config });
+  expect(submitted).toMatchObject({ brief: { role: "ui-ux-designer", answers: { "e-presence": 0 } },
+    portraitAssetId: null, styleId: null });
+  expect(calls).not.toContain("/api/portraits");
+  expect(sessionStorage.getItem("burp-avatar-task")).toBe("task-1");
+  expect(await generationApi.resumeGeneration()).toEqual({ config });
+});
+
+it("cancels a saved queued generation through the owner API", async () => {
+  const calls: string[] = [];
+  sessionStorage.setItem("burp-avatar-task", "task-queued");
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+    calls.push(path);
+    if (path === "/api/session") return new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 });
+    if (path === "/api/generations/task-queued/cancel") {
+      return new Response(JSON.stringify({ status: "CANCELLED" }), { status: 200 });
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+  expect(await generationApi.cancelSavedGeneration()).toEqual({ status: "CANCELLED" });
+  expect(calls).toContain("/api/generations/task-queued/cancel");
+  expect(sessionStorage.getItem("burp-avatar-task")).toBeNull();
+});
+
+it("cancels a task queued after the user changed input during the POST", async () => {
+  const calls: string[] = [];
+  let finishEnqueue!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn((path: string) => {
+    calls.push(path);
+    if (path === "/api/session") return Promise.resolve(new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 }));
+    if (path === "/api/generations") return new Promise<Response>((resolve) => { finishEnqueue = resolve; });
+    if (path === "/api/generations/task-late/cancel") {
+      return Promise.resolve(new Response(JSON.stringify({ status: "CANCELLED" }), { status: 200 }));
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+  const config = rawConfig as DesignConfig;
+  const pending = generationApi.generatePortfolio({ role: "ui-ux-designer", answers: { "e-presence": 0 }, content: config.content });
+  await vi.waitFor(() => expect(calls).toContain("/api/generations"));
+  generationApi.clearSavedGeneration();
+  finishEnqueue(new Response(JSON.stringify({ id: "task-late", status: "QUEUED" }), { status: 201 }));
+  await expect(pending).rejects.toThrow(/取消/);
+  expect(calls).toContain("/api/generations/task-late/cancel");
+});
