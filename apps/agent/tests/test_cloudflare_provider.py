@@ -19,6 +19,12 @@ def png(size=(1024, 768)):
     return output.getvalue()
 
 
+def jpeg(size=(256, 256)):
+    output = io.BytesIO()
+    Image.new("RGB", size, "teal").save(output, format="JPEG")
+    return output.getvalue()
+
+
 def parts(request):
     message = BytesParser(policy=default).parsebytes(
         b"Content-Type: " + request.headers["content-type"].encode() + b"\r\n\r\n" + request.content
@@ -82,6 +88,32 @@ async def test_cloudflare_rate_limit_is_retryable():
             await provider.edit(Portrait(png(), "image/png"), {"instructions": "draw", "referenceImages": []}, task_id="task")
     assert caught.value.code == "PROVIDER_RATE_LIMIT"
     assert caught.value.retryable
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_converts_successful_jpeg_response_to_png_asset():
+    encoded = base64.b64encode(jpeg()).decode()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"success": True, "result": {"image": encoded}}))) as http:
+        provider = CloudflareImageProvider(account_id="a" * 32, api_token="private-token", http=http)
+        result = await provider.edit(Portrait(png(), "image/png"),
+                                     {"instructions": "draw", "referenceImages": []}, task_id="task")
+    assert result.mime == "image/png"
+    with Image.open(io.BytesIO(result.bytes)) as image:
+        assert image.format == "PNG"
+        assert image.size == (256, 256)
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_invalid_success_payload_does_not_repeat_billable_call():
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"success": True, "result": {"image": "not-base64"}}))) as http:
+        provider = CloudflareImageProvider(account_id="a" * 32, api_token="private-token", http=http)
+        with pytest.raises(ImageProviderError) as caught:
+            await provider.edit(Portrait(png(), "image/png"),
+                                {"instructions": "draw", "referenceImages": []}, task_id="task")
+    assert caught.value.code == "PROVIDER_UNAVAILABLE"
+    assert not caught.value.retryable
 
 
 @pytest.mark.asyncio

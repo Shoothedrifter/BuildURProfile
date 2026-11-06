@@ -38,22 +38,29 @@ def _reference_png(data: bytes, mime: str) -> bytes:
 
 def _decode_output(payload: object) -> bytes:
     if not isinstance(payload, dict):
-        raise ImageProviderError("PROVIDER_UNAVAILABLE", True)
+        raise ImageProviderError("PROVIDER_UNAVAILABLE")
     result = payload.get("result", payload)
     encoded = result.get("image") if isinstance(result, dict) else None
     if not isinstance(encoded, str):
-        raise ImageProviderError("PROVIDER_UNAVAILABLE", True)
+        raise ImageProviderError("PROVIDER_UNAVAILABLE")
     try:
         image = base64.b64decode(encoded, validate=True)
         if not image or len(image) > MAX_IMAGE_BYTES:
             raise ValueError("Invalid image size")
         with Image.open(io.BytesIO(image)) as decoded:
-            if decoded.format != "PNG":
-                raise ValueError("Expected PNG output")
-            decoded.verify()
-        return image
+            if decoded.format not in ("PNG", "JPEG", "WEBP"):
+                raise ValueError("Unsupported image output")
+            decoded.load()
+            if decoded.format == "PNG":
+                return image
+            output = io.BytesIO()
+            decoded.convert("RGBA" if "A" in decoded.getbands() else "RGB").save(output, format="PNG")
+            converted = output.getvalue()
+            if len(converted) > MAX_IMAGE_BYTES:
+                raise ValueError("Converted image is too large")
+            return converted
     except (OSError, ValueError, Image.DecompressionBombError) as exc:
-        raise ImageProviderError("PROVIDER_UNAVAILABLE", True) from exc
+        raise ImageProviderError("PROVIDER_UNAVAILABLE") from exc
 
 
 class CloudflareImageProvider:
