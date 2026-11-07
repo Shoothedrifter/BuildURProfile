@@ -40,6 +40,38 @@ const pages = [
   `嵌入式固件日志 bug 诊断Agent 2026.06 - 2026.08\n项目描述：支持百MB级日志的关键行定位。\n学习工厂—— 多智能体学习计划制定系统 2026.02 - 2026.03\n项目描述：基于OpenAI兼容SDK自研AgentLoop。`
 ];
 
+function openUpload() {
+  fireEvent.click(screen.getByRole("button", { name: /免费开始制作/ }));
+}
+
+async function chooseAndParse(name = "resume.pdf") {
+  const input = screen.getByLabelText("选择 PDF 简历");
+  fireEvent.change(input, { target: { files: [new File(["pdf"], name, { type: "application/pdf" })] } });
+  fireEvent.click(screen.getByRole("button", { name: /解析简历/ }));
+  await screen.findByRole("heading", { name: "让每一段经历，都有证据可循" });
+}
+
+async function reachStyle() {
+  openUpload();
+  await chooseAndParse();
+  fireEvent.click(screen.getByRole("button", { name: /确认资料，选择风格/ }));
+  await screen.findByRole("heading", { name: "让你的风格，先开口介绍你" });
+}
+
+function answerAll(optionIndex = 0) {
+  document.querySelectorAll(".proof-question").forEach((question) => {
+    const options = within(question as HTMLElement).getAllByRole("radio");
+    fireEvent.click(options[Math.min(optionIndex, options.length - 1)]);
+  });
+}
+
+async function reachResult(optionIndex = 0) {
+  await reachStyle();
+  answerAll(optionIndex);
+  fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+  await screen.findByRole("heading", { name: "你的经历，正在成为一件作品" });
+}
+
 beforeEach(() => {
   sessionStorage.clear();
   vi.stubGlobal("scrollTo", vi.fn());
@@ -62,19 +94,77 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("starts on the landing page and opens both the sample and project panel", async () => {
+    render(<App />);
+    expect(screen.getByRole("heading", { name: "你的能力，值得一个可以体验的网页。" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "作品集样例" }));
+    expect(await screen.findByRole("heading", { name: /Alex Morgan/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /返回生成器/ }));
+    fireEvent.click(screen.getByRole("button", { name: /我的项目/ }));
+    expect(screen.getByRole("dialog", { name: "我的项目" })).toBeInTheDocument();
+  });
+
+  it("accepts a dragged PDF and waits for the explicit parse action", async () => {
+    render(<App />);
+    openUpload();
+    const dropZone = screen.getByText("将简历 PDF 拖到这里").closest("label");
+    expect(dropZone).not.toBeNull();
+    fireEvent.drop(dropZone!, {
+      dataTransfer: { files: [new File(["pdf"], "dragged.pdf", { type: "application/pdf" })] }
+    });
+    expect(screen.getByText("已选择：dragged.pdf")).toBeInTheDocument();
+    expect(extractPdfText).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /解析简历/ }));
+    expect(await screen.findByRole("heading", { name: "让每一段经历，都有证据可循" })).toBeInTheDocument();
+  });
+
+  it("fills all eight assessment answers from a style preset and permits manual overrides", async () => {
+    render(<App />);
+    await reachStyle();
+    fireEvent.click(screen.getByRole("button", { name: /温暖创意/ }));
+    const checked = screen.getAllByRole("radio").filter((input) => (input as HTMLInputElement).checked);
+    expect(checked).toHaveLength(8);
+    expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(screen.getByRole("group", { name: /第一印象/ })).getAllByRole("radio")[0]);
+    expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("keeps the style step visible when generation returns an incomplete config", async () => {
+    vi.mocked(generationApi.generatePortfolio).mockResolvedValueOnce({ config: null as unknown as DesignConfig });
+    render(<App />);
+    await reachStyle();
+    answerAll();
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("作品配置不完整");
+    expect(screen.getByRole("heading", { name: "让你的风格，先开口介绍你" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "作品配置暂时不可用" })).not.toBeInTheDocument();
+  });
+
+  it("opens the advanced configuration without losing the live preview", async () => {
+    render(<App />);
+    await reachResult();
+    expect(screen.getByRole("button", { name: /下一步：前往分享与付费/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("高级参数 / 调试信息 →"));
+    expect(screen.getByTestId("design-config-json")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
+  });
+
   it("keeps the latest PDF when an older extraction finishes afterwards", async () => {
     let finishFirst!: (value: { pages: string[]; text: string }) => void;
     vi.mocked(extractPdfText).mockReturnValueOnce(new Promise((resolve) => { finishFirst = resolve; }));
     const latestPages = [pages[0].replace("黄琬斐", "李四"), pages[1]];
     vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: latestPages, text: latestPages.join("\n\n") });
     render(<App />);
+    openUpload();
     fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
       target: { files: [new File(["old"], "old.pdf", { type: "application/pdf" })] }
     });
+    fireEvent.click(screen.getByRole("button", { name: /解析简历/ }));
     fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
       target: { files: [new File(["new"], "new.pdf", { type: "application/pdf" })] }
     });
-    await screen.findByRole("heading", { name: /确认并修正/ });
+    fireEvent.click(screen.getByRole("button", { name: /解析简历/ }));
+    await screen.findByRole("heading", { name: "让每一段经历，都有证据可循" });
     expect(screen.getByLabelText("姓名")).toHaveValue("李四");
     await act(async () => { finishFirst({ pages, text: pages.join("\n\n") }); });
     expect(screen.getByLabelText("姓名")).toHaveValue("李四");
@@ -84,30 +174,28 @@ describe("showcase builder", () => {
     let finish!: (value: { config: DesignConfig; heroArtwork: NonNullable<DesignConfig["heroArtwork"]> }) => void;
     vi.mocked(generationApi.resumeGeneration).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     render(<App />);
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), { target: { files: [new File(["pdf"], "new.pdf", { type: "application/pdf" })] } });
-    await screen.findByRole("heading", { name: /确认并修正/ });
+    openUpload();
+    await chooseAndParse("new.pdf");
     finish({ config: rawConfig as DesignConfig,
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "旧肖像" } });
     await waitFor(() => expect(screen.queryByAltText("旧肖像")).not.toBeInTheDocument());
-    expect(screen.getByRole("heading", { name: /确认并修正/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "让每一段经历，都有证据可循" })).toBeInTheDocument();
   });
 
   it("does not restore an avatar after its pending generation was removed", async () => {
     let finish!: (value: { config: DesignConfig; heroArtwork: NonNullable<DesignConfig["heroArtwork"]> }) => void;
     vi.mocked(generationApi.generatePortfolio).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     render(<App />);
+    await reachStyle();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), { target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] } });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    fireEvent.click(screen.getByRole("button", { name: "移除肖像，继续生成文字作品" }));
-    finish({ config: rawConfig as DesignConfig, heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "已移除肖像" } });
+    answerAll();
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
+    await act(async () => finish({ config: rawConfig as DesignConfig, heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "已移除肖像" } }));
     await waitFor(() => expect(screen.queryByAltText("已移除肖像")).not.toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    expect(await screen.findByTestId("design-config-json")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    expect(await screen.findByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
   });
 
   it("can regenerate a restored avatar while keeping edits to the current config", async () => {
@@ -117,11 +205,11 @@ describe("showcase builder", () => {
     render(<App />);
     await screen.findByAltText("旧肖像");
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
-    fireEvent.click(screen.getByText("更换肖像或风格 ↗"));
+    fireEvent.click(screen.getByText("更换头像或风格 →"));
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "new.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
     fireEvent.click(screen.getByRole("button", { name: /蜡笔极简扁平画/ }));
-    fireEvent.click(screen.getByRole("button", { name: /重新生成形象/ }));
+    fireEvent.click(screen.getByRole("button", { name: /应用当前头像风格/ }));
     expect(await screen.findByAltText("新肖像")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
     expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].content.profile.name).toBe("Edited Person");
@@ -133,22 +221,23 @@ describe("showcase builder", () => {
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "恢复的动画肖像" } });
     render(<App />);
     expect(await screen.findByAltText("恢复的动画肖像")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "网页预览" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
   });
   it("restores a completed no-photo Agent task after refresh", async () => {
     vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig });
     render(<App />);
     const json = await screen.findByTestId("design-config-json");
     expect((JSON.parse(json.textContent ?? "") as DesignConfig).content.profile.name).toBe("Alex Morgan");
-    expect(screen.getByRole("tab", { name: "Design Config JSON" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
   });
   it("offers three portrait styles and keeps the photo local until Generate", async () => {
     render(<App />);
+    await reachStyle();
     expect(screen.getAllByRole("button", { name: /复古扁平动画头|蜡笔极简扁平画|颗粒绒感玩偶/ })).toHaveLength(3);
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     expect(await screen.findByAltText("待生成的肖像照片预览")).toBeInTheDocument();
     expect(generationApi.generateAvatar).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "移除肖像照片" }));
+    fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
     expect(screen.queryByAltText("待生成的肖像照片预览")).not.toBeInTheDocument();
   });
 
@@ -158,13 +247,11 @@ describe("showcase builder", () => {
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" }
     }));
     render(<App />);
+    await reachStyle();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), { target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] } });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    answerAll();
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     expect(await screen.findByAltText("动画肖像")).toHaveAttribute("src", "/api/hero-assets/12345678-1234-1234-1234-123456789012");
     expect(screen.queryByRole("button", { name: /发布并分享/ })).not.toBeInTheDocument();
     expect(screen.getByText(/仅供本机预览/)).toBeInTheDocument();
@@ -173,22 +260,21 @@ describe("showcase builder", () => {
   it("lets a failed avatar request fall back to a text-only preview", async () => {
     vi.mocked(generationApi.generatePortfolio).mockRejectedValueOnce(new Error("图像服务暂不可用"));
     render(<App />);
+    await reachStyle();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), { target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] } });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    answerAll();
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     await screen.findByText("图像服务暂不可用");
-    fireEvent.click(screen.getByRole("button", { name: "移除肖像，继续生成文字作品" }));
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    expect(await screen.findByTestId("design-config-json")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    expect(await screen.findByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
   });
-  it("shows the local avatar controls in a tunnel production build", () => {
+  it("shows the local avatar controls in a tunnel production build", async () => {
     vi.stubEnv("MODE", "tunnel");
     vi.stubEnv("DEV", false);
     render(<App />);
+    await reachStyle();
     expect(screen.getByLabelText("选择个人肖像照片")).toBeInTheDocument();
   });
 
@@ -212,9 +298,11 @@ describe("showcase builder", () => {
   it("does not describe a text PDF as unselectable when its sections are unrecognized", async () => {
     vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: ["RESUME\n一些无法自动分类的正文"], text: "RESUME\n一些无法自动分类的正文" });
     render(<App />);
+    openUpload();
     fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
       target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
     });
+    fireEvent.click(screen.getByRole("button", { name: /解析简历/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("PDF 文本已提取，但未能自动识别简历章节");
   });
 
@@ -222,30 +310,35 @@ describe("showcase builder", () => {
     const sectionPage = `RESUME\n黄禹哲\n哈尔滨理工大学·计算机科学与技术22级\n教育背景\nGPA：4.04 / 5\n项目实践\n基于物联网及大模型的无土栽培系统（竞赛项目·队长）\n• 简介：实现生长环境监测。\n专业技能\n• 熟悉 STM32 及相关单片机开发\n校园经历\n• 哈尔滨理工大学嵌入式创新实验室 成员`;
     vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: [sectionPage], text: sectionPage });
     render(<App />);
+    openUpload();
     fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
       target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
     });
-    await screen.findByRole("heading", { name: /确认并修正/ });
+    fireEvent.click(screen.getByRole("button", { name: /解析简历/ }));
+    await screen.findByRole("heading", { name: "让每一段经历，都有证据可循" });
+    fireEvent.click(screen.getByRole("button", { name: /工作 \/ 校园经历/ }));
     expect(screen.getByRole("textbox", { name: "校园经历 1" })).toHaveValue("哈尔滨理工大学嵌入式创新实验室 成员");
   });
 
   it("keeps the PDF confirmation mandatory, allows correction, and changes config when answers change", async () => {
     render(<App />);
-    expect(screen.queryByRole("button", { name: /生成 Design Config/ })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
-      target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
-    });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    expect(screen.getByRole("textbox", { name: "工作经历 1" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "项目 1" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "技能 1" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "教育 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /生成我的 Showcase/ })).not.toBeInTheDocument();
+    openUpload();
+    await chooseAndParse();
     fireEvent.change(screen.getByLabelText("姓名"), { target: { value: "黄 琬斐" } });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    const questions = document.querySelectorAll(".quiz-question");
+    fireEvent.click(screen.getByRole("button", { name: /工作 \/ 校园经历/ }));
+    expect(screen.getByRole("textbox", { name: /工作.*经历 1/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /项目经历/ }));
+    expect(screen.getByRole("textbox", { name: "项目经历 1" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /技能与链接/ }));
+    expect(screen.getByRole("textbox", { name: "技能与链接 1" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /教育经历/ }));
+    expect(screen.getByRole("textbox", { name: "教育经历 1" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /确认资料，选择风格/ }));
+    const questions = document.querySelectorAll(".proof-question");
     expect(questions).toHaveLength(8);
     questions.forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     const first = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     expect(first.content.profile.name).toBe("黄 琬斐");
     expect(first.content.projects).toHaveLength(2);
@@ -255,11 +348,11 @@ describe("showcase builder", () => {
     }), undefined, expect.any(Function));
 
     fireEvent.click(screen.getByRole("button", { name: /重新作答/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => {
+    document.querySelectorAll(".proof-question").forEach((question) => {
       const options = within(question as HTMLElement).getAllByRole("radio");
       fireEvent.click(options[options.length - 1]);
     });
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     const second = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     expect(second.skin).not.toBe(first.skin);
     expect(second.marquee.speed).not.toBe(first.marquee.speed);
@@ -269,15 +362,7 @@ describe("showcase builder", () => {
 
   it("updates the visible showcase and JSON from the result editor", async () => {
     render(<App />);
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
-      target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
-    });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => {
-      fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]);
-    });
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    await reachResult();
     const before = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
     expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
@@ -286,15 +371,15 @@ describe("showcase builder", () => {
     expect(after.content.profile.name).toBe("Edited Person");
     expect(after.marquee.speed).toBeGreaterThan(before.marquee.speed);
     expect(after.stackedCards.scaleStep).toBeGreaterThan(before.stackedCards.scaleStep);
-    expect(screen.getByRole("tab", { name: "网页预览" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.click(screen.getByRole("button", { name: /导出静态网站 ZIP/ }));
+    fireEvent.click(screen.getByRole("button", { name: /分享链接 \/ 导出/ }));
     await waitFor(() => expect(paymentApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.objectContaining({ profile: expect.objectContaining({ name: "Edited Person" }) }),
       marquee: expect.objectContaining({ speed: after.marquee.speed }),
       stackedCards: expect.objectContaining({ scaleStep: after.stackedCards.scaleStep })
     })));
-    expect(screen.getByRole("region", { name: "确认购买" })).toHaveTextContent("¥1.99");
-    expect(screen.getByRole("region", { name: "确认购买" })).toHaveTextContent("普通支付宝无法支付沙箱订单");
+    expect(screen.getByRole("heading", { name: "解锁当前项目" })).toBeInTheDocument();
+    expect(screen.getByText("¥1.99")).toBeInTheDocument();
+    expect(screen.getByText(/普通支付宝无法支付沙箱订单/)).toBeInTheDocument();
     expect(paymentApi.export).not.toHaveBeenCalled();
   });
 
@@ -306,25 +391,18 @@ describe("showcase builder", () => {
     vi.mocked(paymentApi.project).mockResolvedValue(paid);
     vi.mocked(paymentApi.updateProject).mockResolvedValue(paid);
     render(<App />);
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
-      target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
-    });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => {
-      fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]);
-    });
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    await reachResult();
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("paid-project"));
     fireEvent.click(screen.getByRole("button", { name: /导出静态网站 ZIP/ }));
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalledWith("paid-project"));
     expect(paymentApi.checkout).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));
     fireEvent.click(screen.getByRole("button", { name: /重新作答/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => {
+    document.querySelectorAll(".proof-question").forEach((question) => {
       fireEvent.click(within(question as HTMLElement).getAllByRole("radio").at(-1)!);
     });
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledTimes(2));
     expect(paymentApi.createProject).toHaveBeenCalledTimes(1);
@@ -341,7 +419,7 @@ describe("showcase builder", () => {
       window.history.replaceState(null, "", "/payment/return?project_id=return-project&trade_status=success");
       render(<App />);
       await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("return-project"));
-      expect(screen.getByRole("heading", { name: /已生成/ })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "让对的人，看见你的作品" })).toBeInTheDocument();
     } finally { window.history.replaceState(null, "", original); }
   });
 
@@ -353,7 +431,7 @@ describe("showcase builder", () => {
     try {
       window.history.replaceState(null, "", "/payment/return?project_id=return-project");
       render(<App />);
-      expect(await screen.findByRole("heading", { name: /已生成/ })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "让对的人，看见你的作品" })).toBeInTheDocument();
       expect(screen.getByRole("alert")).toHaveTextContent("查单暂不可用");
       expect(paymentApi.publish).not.toHaveBeenCalled();
     } finally { window.history.replaceState(null, "", original); }
@@ -373,18 +451,13 @@ describe("showcase builder", () => {
 
   it("saves edits made after opening the payment panel before starting checkout", async () => {
     render(<App />);
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
-      target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
-    });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => {
-      fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]);
-    });
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    await reachResult();
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
-    await screen.findByRole("region", { name: "确认购买" });
+    await screen.findByRole("heading", { name: "解锁当前项目" });
+    fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "支付前改名" } });
+    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    await screen.findByRole("heading", { name: "解锁当前项目" });
     fireEvent.click(screen.getByRole("button", { name: /前往支付宝沙箱收银台/ }));
     await waitFor(() => expect(paymentApi.updateProject).toHaveBeenCalledWith("project-1",
       expect.objectContaining({ content: expect.objectContaining({
@@ -417,17 +490,13 @@ describe("showcase builder", () => {
     Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 1 });
     try {
       render(<App />);
-      fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
-        target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
-      });
-      await screen.findByRole("heading", { name: /确认并修正/ });
-      fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
+      await reachStyle();
       expect(screen.getAllByText(/检测到触屏/).length).toBeGreaterThan(0);
-      document.querySelectorAll(".quiz-question").forEach((question) => {
+      document.querySelectorAll(".proof-question").forEach((question) => {
         const options = within(question as HTMLElement).getAllByRole("radio");
         fireEvent.click(options[options.length - 1]);
       });
-      fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+      fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
       const config = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
       expect(config.styleVector.S).toBe(1);
       expect(config.marquee.bindToScroll).toBe(true);
@@ -442,16 +511,7 @@ describe("showcase builder", () => {
 
   it("downgrades an already generated configuration after an actual touch event", async () => {
     render(<App />);
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
-      target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
-    });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) => {
-      const options = within(question as HTMLElement).getAllByRole("radio");
-      fireEvent.click(options[options.length - 1]);
-    });
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
+    await reachResult(4);
     await screen.findByTestId("design-config-json");
     const output = () => JSON.parse(screen.getByTestId("design-config-json").textContent ?? "") as DesignConfig;
     expect(output().marquee.bindToScroll).toBe(true);
