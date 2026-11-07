@@ -24,3 +24,7 @@ apps/agent/.venv/
 apps/agent/src/*.egg-info/
 **/__pycache__/
 **/.pytest_cache/
+docs/qa/
+docs/superpowers/
+docs/CVs/
+apps/web/public/export/
