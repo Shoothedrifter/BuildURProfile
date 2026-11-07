@@ -1,67 +1,55 @@
-# BuildURProfile 接手记录
+# BuildURProfile 开发约束
 
-支付状态更新：2026-10-28；代码路径与静态发布状态更新：2026-10-30。此文件记录当前 MVP 的代码入口、GitHub Pages 静态预览、支付沙箱事实、生产开通进展和下一步联调，供后续开发者接手；`PROJECT.md`、`AGENT_ARCHITECTURE.md`、`README.md`、`GITHUB_PAGES.md` 与 `docs/qa/PAYMENT_SANDBOX.md` 是产品和验收背景。不要把这里的状态描述当作已经完成真实付款的证明。
+本文件只记录当前通用规则。模块说明见[文档导航](docs/README.md)，运行与配置见[部署说明](docs/shared/deployment.md)，跨模块合同见[架构与协议](docs/shared/architecture.md)。历史归档不是开发前置资料。
 
-**2026-11-05 Agent 迁移切片（`codex/langgraph-agent-platform`，尚未合入 main）：** 生成任务现由 `apps/agent` 的 Python LangGraph + Skill 注册表处理；Node `apps/api` 仍负责会话、任务、资产、支付与交付，旧 JS worker 已移除。`npm run dev` 还启动 Python Agent 的 8788 端口；本机需 Python 3.11+ 和 `uv sync --project apps/agent --frozen --extra test`。无照片和模拟肖像的 Node↔Python 集成测试已通过；真实图像 API、Docker 守护进程构建、Wibi 商业许可及生产支付闭环未验收。当前实现说明以 `README.md`、`docs/architecture/AGENT_PLATFORM.md`、`docs/architecture/PYTHON_MIGRATION.md` 为准，以下旧状态按原日期理解。
+## 模块职责
 
-## 运行与安全边界
+- `apps/web`：React/Vite；在浏览器解析 PDF、确认字段、编辑和展示。Pages 模式只执行浏览器规则。
+- `apps/api`：Node 原生 HTTP；负责会话、CSRF、项目、任务、资产、支付核实与交付，是唯一公开后端入口。
+- `apps/agent`：Python FastAPI + LangGraph；通过私有 HTTP 协议领取任务并调用版本化 Skills。API 模式下无照片作品也必须经过图。
+- `packages/contracts`：展示合同、运行时校验、JSON Schema 和黄金样例。
+- `packages/skills`：浏览器 Skills、评分映射与 Node 风格资源校验；Python 有独立 Skill 注册表。
+- `packages/storage`：Node 数据库迁移、任务租约与资产存储；Agent 不直接访问支付数据库。
 
-- Node.js 24+；`npm run dev` 同时启动 Vite `http://127.0.0.1:5173` 和后端 `http://127.0.0.1:8787`。`npm run build` 包含 TypeScript 检查；`npm test`、`npm run test:payment`、`npm run verify:export` 分别覆盖前端、支付后端和离线导出。
-- `.env`、`.alipay-sandbox.json`、`data/` 属于本机私有配置或持久状态，不得提交、贴入日志或复制到前端。根目录 `.alipay-sandbox.json` 由已安装的 `alipay-aipay` Skill 创建，权限必须是 `0600`。生产配置、数据库和沙箱隔离；本机 1 分价格仅用于沙箱。
-- PDF 字节与解析结果留在浏览器内存；确认后的展示配置才会保存到服务端。免费预览不授予正式分享和 ZIP 下载。项目所有权绑定服务端匿名会话；支付事实由签名通知或签名查单核实，不接受客户端自报。
+## 运行与配置
 
-## GitHub Pages 静态预览（2026-10-30）
+- Node.js 24+、Python 3.11+、uv 0.11.x；先运行 `npm ci` 和 `uv sync --project apps/agent --frozen --extra test`。
+- `npm run dev` 启动 Web（5173）、API（8787）、Agent（8788）；`npm start` 只启动 Node，完整生成还需 Agent。
+- 环境变量样例位于 `apps/api`、`apps/agent`、`deploy`。实际加载位置未迁移，按部署文档准备根目录配置或注入进程环境。
+- Windows 使用虚拟环境时显式设置 `PYTHON` 为 `apps/agent/.venv/Scripts/python.exe` 的绝对路径，或先激活环境。
 
-- `npm run build:pages` 使用 Vite `pages` 模式，资源基路径为 `/BuildURProfile/`；`.github/workflows/pages.yml` 在 `main` 推送或手动触发时运行前端测试、构建和 Pages 发布。普通 `npm run dev` / `npm run build` 仍保留 Node API 流程。
-- 静态版只提供浏览器内 PDF 解析、字段确认、8 题测评、编辑和网页预览。`apps/web/src/App.tsx` 在该模式跳过 API 请求，隐藏分享、ZIP 和支付入口；刷新后作品消失。Pages 不运行 Node API，不存 SQLite、会话或支付状态，也不提供正式分享和下载。
-- 提交 `496f4a3` 已推送到 GitHub `main`；对应 [CI](https://github.com/Shoothedrifter/BuildURProfile/actions/runs/41000252698) 与 [Pages 发布](https://github.com/Shoothedrifter/BuildURProfile/actions/runs/41000252695) 均于 2026-10-30 成功。公开地址应为 <https://shoothedrifter.github.io/BuildURProfile/>，但尚无公开网址上完整 PDF 流程的人工验收记录；按 `GITHUB_PAGES.md` 逐项核对。
-- 后续需要服务端草稿、付费、正式分享和 ZIP 时，要另行部署 Node API，并为 SQLite 与 `data/session-secret` 提供持久存储。Pages 发布成功不等于完整项目或支付系统上线。
+## 数据与权限
 
-## 代码入口
+- PDF 字节、提取全文、未确认解析结果和 `sourceRefs` 只留在浏览器内存。只有用户确认的展示字段、角色和测评答案进入生成 API。
+- 照片只在用户主动提交后进入私有资产区并交给配置的图像供应商；上传界面须说明该传输。
+- checkpoint 不保存 PDF 原文、来源片段、照片字节、密钥或支付数据；只保存任务所需的确认字段和资产 ID。
+- `.env` 及其变体、`.alipay-sandbox.json`、`data/`、私钥和真实简历样例不得提交、输出到日志或复制进前端；沙箱凭据文件必须为普通文件且权限 `0600`。
+- 日志只记录任务 ID、节点、耗时和错误码。自动测试使用可提交的合成样例。
+- 匿名项目所有权由服务端会话决定；写操作保持 CSRF 校验，任务和资产按会话隔离。
+- 私有 `/_internal/agent/` 接口只接受服务令牌，反向代理禁止向公网转发；任务读写同时核对有效租约。
+- 数据库、资产、会话密钥和 Agent checkpoint 持久化；生产和沙箱分库分密钥。多主机不得共享 SQLite 文件。
 
-- `apps/web/src/App.tsx`：PDF 确认、测评、编辑、付费说明、支付返回后恢复原分享或导出动作。
-- `apps/web/src/lib/paymentApi.ts`：带 CSRF 的项目与交付 API；仅提交官方 SDK 生成且网关地址经过校验的 POST 支付表单。
-- `apps/api/src/index.mjs`、`apps/api/src/config.mjs`、`apps/api/src/gateway.mjs`：服务启动、环境配置、官方 `alipay-sdk` 的页面支付/验签/查单。
-- `apps/api/src/database.mjs`、`apps/api/src/service.mjs`、`apps/api/src/http.mjs`：持久项目/订单/资格/交付、订单核对、分享和下载的权限校验。
-- `apps/api/src/export.mjs`、`apps/web/src/export/standalone.tsx`：服务端 ZIP 及离线展示。`packages/contracts/src/config.ts` 是配置合同。
-- `apps/api/src/routes/internal-agent.mjs`、`packages/storage/src/generation/`：私有 Agent 协议、版本化任务、租约与资产。
-- `apps/agent/src/buildurprofile_agent/graph.py`、`skills/`、`providers/`：Python LangGraph、Skill 合同与外部图像 API 适配器；`apps/agent/README.md` 说明扩展方式。
+## 生成、支付与交付
 
-## 生产开通进展（2026-10-28）
+- 固定 Marquee + StackedCards 骨架、三种皮肤；配置是受校验的数据，不接受任意 HTML/CSS/JS 或 React 代码。
+- Skill 声明稳定 ID、版本、输入输出、能力和超时；能力按需授予，不提供支付、数据库、任意 shell 或文件系统访问。
+- 修改 Skill 合同或输出时同步更新相关工作流版本、Schema 与测试，避免旧任务混用新规则。
+- Wibi 资源固定提交并校验哈希，当前仅限本机非商业预览；未取得商业权利和完成资产交付设计前，带肖像作品不得进入付费分享或 ZIP。
+- 支付事实只接受支付宝签名通知或签名查单，并核对订单、金额及商户身份；不接受客户端或 Agent 自报，不手工修改数据库模拟实付。
+- 免费预览不授予正式分享或 ZIP。资格、交付、分享过期和撤销由 API 校验，失败重试不得重复收费。
+- 自动测试、收银台展示、Pages 发布成功均不能证明真实付款或公网回调已验收；上线要求见[支付文档](docs/api/payment.md)。
 
-通过已安装的 `alipay-aipay` Skill 以个人支付宝账号完成扫码授权，提交「AI 网页应用收款」正式开通：
+## 按改动选择检查
 
-- 签约：产品码 `I1080300001000041203`，经营类目「在线工具」（`A0003_B0112`），无需特殊资质；已提交，等待生效。
-- 应用：App ID `2021007113619286`（网页应用）。应用公钥为用户自行生成的 RSA2/2048 公钥，已在开放平台公钥确认页完成确认；应用已提交审核，等待上线。应用私钥为 PKCS#1 格式，由用户自行保管，不进入仓库、`.env.example` 或 Agent 会话。
-- 支付宝公钥：Skill 已导出到 `~/.config/2021007113619286-alipayPublicKey.keytext`，生产 `ALIPAY_PUBLIC_KEY` 从该文件取得。
-- 签约生效与应用上线均未确认，在此之前不能宣称可正式收款；可让 Agent 执行「帮我查询产品签约状态」或「帮我查询应用状态」复核。
+| 改动 | 检查 |
+| --- | --- |
+| Web、共享 TS 合同或展示 | `npm test`、`npm run build` |
+| Pages 模式 | `npm test`、`npm run build:pages`，按 Pages 文档人工验收 |
+| API、支付、存储或权限 | `npm run test:payment` |
+| TS Skills 或风格资源 | `npm run test:skills`；涉及跨语言评分时加 `npm run test:agent` |
+| Python、生成合同或私有协议 | `npm run test:agent`，必要时同步检查 Schema 和黄金样例 |
+| 离线渲染或 ZIP | `npm run verify:export` |
+| Docker 或编排 | 构建两端镜像并验证 Compose 健康检查、持久卷与重启 |
+| 纯文档或样例移动 | 本地链接、变量清单、忽略规则、改动范围和 `git diff --check` |
 
-生产上线剩余待办：
-
-1. 在支付宝商家平台「签约管理」补全收款信息，否则收款受限：<https://b.alipay.com/page/ar-center/ar-manage>。
-2. 公网 HTTPS 部署；生产模式强制 `PUBLIC_BASE_URL` 为 HTTPS，`ALIPAY_NOTIFY_URL` 为无重定向的公网 HTTPS `/api/payment/notify`（`apps/api/src/config.mjs` 校验）。
-3. 生产 `.env`：`PAYMENT_ENV=production`、`ALIPAY_APP_ID=2021007113619286`、`ALIPAY_PRIVATE_KEY=<用户自持 PKCS#1 私钥>`、`ALIPAY_PRIVATE_KEY_TYPE=PKCS1`、`ALIPAY_PUBLIC_KEY=<上述导出文件内容>`；网关由 `config.mjs` 自动切换为生产网关。
-4. 完成公网通知验收：验签、`app_id`/`out_trade_no`/`total_amount`/`trade_status` 校验、幂等 `success` 回写与丢通知查单补偿；再做真实小额交易与退款售后核验。
-
-## 当前沙箱问题：扫码提示“二维码已经失效”
-
-用户重新上传简历后生成了**新**项目和**新**待支付订单。检查时订单创建约 1 分钟，收银台显示服务名称、¥0.01 和二维码；服务器签名调用 `alipay.trade.query` 得到 `40004 / ACQ.TRADE_NOT_EXIST`，本地订单仍为 `PENDING`，资格和分享均未生成。不能把二维码报错或收银台页面显示解释成付款成功，也没有证据表明本次复用了上次的旧订单。
-
-已安装的支付宝 Skill 说明：沙箱支付宝客户端仅支持 Android；普通支付宝或 iOS 客户端扫码不能作为沙箱验收方式。优先请用户在当前电脑收银台的“登录支付宝账户付款”区域使用**沙箱买家**账号及**支付密码**（页面提示这里不是登录密码）自行完成。不要代用户输入密码或点击最终付款。若必须扫码，使用 Skill 指向的官方 Android 沙箱支付宝，安装帮助在 <https://open.alipay.com/develop/sandbox/tool>。不要使用真实支付宝或真实收款码。沙箱买家账号信息只能按 Skill 已校验配置提供，不从猜测或示例取得；本机 `.alipay-sandbox.json` 已核实的沙箱买家登录名为 `blgqds0563@sandbox.com`（支付密码以沙箱控制台为准）。
-
-若电脑账号支付也失败，记录收银台可见错误、重新签名查单、检查网关与商户身份；不要直接修改数据库为 `PAID`。付款说明区已增加仅在沙箱显示的扫码限制和电脑账号支付提示。`apps/api/src/service.mjs` 当前会复用同项目任意 `PENDING` 订单；后续可针对**已由支付宝核实关闭或过期**的订单增加安全刷新逻辑，但不能仅因二维码报错就把可能已付款的订单作废。保留旧订单以查单追回迟到付款，防止重复收费。
-
-## 付款后必须完成的验收
-
-1. 由用户自行完成沙箱付款。返回站点后执行服务端 `alipay.trade.query`；只有核对订单号、金额、商户身份并见到 `TRADE_SUCCESS` / `TRADE_FINISHED`，才认定资格已发放。
-2. 核实原动作自动继续：正式分享生成 7 天 token 或 ZIP 下载；同项目第二种交付不再要求支付，另一项目仍需单独购买。
-3. 打开分享链接并检查带 `#share=…` 的页内锚点；下载 ZIP 并断网打开 `index.html`。刷新与重启后复核持久资格。未付费直接请求发布/导出必须被拒绝。
-4. 本机没有公网 HTTPS `notify_url`，无法验证支付宝异步回调；当前依赖用户返回后的签名查单。部署公网回调后再验签名、幂等和丢通知补偿。退款后台、生产真实付款属于独立上线工作；生产签约已于 2026-10-28 提交、等待生效（见上文「生产开通进展」）。
-
-## 当前验证口径
-
-当前本地记录：增加沙箱提示后 `npm run build`、`npm test`（84 项）、`npm run test:payment`（26 项）通过；之前 `npm run verify:export` 通过，但提示修改后未重跑。上述均是付款之前的结果。沙箱实付、支付后分享及 ZIP 闭环**尚未验证**。最新事实以数据库、支付宝签名查单和浏览器实际交付为准，不能用模拟通知测试替代。
-
-2026-10-30 结构迁移后，代码入口位于 `apps/web`、`apps/api`、`packages/contracts`；自动化导出验收已改用可提交的合成样例。根 `npm run build`、`npm test`（84 项）、`npm run test:payment`（27 项，包含生产静态页烟测）、`npm run verify:export` 已重新通过。它们仅验证代码行为，不证明新一轮沙箱实付或公网回调。
-
-2026-10-30 Pages 切片后，根 `npm test`（86 项）及 `npm run build:pages` 已再次通过；GitHub 对提交 `496f4a3` 的 CI 和 Pages 工作流也均成功。此记录不证明公开网址上的 PDF 完整流程、沙箱实付、支付后交付或公网回调已验收。
+文档按 `docs/web`、`docs/api`、`docs/agent` 和 `docs/shared` 维护；已完成计划和过程记录压缩后放入带日期的 `docs/archive`，日常说明不重复开发日志。

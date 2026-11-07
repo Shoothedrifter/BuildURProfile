@@ -1,96 +1,39 @@
 # BuildURProfile
 
-当前 Agent 架构、隐私边界和上线限制见 [Agent 平台设计](docs/architecture/AGENT_PLATFORM.md) 与 [Python 迁移合同](docs/architecture/PYTHON_MIGRATION.md)。API 模式下，用户确认简历并完成 8 题测评后，所有作品（包括无照片作品）都进入 Python LangGraph；评分、设计映射、简历组装、可选肖像生成和 QA 由注册 Skill 执行。支付与交付由独立的 Node API 处理。
+将文本型 PDF 简历转成可编辑的交互式作品网页。浏览器负责解析与确认内容，Python LangGraph 通过 Skills 生成展示配置，Node API 管理任务、支付、分享和离线 ZIP。
 
-```text
-apps/web       浏览器 PDF、确认、编辑和展示
-apps/api       会话、任务 API、支付和交付
-apps/agent     Python FastAPI、LangGraph 图、Skill 注册、图像 API 适配器
-packages/skills 浏览器 Skills、Wibi 三风格资源校验和目录
-packages/storage 任务、资产、数据库迁移与持久化适配
-packages/contracts 共享展示合同与运行时校验
-```
+## 目录
 
-本机使用 SQLite WAL、私有资产目录和 Python LangGraph SQLite checkpoint。生产单机部署见 `compose.agent.yml`；`/healthz` 检查 API，`/readyz` 检查 Agent 心跳。多主机部署需把数据库、队列、资产存储和 checkpoint 改为共享适配器，不能跨主机共享 SQLite 文件。
+| 目录 | 职责 |
+| --- | --- |
+| `apps/web` | React/Vite 界面、浏览器 PDF、编辑与展示 |
+| `apps/api` | Node API、会话、任务入口、支付与交付 |
+| `apps/agent` | Python LangGraph、Skills 和图像服务适配器 |
+| `packages` | 共享合同、浏览器规则、资源校验与持久化 |
+| `scripts` | 启动、资源安装和验证工具 |
+| `deploy` | 部署环境变量样例 |
+| `docs` | 按模块组织的说明、跨模块规约与历史归档 |
 
-只发布浏览器预览时，使用 `npm run build:pages` 构建 GitHub Pages 版本；该版本不请求后端，也不显示分享、支付或 ZIP 交付入口，刷新后作品不会保留。提交 `496f4a3` 的 Pages 发布工作流已成功；公开页面的完整 PDF 流程仍待人工验收。发布记录与操作步骤见 [GitHub Pages 静态预览部署](GITHUB_PAGES.md)。
+## 本机启动
 
-## 运行
+需要 Node.js 24+、Python 3.11+ 和 uv 0.11.x。在仓库根目录运行：
 
-需要 Node.js 24+、Python 3.11+ 和 `uv` 0.11.x。
-
-```bash
-npm install
+```sh
+npm ci
 uv sync --project apps/agent --frozen --extra test
 npm run dev
 ```
 
-### 肖像 Skill Demo
+打开 `http://127.0.0.1:5173`。该命令同时启动 Node API（8787）和 Python Agent（8788）；无照片预览不需要支付或图像服务凭据。
 
-首次使用运行 `npm run setup:avatar`，下载固定 commit `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 三种肖像风格并校验哈希。复制 `.env.agent.example` 为 `.env.agent`，在该文件填写 `CLOUDFLARE_ACCOUNT_ID` 和具备 Workers AI Read、Edit 权限的 `CLOUDFLARE_API_TOKEN`。Python Agent 默认使用 Cloudflare Workers AI 的 `@cf/black-forest-labs/flux-2-klein-4b`；该模型要求 multipart 输入，适配器会把肖像和风格参考图缩到 480 像素长边。无照片作品无需图像服务凭据。Node API 和浏览器不会接收图像密钥。
+Windows 下若虚拟环境未激活，先在 PowerShell 设置 `$env:PYTHON = (Resolve-Path 'apps/agent/.venv/Scripts/python.exe').Path`。现有启动脚本只自动查找 Unix 虚拟环境路径。
 
-`npm run dev` 在回环地址同时启动 Vite（5173）、Node API（8787）和 Python Agent（8788）。首页可选择一张本人照片与复古扁平动画头、蜡笔极简扁平画、颗粒绒感玩偶之一；照片在点击生成前只留在浏览器。确认 PDF 内容并完成测评后，无照片和有照片作品均由图执行；有照片时 Python Agent 调用配置的图像 API，成图位于作品首屏。源照片和成图属于当前匿名会话，分别在 1 天和 7 天后过期；每个会话 24 小时最多发起 5 次肖像生成。Wibi 功能仅在本机开发模式启用，GitHub Pages 与生产启动不提供该入口。
+可选配置的样例已归入各模块；**实际配置仍按现有启动方式放在根目录或注入进程环境**，已有文件请补充配置，避免覆盖。详见[部署与环境变量](docs/shared/deployment.md)。
 
-若默认端口已被占用，可用 `SERVER_PORT=8790 AGENT_PORT=8791 VITE_PORT=5174 npm run dev` 启动另一组本机端口；Vite 会把 `/api` 代理到所选 API 端口。若两组服务同时运行，还应为后一组设置独立的 `DATABASE_PATH`、`AVATAR_ASSET_ROOT` 和 `AGENT_CHECKPOINT_PATH`。
+## 文档
 
-Wibi 的视觉规则仅许可个人非商业使用。当前成图保留原风格背景，只作本机预览，服务端拒绝带肖像的付费作品配置；透明抠图和 [oil-motion](https://github.com/oil-oil/oil-motion) 指针交互留待后续。Wibi Style 原作者：@威比 Hunter Wei.，来源：[Vieeeeeee/wibi-style](https://github.com/Vieeeeeee/wibi-style)。图像服务未配置或生成失败时，任务会明确失败，不会展示伪造的成图。
-
-### 单机容器部署
-
-分别从 `.env.api.example`、`.env.agent.example` 和 `.env.compose.example` 准备不提交的 `.env.api`、`.env.agent`、`.env`；若根目录已有 `.env`，保留现有支付配置并补入随机生成的 `AGENT_SERVICE_TOKEN`（至少 32 字符），不要覆盖原文件。把支付宝参数只填在 `.env.api`，Cloudflare Account ID 和 API Token 只填在 `.env.agent`，共享服务令牌通过 Compose 注入两端。运行 `docker compose -f compose.agent.yml up --build`；Node API 在宿主机 `127.0.0.1:8787`，Agent 仅在容器网络中。公网部署需另配 HTTPS 反向代理，并拒绝转发 `/_internal/agent/`。当前容器部署默认关闭 Wibi 肖像入口，直到商业使用权和付费资产交付设计完成。
-
-打开 Vite 打印的本地地址。上传可选中文本的 PDF 后，必须核对姓名、工作经历、项目、技能、教育，才能进入 8 题测评。生成页可改展示文案、跑马灯图片、项目图片和交互强度；改动立即进入预览、Design Config JSON 与静态网站导出。首页的“查看视觉样例”使用 `apps/web/src/demo/config.json` 中的三板块 mock，保留三套皮肤切换。
-
-PDF.js 和 PDF worker 随页面本地打包；PDF 文件字节、提取文本和确认表单只存在浏览器内存中。浏览器的 PDF 提取、解析、确认也通过浏览器专用 Skill 运行。用户点击生成后，只有已确认的展示字段、角色和测评答案进入 API；服务端再次拒绝 `sourceRefs` 和多余字段。只有用户主动提交本机肖像 demo 后，照片才会发送给本机 API 与 Python Agent，并由外部图像供应商处理。当前简历解析针对两份本机样例验证，其他版式可能需要扩展规则；扫描件 OCR 尚未接入。
-
-## 分享与离线导出
-
-- 免费生成和编辑只显示本地预览。正式发布与离线 ZIP 需要所属项目在服务端具备已验证的付费资格；分享链接默认 7 天过期，可撤销，同项目重新发布不重复收费。接收者打开有效链接无需登录或付款。
-- 服务端生成的 ZIP 含独立的 `index.html`，解压后可离线打开。编辑器上传的图片先嵌入发布配置；远程图片需由浏览器通过 CORS 读取并内嵌。已下载的 ZIP 无法撤回。
-- 发布快照和 ZIP 只包含展示所需内容，服务端保存前移除 `content.sourceRefs` 中的 PDF 原文摘录；原 PDF 始终只在浏览器内解析。结果页的 Design Config JSON 可供用户核对，但不代表已付款或已发布。
-
-## 代码入口
-
-- `apps/web/src/lib/pdf.ts`：浏览器端 PDF 文字提取。
-- `apps/web/src/lib/resume.ts`：简历分段、原文出处与数字校验。
-- `packages/skills/src/assessment.ts`、`mapping.ts`：Pages 浏览器预览的测评与设计规则；与 Python 规则用黄金样例校验一致性。
-- `apps/agent/src/buildurprofile_agent/graph.py`：完整作品生成 LangGraph。
-- `apps/agent/src/buildurprofile_agent/skills/registry.py`：Agent Skill 合同、能力隔离、版本和许可策略。
-- `apps/agent/src/buildurprofile_agent/providers/cloudflare_images.py`：Cloudflare Workers AI 的 FLUX.2 Klein 4B multipart 适配器；`openai_images.py` 保留为可选适配器。
-- `packages/storage/src/generation/`：确认内容清洗、队列租约与资产存储。
-- `apps/web/src/components/EditorPanel.tsx`：结果页文字、图片与交互强度编辑。
-- `apps/api/src/service.mjs` 与 `apps/api/src/http.mjs`：项目归属、订单、支付资格、分享和下载的服务端校验。
-- `apps/api/src/export.mjs` 与 `apps/web/src/export/standalone.tsx`：服务端离线 ZIP 打包与独立渲染入口。
-- `packages/contracts/src/config.ts`：完整的 `DesignConfig` 合同。
-- `apps/web/src/ShowcasePage.tsx`：固定骨架和三套 CSS 变量皮肤。
-- `apps/web/src/lib/presentation.ts` 与 `apps/web/src/lib/resumePresentation.ts`：项目概述/详情、技能短标签和经历层级的保守展示规则。项目正文、完整技能和无法可靠分段的经历原文始终可读。
-- `apps/web/src/fixtures/`：可提交的合成样例，用于前端与离线导出回归；本机真实简历样例继续忽略，不是构建依赖。
-
-```bash
-npm test
-npm run build
-npm run test:agent
-npm run verify:export
-```
-# 支付沙箱联调（AI 网页应用收款）
-
-当前正式发布与静态 ZIP 导出使用支付宝 **AI 网页应用收款** 的 `alipay.trade.page.pay`。PDF 仍在浏览器解析；只有用户确认后的 Design Config、展示素材和发布所需内容会送到本地服务端。免费生成、编辑和预览不需要付款。一个服务端项目 ID 的一次付款同时解锁正式分享与静态导出；新项目独立计费。
-
-1. 复制 `.env.example` 为 `.env`，填写你自行确定的正整数 `PAYMENT_PRICE_FEN` 和站点地址。若已通过安装的支付宝 Skill 创建项目根目录 `.alipay-sandbox.json`，服务端会在沙箱模式下从该权限为 `0600` 的文件读取同一应用的 ID、PKCS#1 私钥、支付宝公钥及商户身份，不需要把密钥再复制进 `.env`。也可直接在 `.env` 中填写沙箱参数，并按密钥格式设置 `ALIPAY_PRIVATE_KEY_TYPE`。不要提交任何密钥文件。生产模式只读取独立的 `.env` 参数，不读取沙箱文件，且需要 HTTPS `PUBLIC_BASE_URL` 和公共 HTTPS `ALIPAY_NOTIFY_URL`。
-2. 使用 Node 24+ 运行 `npm install`、`npm run dev`。它同时启动 8787 端口的 Node 服务和 5173 端口的 Vite，Vite 将 `/api` 代理给服务端。当前 5173 端口若已由旧 Vite 占用，先停止旧进程，再运行此命令。部署时运行 `npm run build`、`npm start`，并以反向代理或平台端口映射提供公网 HTTPS；容器环境可将 `SERVER_HOST=0.0.0.0`。
-3. 在浏览器生成作品并点击“发布并分享”或“导出静态网站 ZIP”。服务端保存草稿并显示服务内容、服务端售价、两项解锁能力与 7 天链接有效期。确认后进入支付宝沙箱收银台；返回时服务端用 `alipay.trade.query` 查单，核实订单号和金额后继续原动作。异步通知采用官方 SDK 验签，并核对订单号、金额、app ID 和 seller。
-4. 可用 `npm run test:payment` 跑支付逻辑与 HTTP 交付测试，`npm test` 跑前端测试，`npm run build` 跑类型检查和构建。自动测试的伪支付宝通知仅用于业务逻辑测试，**不代表沙箱实付成功**。
-
-本地 `127.0.0.1` 不能接收支付宝服务器发出的异步通知。若要验证通知，请用公网 HTTPS 部署服务并将 `ALIPAY_NOTIFY_URL` 指向无重定向的 `/api/payment/notify`；用实际外部请求确认该地址可 POST 且不重定向。未配置该地址时，沙箱可用用户返回后的签名查单恢复支付；若用户未返回，可在项目页面重新点击原动作后查单。正式上线前需独立完成产品签约、生产密钥和网关配置、回调可达性、真实小额交易与退款售后流程核验。
-
-沙箱数据默认写入 `data/buildurprofile.sqlite`，生产数据默认写入 `data/buildurprofile-production.sqlite`；也可用 `DATABASE_PATH` 指定独立持久盘。数据库在首次设置支付环境时会绑定到沙箱或生产，跨环境复用同一文件会拒绝启动。匿名会话签名密钥保存在 `data/session-secret`。这些文件都在 `.gitignore` 中。备份与部署时必须一起持久化；更换会话密钥会使原浏览器失去匿名项目归属。分享 token 只允许浏览已发布的快照，不能用于修改项目、查订单或下载。支付资格与交付状态分别记录；已付费但交付失败时资格仍保留，可重试；已下载的 ZIP 无法撤回。订单号与支付宝交易号可通过所属项目的 `GET /api/projects/:id/orders` 查询，供人工退款售后核对。仅在核实全额退款后才应撤销资格和有效分享；本次 demo 不提供自动退款后台。
-
-## 生产部署（2026-10-28 签约已提交）
-
-「AI 网页应用收款」签约已于 2026-10-28 经支付宝 Skill 提交（经营类目「在线工具」），正式应用 `2021007113619286` 已创建并提审、等待上线；两者生效前不能正式收款。生产配置只读 `.env`，不读取 `.alipay-sandbox.json`：
-
-1. `PAYMENT_ENV=production`；`ALIPAY_APP_ID=2021007113619286`；`ALIPAY_PRIVATE_KEY` 为用户自持的 PKCS#1 私钥并设 `ALIPAY_PRIVATE_KEY_TYPE=PKCS1`；`ALIPAY_PUBLIC_KEY` 取自 `~/.config/2021007113619286-alipayPublicKey.keytext`（Skill 导出的支付宝公钥）。
-2. `PUBLIC_BASE_URL` 为公网 HTTPS 域名；`ALIPAY_NOTIFY_URL` 指向无重定向的公网 HTTPS `/api/payment/notify`；网关自动切换为 `https://openapi.alipay.com/gateway.do`。
-3. 生产数据写入独立的 `data/buildurprofile-production.sqlite`，与沙箱库互不兼容复用。
-4. 上线前在支付宝商家平台「签约管理」补全收款信息，并完成公网通知验收、真实小额交易与退款售后核验。
-
+- [文档导航](docs/README.md)：按模块查阅。
+- [产品约束](docs/shared/product.md)与[架构与协议](docs/shared/architecture.md)：当前行为和模块边界。
+- [静态 Pages 预览](docs/web/github-pages.md)：无需后端的浏览器预览。
+- [支付与交付](docs/api/payment.md)：配置和上线验收。
+- [开发约束](AGENTS.md)：修改代码前的必要规则与检查。
