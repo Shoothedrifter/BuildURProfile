@@ -3,31 +3,32 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "engines": {
-    "node": ">=24"
+    "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "npm run build:export && node apps/api/src/dev.mjs",
-    "dev:server": "node apps/api/src/index.mjs",
+    "dev": "node apps/launcher/src/dev.mjs",
+    "dev:server": "next dev apps/web -H 127.0.0.1 -p 8787",
     "dev:agent": "node scripts/run-python-agent.mjs",
     "setup:avatar": "node scripts/install-wibi-demo.mjs",
-    "start": "node apps/api/src/index.mjs",
-    "test:payment": "npm run build && node --test apps/api/src/*.test.mjs",
+    "start": "node apps/launcher/src/index.mjs",
+    "test:payment": "node --test apps/launcher/src/*.test.mjs",
     "test:skills": "node --test packages/skills/src/*.test.mjs",
-    "test:agent": "node scripts/test-python-agent.mjs && node --test apps/api/src/internal-agent.test.mjs apps/api/src/generations.test.mjs",
-    "test": "vitest run",
-    "build": "tsc --noEmit && npm run build:export && vite build",
-    "build:tunnel": "tsc --noEmit && vite build --mode tunnel",
-    "build:pages": "tsc --noEmit && vite build --mode pages",
-    "build:export": "vite build --config vite.export.config.ts",
-    "verify:export": "npm run build:export && node scripts/verify-export.mjs",
-    "preview": "vite preview"
+    "test:agent": "node scripts/test-python-agent.mjs && node --test apps/launcher/src/internal-agent.test.mjs apps/launcher/src/generations.test.mjs",
+    "test": "vitest run --config vitest.config.ts",
+    "build": "tsc --noEmit && next build apps/web",
+    "build:tunnel": "NEXT_PUBLIC_APP_MODE=tunnel tsc --noEmit && NEXT_PUBLIC_APP_MODE=tunnel next build apps/web"
   },
   "dependencies": {
+    "@tailwindcss/postcss": "^4.3.5",
     "alipay-sdk": "^4.14.0",
     "image-size": "^2.0.4",
+    "next": "^16.4.5",
     "pdfjs-dist": "^6.4.299",
+    "postcss": "^8.5.32",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
@@ -35,7 +36,6 @@
     "urllib": "4.9.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
@@ -46,7 +46,6 @@
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5",
     "vitest": "^4.1.12"
   }
 }

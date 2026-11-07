@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { openDatabase } from "../../../../packages/storage/src/database.mjs";
 import { createGenerationService } from "../../../../packages/storage/src/generations.mjs";
-import { createPaymentHttpServer } from "../../../api/src/http.mjs";
+import { createPaymentHttpServer } from "../../../web/src/server/http.mjs";
 
 const root = mkdtempSync(join(tmpdir(), "burp-python-bridge-"));
 const db = openDatabase(join(root, "app.sqlite"));

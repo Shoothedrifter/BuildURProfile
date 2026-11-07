@@ -47,12 +47,12 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
   function readAsset(sessionId, id, kind = "hero") {
     const row = db.prepare("SELECT * FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind=? AND expires_at>?").get(id, sessionId, kind, now());
     if (!row) throw new ServiceError(404, "图片不存在或无权访问。");
-    return { bytes: readFileSync(row.path), mime: row.mime, kind: row.kind };
+    return { bytes: readFileSync(/*turbopackIgnore: true*/ row.path), mime: row.mime, kind: row.kind };
   }
   function readAssetForWorker(id) {
     const row = db.prepare("SELECT * FROM avatar_assets WHERE id=? AND kind='portrait' AND expires_at>?").get(id, now());
     if (!row) throw new ServiceError(404, "源照片已过期或不存在。");
-    return { bytes: readFileSync(row.path), mime: row.mime };
+    return { bytes: readFileSync(/*turbopackIgnore: true*/ row.path), mime: row.mime };
   }
   function outputExists(id) {
     return Boolean(db.prepare("SELECT 1 FROM avatar_assets WHERE id=? AND kind='hero' AND expires_at>?").get(id, now()));

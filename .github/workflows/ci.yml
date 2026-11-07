@@ -32,6 +32,5 @@ jobs:
       - run: npm run test:payment
       - run: npm run test:skills
       - run: npm run test:agent
-      - run: npm run verify:export
-      - run: docker build -f apps/api/Dockerfile -t buildurprofile-api:ci .
+      - run: docker build -f apps/launcher/Dockerfile -t buildurprofile-web:ci .
       - run: docker build -f apps/agent/Dockerfile -t buildurprofile-agent:ci .

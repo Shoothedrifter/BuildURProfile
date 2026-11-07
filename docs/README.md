@@ -9,9 +9,8 @@
 | 产品范围与交互约束 | [产品约束](shared/product.md) |
 | 模块所有权、数据流和私有协议 | [架构与协议](shared/architecture.md) |
 | 本机、容器和独立部署；环境变量样例 | [部署与环境变量](shared/deployment.md) |
-| 浏览器 PDF、编辑、展示与前端测试 | [Web](web/README.md) |
-| 静态预览发布与人工检查 | [GitHub Pages](web/github-pages.md) |
-| Node 接口、任务、资产与权限 | [API](api/README.md) |
+| Next.js 前端、PDF 解析、编辑、展示与单测 | [Web](web/README.md) |
+| Next.js 服务端接口、任务、资产与 Launcher 入口 | [API 与 Launcher](api/README.md) |
 | 支付配置、沙箱与上线验收 | [支付与交付](api/payment.md) |
 | Python 图、Skills 与图像服务 | [Agent](agent/README.md) |
 | TS 注册表与固定风格资源 | [Skills 包](../packages/skills/README.md) |

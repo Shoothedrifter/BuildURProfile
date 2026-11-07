@@ -185,46 +185,11 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
     expect(await screen.findByTestId("design-config-json")).toBeInTheDocument();
   });
-  it("opens the static preview without requesting server data or following a share hash", () => {
-    const originalHash = window.location.hash;
-    vi.stubEnv("MODE", "pages");
-    vi.mocked(paymentApi.offer).mockClear();
-    vi.mocked(paymentApi.projects).mockClear();
-    vi.mocked(paymentApi.readShare).mockClear();
-    try {
-      window.history.replaceState(null, "", `#share=${"a".repeat(43)}`);
-      render(<App />);
-      expect(screen.getByRole("heading", { name: /让简历成为/ })).toBeInTheDocument();
-      expect(paymentApi.offer).not.toHaveBeenCalled();
-      expect(paymentApi.projects).not.toHaveBeenCalled();
-      expect(paymentApi.readShare).not.toHaveBeenCalled();
-    } finally {
-      window.history.replaceState(null, "", originalHash || window.location.pathname);
-    }
-  });
-
   it("shows the local avatar controls in a tunnel production build", () => {
     vi.stubEnv("MODE", "tunnel");
     vi.stubEnv("DEV", false);
     render(<App />);
     expect(screen.getByLabelText("选择个人肖像照片")).toBeInTheDocument();
-  });
-
-  it("keeps PDF preview available in static mode without showing server delivery actions", async () => {
-    vi.stubEnv("MODE", "pages");
-    render(<App />);
-    fireEvent.change(screen.getByLabelText("选择 PDF 简历"), {
-      target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
-    });
-    await screen.findByRole("heading", { name: /确认并修正/ });
-    fireEvent.click(screen.getByRole("button", { name: /确认内容，进入测评/ }));
-    document.querySelectorAll(".quiz-question").forEach((question) =>
-      fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
-    fireEvent.click(screen.getByRole("button", { name: /生成 Design Config/ }));
-    expect(screen.getByTestId("design-config-json")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "网页预览" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /发布并分享/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /导出静态网站 ZIP/ })).not.toBeInTheDocument();
   });
 
   it("loads published shares from the server when the hash changes", async () => {

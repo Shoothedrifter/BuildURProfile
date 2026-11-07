@@ -13,9 +13,11 @@ data
 *.keytext
 *.sqlite
 node_modules
+.next
+apps/web/.next
 apps/web/dist
 /dist
-apps/web/public/export
+*.tsbuildinfo
 coverage
 docs
 apps/web/src/__fixtures__

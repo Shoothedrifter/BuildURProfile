@@ -7,15 +7,17 @@
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "incremental": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["vite/client", "vitest/globals", "node"]
+    "types": ["vitest/globals", "node"]
   },
-  "include": ["apps/web/src", "packages/contracts/src", "packages/skills/src", "vite.config.ts", "vite.export.config.ts"]
+  "include": ["apps/web/src", "packages/contracts/src", "packages/skills/src", "vitest.config.ts"]
 }

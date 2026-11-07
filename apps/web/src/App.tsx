@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { DesignConfig, JobRole, ResumeContent } from "../../../packages/contracts/src/config";
@@ -54,16 +56,27 @@ function touchInput(): boolean {
 }
 
 function shareToken(): string | null {
+  if (typeof window === "undefined") return null;
   const match = /^#share=([A-Za-z0-9_-]{43})$/.exec(window.location.hash);
   return match?.[1] ?? null;
 }
 
+function isAvatarDemoEnabled(): boolean {
+  const viteEnv = (import.meta as unknown as { env?: Record<string, unknown> }).env;
+  if (viteEnv && (viteEnv.DEV === true || viteEnv.MODE === "tunnel")) return true;
+  if (typeof process !== "undefined" && process.env) {
+    if (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_APP_MODE === "tunnel") return true;
+  }
+  return false;
+}
+
 export default function App() {
-  const staticPreview = import.meta.env.MODE === "pages";
-  const avatarDemo = !staticPreview && (import.meta.env.DEV || import.meta.env.MODE === "tunnel");
+  const avatarDemo = isAvatarDemoEnabled();
   const [shareView, setShareView] = useState<{ requested: boolean; config: DesignConfig | null; loading: boolean }>(
-    () => ({ requested: !staticPreview && window.location.hash.startsWith("#share="), config: null,
-      loading: !staticPreview && window.location.hash.startsWith("#share=") }));
+    () => {
+      const hasShareHash = typeof window !== "undefined" && window.location.hash.startsWith("#share=");
+      return { requested: hasShareHash, config: null, loading: hasShareHash };
+    });
   const [phase, setPhase] = useState<Phase>("upload");
   const [fileName, setFileName] = useState("");
   const [progress, setProgress] = useState("");
@@ -92,7 +105,7 @@ export default function App() {
   const pdfVersion = useRef(0);
 
   useEffect(() => {
-    if (staticPreview || window.location.pathname === "/payment/return") return;
+    if (window.location.pathname === "/payment/return") return;
     let active = true;
     const version = generationVersion.current;
     void generationApi.resumeGeneration((status) => {
@@ -109,10 +122,9 @@ export default function App() {
       }
     });
     return () => { active = false; };
-  }, [staticPreview]);
+  }, []);
 
   useEffect(() => {
-    if (staticPreview) return;
     let sequence = 0;
     const onHashChange = () => {
       const current = ++sequence;
@@ -127,16 +139,14 @@ export default function App() {
     onHashChange();
     window.addEventListener("hashchange", onHashChange);
     return () => { sequence++; window.removeEventListener("hashchange", onHashChange); };
-  }, [staticPreview]);
+  }, []);
 
   useEffect(() => {
-    if (staticPreview) return;
     void paymentApi.offer().then(setOffer).catch(() => {});
     void paymentApi.projects().then(setProjects).catch(() => {});
-  }, [staticPreview]);
+  }, []);
 
   useEffect(() => {
-    if (staticPreview) return;
     if (window.location.pathname !== "/payment/return") return;
     const id = new URLSearchParams(window.location.search).get("project_id");
     window.history.replaceState(null, "", "/#work");
@@ -167,7 +177,7 @@ export default function App() {
         setResultError(cause instanceof Error ? cause.message : "交付失败，请重试原操作。");
       }
     })();
-  }, [staticPreview]);
+  }, []);
 
   useEffect(() => {
     const onTouch = () => setIsTouch(true);
@@ -179,7 +189,7 @@ export default function App() {
     const file = event.currentTarget.files?.[0];
     if (!file) return;
     const currentPdfVersion = ++pdfVersion.current;
-    if (!staticPreview) { generationVersion.current++; void generationApi.cancelSavedGeneration(); setGeneratingAvatar(false); setProgress(""); }
+    generationVersion.current++; void generationApi.cancelSavedGeneration(); setGeneratingAvatar(false); setProgress("");
     setProjectId(null); setShare(null); setSavedShares([]);
     setError("");
     if (!file.name.toLowerCase().endsWith(".pdf")) {
@@ -300,16 +310,6 @@ export default function App() {
     }
     // resume.confirm.v1 strips sourceRefs before anything enters API or graph state.
     const content = confirmation.content;
-    if (staticPreview) {
-      const { vector } = workflowSkills.runSync("assessment.score.v1", { answers },
-        { runtime: "browser" });
-      const { config: mapped } = workflowSkills.runSync("design.map.v1", { vector, role },
-        { runtime: "browser" });
-      const { config } = workflowSkills.runSync("resume.compose.v1", { config: mapped, content },
-        { runtime: "browser" });
-      showResult(config);
-      return;
-    }
     const version = ++generationVersion.current;
     void generationApi.cancelSavedGeneration();
     setGeneratingAvatar(true); setError("");
@@ -497,8 +497,8 @@ export default function App() {
         {progress && <p className="builder-status" role="status">{progress}</p>}
       </section>}
 
-      {phase === "result" && generated && <section className="builder-stage result-stage"><div className="stage-heading"><div><p className="stage-kicker">04 / DESIGN CONFIG</p><h1>已生成，<br /><em>开始探索。</em></h1></div><p>{staticPreview ? "在编辑面板改文字、换图或调整交互强度，预览会实时更新。静态预览版不会保存作品；刷新后需重新上传 PDF。" : generated.heroArtwork ? "动画风格形象已放入首屏；可调整风格后重新生成。" : "在编辑面板改文字、换图或调整交互强度，预览会实时更新。分享与导出都使用当前配置。"}</p></div>
-        {!staticPreview && generated.heroArtwork && <p className="avatar-demo-note">Wibi Style 肖像仅供本机预览，暂不支持付费分享或 ZIP 导出。</p>}
+      {phase === "result" && generated && <section className="builder-stage result-stage"><div className="stage-heading"><div><p className="stage-kicker">04 / DESIGN CONFIG</p><h1>已生成，<br /><em>开始探索。</em></h1></div><p>{generated.heroArtwork ? "动画风格形象已放入首屏；可调整风格后重新生成。" : "在编辑面板改文字、换图或调整交互强度，预览会实时更新。分享与导出都使用当前配置。"}</p></div>
+        {generated.heroArtwork && <p className="avatar-demo-note">Wibi Style 肖像仅供本机预览，暂不支持付费分享或 ZIP 导出。</p>}
         {avatarDemo && <details className="avatar-regenerate"><summary>更换肖像或风格 ↗</summary>{avatarPicker}{photoDataUrl && <button type="button" className="avatar-remove" onClick={clearPhoto}>移除肖像照片</button>}<button type="button" className="primary-button" disabled={!photoDataUrl || generatingAvatar} onClick={() => void runAvatarGeneration(generated, true)}>{generatingAvatar ? "正在生成肖像…" : "重新生成形象 ↗"}</button>{progress && <p className="builder-status" role="status">{progress}</p>}</details>}
         <div className="result-stats"><span>SKIN <strong>{generated.skin}</strong></span><span>MARQUEE <strong>{generated.marquee.speed} px/s</strong></span><span>STACK DEPTH <strong>{generated.stackedCards.scaleStep}</strong></span><span>PROJECTS <strong>{generated.content.projects.length}</strong></span></div>
         {isTouch && <p className="touch-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
@@ -510,10 +510,10 @@ export default function App() {
             <div hidden={resultTab !== "preview"} className="preview-frame"><ShowcasePage config={generated} touchDowngraded={isTouch} /></div>
           </div>
         </div>
-        {!staticPreview && !generated.heroArtwork && <div className="publish-bar"><div><span>PUBLISH / 02</span><h2>分享或带走你的作品集</h2><p>正式分享与离线 ZIP 由同一项目的一次付款解锁。静态网站解压后可直接打开 index.html。</p></div><div className="publish-actions"><button type="button" className="ghost-button" disabled={exporting} onClick={() => void requestDelivery("share")}>{share ? "更新分享链接 ↗" : "发布并分享 ↗"}</button><button type="button" className="primary-button" disabled={exporting} onClick={() => void requestDelivery("export")}>{exporting ? "正在处理…" : "导出静态网站 ZIP"} <span>↓</span></button></div></div>}
-        {!staticPreview && paymentIntent && <section className="share-card" role="region" aria-label="确认购买"><div><strong>解锁作品发布与导出</strong></div><p>{offer?.service ?? "正式托管分享与静态导出，一次解锁当前项目两项能力。"}</p><p>本项目价格：<strong>{quotedAmountYuan ? `¥${quotedAmountYuan}` : "服务端尚未配置价格"}</strong>。公开分享链接默认 7 天有效，可撤销；到期后同项目重新发布无需再次付款。已下载 ZIP 无法撤回。</p>{offer?.mode === "sandbox" && <p>沙箱测试：普通支付宝无法支付沙箱订单。请在电脑收银台使用沙箱买家账号和支付密码；扫码仅使用 Android 沙箱支付宝。</p>}{offer?.configurationError && <p role="alert">支付配置：{offer.configurationError}</p>}<div className="share-actions"><button type="button" onClick={() => setPaymentIntent(null)}>暂不付款，保留草稿</button><button type="button" disabled={!offer?.configured || exporting} onClick={() => void startPayment()}>{offer?.mode === "production" ? "前往支付宝收银台（正式付款）" : "前往支付宝沙箱收银台"} ↗</button></div></section>}
-        {!staticPreview && share && <div className="share-card"><div><strong>正式链接已创建</strong><span>有效至 {new Date(share.expiresAt).toLocaleString("zh-CN")}</span></div><p>任何接收者可免费访问有效链接。链接到期或被撤销后失效。</p>{shareSnapshot !== JSON.stringify(generated) && <p className="share-stale">预览已更新。点击“更新分享链接”可同步当前版本。</p>}<label className="share-url"><span>分享链接</span><input readOnly value={share.url} onFocus={(event) => event.currentTarget.select()} /></label><div className="share-actions"><a href={share.url} target="_blank" rel="noopener noreferrer">在新标签页打开 ↗</a><button type="button" onClick={() => void copyShare()}>复制链接</button><button type="button" onClick={() => void removeShare()}>撤销链接</button></div></div>}
-        {!staticPreview && savedShareList}
+        {!generated.heroArtwork && <div className="publish-bar"><div><span>PUBLISH / 02</span><h2>分享或带走你的作品集</h2><p>正式分享与离线 ZIP 由同一项目的一次付款解锁。静态网站解压后可直接打开 index.html。</p></div><div className="publish-actions"><button type="button" className="ghost-button" disabled={exporting} onClick={() => void requestDelivery("share")}>{share ? "更新分享链接 ↗" : "发布并分享 ↗"}</button><button type="button" className="primary-button" disabled={exporting} onClick={() => void requestDelivery("export")}>{exporting ? "正在处理…" : "导出静态网站 ZIP"} <span>↓</span></button></div></div>}
+        {paymentIntent && <section className="share-card" role="region" aria-label="确认购买"><div><strong>解锁作品发布与导出</strong></div><p>{offer?.service ?? "正式托管分享与静态导出，一次解锁当前项目两项能力。"}</p><p>本项目价格：<strong>{quotedAmountYuan ? `¥${quotedAmountYuan}` : "服务端尚未配置价格"}</strong>。公开分享链接默认 7 天有效，可撤销；到期后同项目重新发布无需再次付款。已下载 ZIP 无法撤回。</p>{offer?.mode === "sandbox" && <p>沙箱测试：普通支付宝无法支付沙箱订单。请在电脑收银台使用沙箱买家账号和支付密码；扫码仅使用 Android 沙箱支付宝。</p>}{offer?.configurationError && <p role="alert">支付配置：{offer.configurationError}</p>}<div className="share-actions"><button type="button" onClick={() => setPaymentIntent(null)}>暂不付款，保留草稿</button><button type="button" disabled={!offer?.configured || exporting} onClick={() => void startPayment()}>{offer?.mode === "production" ? "前往支付宝收银台（正式付款）" : "前往支付宝沙箱收银台"} ↗</button></div></section>}
+        {share && <div className="share-card"><div><strong>正式链接已创建</strong><span>有效至 {new Date(share.expiresAt).toLocaleString("zh-CN")}</span></div><p>任何接收者可免费访问有效链接。链接到期或被撤销后失效。</p>{shareSnapshot !== JSON.stringify(generated) && <p className="share-stale">预览已更新。点击“更新分享链接”可同步当前版本。</p>}<label className="share-url"><span>分享链接</span><input readOnly value={share.url} onFocus={(event) => event.currentTarget.select()} /></label><div className="share-actions"><a href={share.url} target="_blank" rel="noopener noreferrer">在新标签页打开 ↗</a><button type="button" onClick={() => void copyShare()}>复制链接</button><button type="button" onClick={() => void removeShare()}>撤销链接</button></div></div>}
+        {savedShareList}
         {resultError && <p role="alert" className="builder-error">{resultError}</p>}
       </section>}
 

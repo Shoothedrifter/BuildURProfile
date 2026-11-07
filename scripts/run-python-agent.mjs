@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { parseEnv } from "node:util";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
-const env = { ...process.env };
+const env = { ...process.env, PYTHONUTF8: "1" };
 for (const key of Object.keys(env)) if (key.startsWith("ALIPAY_") || key.startsWith("PAYMENT_")) delete env[key];
 if (existsSync(".env.agent")) {
   const file = parseEnv(readFileSync(".env.agent", "utf8"));
@@ -12,7 +12,12 @@ if (existsSync(".env.agent")) {
     if (file[key] !== undefined) env[key] = file[key];
   }
 }
-const python = process.env.PYTHON || (existsSync("apps/agent/.venv/bin/python") ? "apps/agent/.venv/bin/python" : "python");
+const defaultVenv = existsSync("apps/agent/.venv/bin/python")
+  ? "apps/agent/.venv/bin/python"
+  : existsSync("apps/agent/.venv/Scripts/python.exe")
+    ? "apps/agent/.venv/Scripts/python.exe"
+    : "python";
+const python = process.env.PYTHON || defaultVenv;
 const child = spawn(python, ["-m", "buildurprofile_agent.server"], { stdio: "inherit", env });
 child.on("exit", (code) => { process.exitCode = code ?? 1; });
 child.on("error", (error) => { console.error(error.message); process.exitCode = 1; });

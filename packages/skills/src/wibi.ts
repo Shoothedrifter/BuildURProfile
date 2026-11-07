@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { AVATAR_STYLES } from "./avatar-catalog.ts";
 
-const defaultInstallationRoot = fileURLToPath(new URL("../../../data/wibi-style-pinned/", import.meta.url));
+function resolveRepoRoot(): string {
+  const cwd = process.cwd();
+  return existsSync(/*turbopackIgnore: true*/ join(cwd, "packages/contracts/package.json")) ? cwd : resolve(cwd, "../..");
+}
+
+const defaultInstallationRoot = join(resolveRepoRoot(), "data/wibi-style-pinned");
 const sourceCommit = "17880b82ea35c1fe1ec4b8f907a053d314df464f";
 const license = "MIT AND LicenseRef-Wibi-Personal-NonCommercial-1.0";
 
@@ -38,11 +42,12 @@ const styles: readonly StyleEntry[] = [
 ];
 
 function checked(path: string, expectedHash: string): Buffer {
-  const bytes = readFileSync(path);
-  if (createHash("sha256").update(bytes).digest("hex") !== expectedHash) {
-    throw new Error("Wibi 风格资源校验失败，请重新安装固定版本。");
-  }
-  return bytes;
+  const bytes = readFileSync(/*turbopackIgnore: true*/ path);
+  const directHash = createHash("sha256").update(bytes).digest("hex");
+  if (directHash === expectedHash) return bytes;
+  const normalizedLf = Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
+  if (createHash("sha256").update(normalizedLf).digest("hex") === expectedHash) return normalizedLf;
+  throw new Error("Wibi 风格资源校验失败，请重新安装固定版本。");
 }
 
 export function listAvatarStyles(): Array<{ id: string; label: string; description: string }> {

@@ -1,7 +1,10 @@
 node_modules/
 dist/
+.next/
+apps/web/.next/
 apps/web/dist/
-apps/web/public/export/
+apps/web/next-env.d.ts
+*.tsbuildinfo
 coverage/
 .playwright-cli/
 .DS_Store

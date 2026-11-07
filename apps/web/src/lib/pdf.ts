@@ -1,5 +1,4 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 type PdfTextItem =
   | { str: string; hasEOL: boolean; transform?: number[] }
@@ -40,7 +39,7 @@ export async function extractPdfText(
 ): Promise<{ pages: string[]; text: string }> {
   // Only the worker script is fetched from this app; PDF bytes stay in browser memory.
   const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
   const data = new Uint8Array(await file.arrayBuffer());
   // Some embedded fonts are malformed and can emit thousands of benign parser warnings.

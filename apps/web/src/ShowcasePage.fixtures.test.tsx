@@ -4,8 +4,7 @@ import type { DesignConfig } from "../../../packages/contracts/src/config";
 import fourProjects from "./fixtures/four-projects.json";
 import twoProjects from "./fixtures/two-projects.json";
 import { ShowcasePage } from "./ShowcasePage";
-// @ts-expect-error Server-only JavaScript module has no TypeScript declarations.
-import { buildStaticHtml } from "../../api/src/export.mjs";
+import { buildStaticHtml } from "./server/export.mjs";
 
 const fixtures = [fourProjects as DesignConfig, twoProjects as DesignConfig];
 

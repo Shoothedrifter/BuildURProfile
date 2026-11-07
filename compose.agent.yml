@@ -4,7 +4,7 @@ services:
   web-api:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: apps/launcher/Dockerfile
     env_file:
       - .env.api
     environment:
