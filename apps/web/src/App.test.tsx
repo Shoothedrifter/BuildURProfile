@@ -201,18 +201,19 @@ describe("showcase builder", () => {
   it("can regenerate a restored avatar while keeping edits to the current config", async () => {
     const oldArtwork = { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "旧肖像" };
     vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig, heroArtwork: oldArtwork });
-    vi.mocked(generationApi.generateAvatar).mockResolvedValueOnce({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789013", styleId: "crayon-flat-naive", alt: "新肖像" });
+    vi.mocked(generationApi.generateAvatar).mockResolvedValueOnce({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789013", styleId: "yellow-hair-doodle", alt: "新肖像" });
     render(<App />);
     await screen.findByAltText("旧肖像");
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
     fireEvent.click(screen.getByText("更换头像或风格 →"));
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "new.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
-    fireEvent.click(screen.getByRole("button", { name: /蜡笔极简扁平画/ }));
+    fireEvent.click(screen.getByRole("button", { name: /明黄发丝涂鸦/ }));
     fireEvent.click(screen.getByRole("button", { name: /应用当前头像风格/ }));
     expect(await screen.findByAltText("新肖像")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
     expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].content.profile.name).toBe("Edited Person");
+    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][1]).toBe("yellow-hair-doodle");
     expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].heroArtwork).toBeUndefined();
   });
 
@@ -233,7 +234,9 @@ describe("showcase builder", () => {
   it("offers three portrait styles and keeps the photo local until Generate", async () => {
     render(<App />);
     await reachStyle();
-    expect(screen.getAllByRole("button", { name: /复古扁平动画头|蜡笔极简扁平画|颗粒绒感玩偶/ })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /复古扁平动画头|明黄发丝涂鸦|低清晰印刷感动漫/ })).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: /蜡笔极简扁平画/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /颗粒绒感玩偶/ })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     expect(await screen.findByAltText("待生成的肖像照片预览")).toBeInTheDocument();
     expect(generationApi.generateAvatar).not.toHaveBeenCalled();

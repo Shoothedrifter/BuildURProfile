@@ -17,7 +17,7 @@ if (!existsSync(join(root, ".git"))) {
 git("-C", root, "config", "core.autocrlf", "false");
 git("-C", root, "fetch", "--filter=blob:none", "--depth", "1", "origin", version);
 git("-C", root, "sparse-checkout", "set", "--no-cone", "/LICENSE", "/NOTICE",
-  "/skills/retro-flat-anime-head/**", "/skills/crayon-flat-naive/**", "/skills/textile-toy-portrait/**");
+  "/skills/retro-flat-anime-head/**", "/skills/yellow-hair-doodle/**", "/skills/lofi-print-anime/**");
 git("-C", root, "checkout", "-f", "--detach", version);
 for (const style of listAvatarStyles()) loadStyleRecipe(style.id, root);
 process.stdout.write(`Verified ${listAvatarStyles().length} Wibi Style recipes at ${version}.\n`);

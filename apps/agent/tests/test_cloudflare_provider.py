@@ -2,6 +2,7 @@ import base64
 import io
 from email.parser import BytesParser
 from email.policy import default
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -40,6 +41,25 @@ def test_provider_factory_selects_cloudflare_and_keeps_openai_optional():
 
 
 @pytest.mark.asyncio
+async def test_openai_prompt_lets_style_recipe_choose_cropping_and_clothing():
+    class FakeImages:
+        prompt = ""
+
+        async def edit(self, **kwargs):
+            self.prompt = kwargs["prompt"]
+            return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(png()).decode())])
+
+    images = FakeImages()
+    provider = OpenAIImageProvider(client=SimpleNamespace(images=images))
+    await provider.edit(Portrait(png(), "image/png"), {
+        "instructions": "remove shoulders and clothing; keep only the head on a yellow backdrop",
+        "referenceImages": []
+    }, task_id="task")
+    assert "remove shoulders and clothing; keep only the head on a yellow backdrop" in images.prompt
+    assert "Preserve face, pose, clothing" not in images.prompt
+
+
+@pytest.mark.asyncio
 async def test_cloudflare_sends_portrait_first_and_resizes_style_references():
     captured = []
     result_image = png((1024, 1024))
@@ -52,7 +72,7 @@ async def test_cloudflare_sends_portrait_first_and_resizes_style_references():
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
         provider = CloudflareImageProvider(account_id="a" * 32, api_token="private-token", http=http)
         image = await provider.edit(Portrait(png(), "image/png"), {
-            "instructions": "make a flat animated portrait", "localSummary": "flat anime",
+            "instructions": "remove shoulders and clothing; keep only the head on a yellow backdrop", "localSummary": "yellow hair doodle",
             "referenceImages": [{"mime": "image/png", "dataBase64": base64.b64encode(png((800, 800))).decode()}]
         }, task_id="task")
 
@@ -66,7 +86,10 @@ async def test_cloudflare_sends_portrait_first_and_resizes_style_references():
     assert set(fields) == {"prompt", "width", "height", "input_image_0", "input_image_1"}
     assert fields["width"].get_content().strip() == "1024"
     assert fields["height"].get_content().strip() == "1024"
-    assert "Image 0 is the user's portrait" in fields["prompt"].get_content()
+    prompt = fields["prompt"].get_content()
+    assert "Image 0 is the user's portrait" in prompt
+    assert "remove shoulders and clothing; keep only the head on a yellow backdrop" in prompt
+    assert "Preserve facial identity, pose, clothing" not in prompt
     for name in ("input_image_0", "input_image_1"):
         with Image.open(io.BytesIO(fields[name].get_payload(decode=True))) as source:
             assert max(source.size) < 512

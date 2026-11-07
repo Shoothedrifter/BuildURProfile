@@ -95,10 +95,22 @@ test("avatar Skill fences output write with lease token and reuses an existing a
 });
 
 test("Wibi adapter verifies pinned manifest and resources and exposes license", () => {
-  assert.deepEqual(listAvatarStyles().map(({ id }) => id), ["retro-flat-anime-head", "crayon-flat-naive", "textile-toy-portrait"]);
-  const recipe = loadStyleRecipe("textile-toy-portrait");
+  assert.deepEqual(listAvatarStyles().map(({ id }) => id), ["retro-flat-anime-head", "yellow-hair-doodle", "lofi-print-anime"]);
+  const recipe = loadStyleRecipe("yellow-hair-doodle");
   assert.equal(recipe.license, "MIT AND LicenseRef-Wibi-Personal-NonCommercial-1.0");
   assert.equal(recipe.sourceCommit, "17880b82ea35c1fe1ec4b8f907a053d314df464f");
-  assert.equal(recipe.referencePaths.length, 1);
+  assert.equal(recipe.referencePaths.length, 0);
+  assert.match(recipe.instructions, /#FFCB05/);
+  assert.match(recipe.instructions, /双马尾.*扎点/s);
+  assert.match(recipe.instructions, /不能把扎起的双马尾画成披发/);
+  assert.match(recipe.instructions, /低双马尾.*耳后.*颈侧/s);
+  assert.match(recipe.instructions, /不能抬成高双马尾/);
+  assert.match(recipe.instructions, /扎点高低/);
+  assert.match(recipe.instructions, /不新增眼镜/);
+  assert.doesNotMatch(recipe.instructions, /顶部抬成一到两道高低不同的柔软发浪/);
+  assert.notEqual(recipe.version, recipe.sourceCommit);
+  assert.equal(loadStyleRecipe("lofi-print-anime").referencePaths.length, 0);
+  assert.throws(() => loadStyleRecipe("crayon-flat-naive"), /未知肖像风格/);
+  assert.throws(() => loadStyleRecipe("textile-toy-portrait"), /未知肖像风格/);
   assert.throws(() => loadStyleRecipe("../other"), /未知肖像风格/);
 });

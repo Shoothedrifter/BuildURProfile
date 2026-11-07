@@ -36,7 +36,9 @@
 
 Cloudflare 适配器使用 `@cf/black-forest-labs/flux-2-klein-4b`，经 `httpx` 发送 multipart REST 请求；调用前把肖像和风格参考图等比缩到 480 像素长边。已安装 Cloudflare SDK，但此 multipart 请求不经 SDK。
 
-运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的三种 Wibi 资源到私有 `data/wibi-style-pinned/`。Node 校验哈希后，只把已批准任务的配方交给 Python。三种风格为复古扁平动画头、蜡笔极简扁平画、颗粒绒感玩偶，输出静态画面并保留原背景。
+运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的三种 Wibi 资源到私有 `data/wibi-style-pinned/`。Node 校验哈希后，只把已批准任务的配方交给 Python。三种风格为复古扁平动画头、明黄发丝涂鸦、低清晰印刷感动漫，输出静态画面并保留各自风格背景；低清晰印刷感动漫采用极近景构图，画面几乎不留背景。
+
+明黄发丝涂鸦使用项目自有的改写提示，优先保留原图发型、马尾扎点与配饰。上游提示词仍按原始哈希校验，最终配方另有版本标识；此修改不改变 Wibi 的个人非商业许可。
 
 照片字节和供应商密钥不进入图状态或 checkpoint；供应商失败应明确报错，不伪造成功成图。超时、取消与有限重试规则见[架构与协议](../shared/architecture.md)。
 

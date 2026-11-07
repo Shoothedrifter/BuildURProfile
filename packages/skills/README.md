@@ -19,6 +19,8 @@
 
 Wibi 固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f`，按 SHA-256 校验清单、提示词和参考图，只读取三种已审查风格。资源属于声明式配方，不执行下载包中的脚本或外部指令；配方返回来源与许可元数据。
 
+`yellow-hair-doodle` 在校验上游原文后使用 BuildURProfile 的改写提示，优先保留原照片的发型、马尾扎点和发束数量；上游文件保持原样。此风格的有效配方版本包含改写提示词的哈希，来源提交和许可单独保留。修改说明、原始许可和署名见 [`third_party/yellow-hair-doodle/`](third_party/yellow-hair-doodle/)。
+
 新增 Skill 需定义稳定 ID、版本、输入输出、运行位置、允许能力、超时与许可，并测试非法输入、缺失能力和越权调用。不得开放支付、会话密钥、任意 shell 或不受限文件系统访问。
 
 在根目录运行 `npm run test:skills`；涉及跨语言规则时再运行 `npm run test:agent`。Wibi 许可、安装与上线门槛见 [Agent 说明](../../docs/agent/README.md)。

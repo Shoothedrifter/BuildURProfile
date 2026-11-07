@@ -55,10 +55,11 @@ class OpenAIImageProvider:
         if not isinstance(instructions, str) or not instructions or len(instructions) > 30_000:
             raise ImageProviderError("STYLE_UNAVAILABLE")
         prompt = (
-            "Image 1 is the user's portrait and the sole identity reference. Preserve face, pose, "
-            "clothing, accessories and number of people. Other images are style references only; "
-            "do not copy their people or objects. Create one square animated portfolio hero portrait "
-            "with the original style background, no text, watermark, collage or split screen.\n\n"
+            "Image 1 is the user's portrait and the sole identity reference. Preserve facial identity, "
+            "expression, head angle, existing accessories and number of people. Follow the style instructions "
+            "for cropping, clothing visibility, hair treatment and background. Other images are style "
+            "references only; do not copy their people or objects. Create one square portfolio hero image "
+            "without text, watermark, collage or split screen.\n\n"
             f"Style summary:\n{summary}\n\nFull style instructions:\n{instructions}"
         )
         client = self.client or AsyncOpenAI(api_key=self.api_key, max_retries=0)
