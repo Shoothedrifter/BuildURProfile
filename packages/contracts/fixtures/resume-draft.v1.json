@@ -1,0 +1,123 @@
+{
+  "version": "resume-draft-v1",
+  "resumeId": "resume_synthetic",
+  "fileId": "file_synthetic",
+  "revision": 0,
+  "sections": [
+    {
+      "id": "basicInfo",
+      "kind": "basicInfo",
+      "mappedDesignModule": "hero-profile",
+      "order": 0,
+      "visible": true,
+      "items": [
+        {
+          "itemId": "item_basic",
+          "order": 0,
+          "title": "",
+          "details": "",
+          "facts": [
+            {
+              "key": "name",
+              "label": "name",
+              "value": "合成用户",
+              "included": true
+            },
+            {
+              "key": "email",
+              "label": "email",
+              "value": "synthetic@example.test",
+              "included": true
+            },
+            {
+              "key": "phone",
+              "label": "phone",
+              "value": "秘密电话",
+              "included": false
+            }
+          ],
+          "sourceBlockIds": [
+            "block_1"
+          ],
+          "confidence": 1,
+          "segmentationConfidence": 1,
+          "needsReview": false,
+          "included": true,
+          "origin": "agent"
+        }
+      ]
+    },
+    {
+      "id": "jobIntent",
+      "kind": "jobIntent",
+      "mappedDesignModule": "job-intent-strip",
+      "order": 1,
+      "visible": true,
+      "items": []
+    },
+    {
+      "id": "selfEvaluation",
+      "kind": "selfEvaluation",
+      "mappedDesignModule": "intro-card",
+      "order": 2,
+      "visible": true,
+      "items": []
+    },
+    {
+      "id": "education",
+      "kind": "education",
+      "mappedDesignModule": "education-timeline",
+      "order": 3,
+      "visible": true,
+      "items": []
+    },
+    {
+      "id": "workExperience",
+      "kind": "workExperience",
+      "mappedDesignModule": "work-timeline",
+      "order": 4,
+      "visible": true,
+      "items": []
+    },
+    {
+      "id": "projects",
+      "kind": "projects",
+      "mappedDesignModule": "project-stacked-cards",
+      "order": 5,
+      "visible": true,
+      "items": []
+    },
+    {
+      "id": "awards",
+      "kind": "awards",
+      "mappedDesignModule": "award-badges",
+      "order": 6,
+      "visible": true,
+      "items": []
+    },
+    {
+      "id": "campusExperience",
+      "kind": "campusExperience",
+      "mappedDesignModule": "campus-timeline",
+      "order": 7,
+      "visible": true,
+      "items": []
+    },
+    {
+      "id": "skills",
+      "kind": "skills",
+      "mappedDesignModule": "skill-tags",
+      "order": 8,
+      "visible": true,
+      "items": []
+    },
+    {
+      "id": "other",
+      "kind": "other",
+      "mappedDesignModule": "free-content-card",
+      "order": 9,
+      "visible": true,
+      "items": []
+    }
+  ]
+}

@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     "./config": "./src/config.ts",
-    "./validation": "./src/validation.mjs"
+    "./validation": "./src/validation.mjs",
+    "./resume-source": "./src/resume-source.ts",
+    "./resume-draft": "./src/resume-draft.ts"
   }
 }

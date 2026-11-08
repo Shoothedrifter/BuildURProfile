@@ -5,9 +5,10 @@ Node validates before enqueueing; these models validate again at the trust bound
 
 from __future__ import annotations
 
-from typing import Literal
+from datetime import datetime, timedelta
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .skills.assessment import score_answers
 
@@ -144,3 +145,119 @@ def clean_brief(raw: object) -> dict:
 
 def clean_config(raw: object) -> dict:
     return DesignConfigV1.model_validate(raw).model_dump(exclude_none=True)
+
+# Private parsing contracts. Never embed these in generation briefs/checkpoints.
+
+ResumeId = Annotated[str, Field(min_length=1, max_length=100, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')]
+ResumeModuleKind = Literal['basicInfo', 'jobIntent', 'selfEvaluation', 'education', 'workExperience', 'projects', 'awards', 'campusExperience', 'skills', 'other']
+RESUME_MODULE_MAPPING = dict(zip(ResumeModuleKind.__args__, ['hero-profile', 'job-intent-strip', 'intro-card', 'education-timeline', 'work-timeline', 'project-stacked-cards', 'award-badges', 'campus-timeline', 'skill-tags', 'free-content-card']))
+Timestamp = Annotated[str, Field(pattern=r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')]
+
+
+class PdfBlock(StrictModel):
+    blockId: ResumeId
+    page: int = Field(ge=1, le=20)
+    bbox: list[float] = Field(min_length=4, max_length=4)
+    fontSize: float = Field(ge=0, le=1000)
+    bold: bool
+    readingOrder: int = Field(ge=0, le=10000)
+    text: str = Field(min_length=1, max_length=12000)
+
+    @model_validator(mode='after')
+    def valid_box(self):
+        import math
+        if not all(math.isfinite(n) and 0 <= n <= 100000 for n in self.bbox) or self.bbox[2] < self.bbox[0] or self.bbox[3] < self.bbox[1]:
+            raise ValueError('Invalid PDF coordinates')
+        return self
+
+
+class ResumeSourceV1(StrictModel):
+    version: Literal['resume-source-v1']
+    fileId: ResumeId
+    extractionVersion: Literal['pdf-layout-v1']
+    uploadedAt: Timestamp
+    expiresAt: Timestamp
+    pageCount: int = Field(ge=1, le=20)
+    blocks: list[PdfBlock] = Field(min_length=1, max_length=5000)
+
+    @model_validator(mode='after')
+    def valid_source(self):
+        uploaded, expires = (datetime.strptime(t, '%Y-%m-%dT%H:%M:%SZ') for t in [self.uploadedAt, self.expiresAt])
+        if expires - uploaded != timedelta(days=30):
+            raise ValueError('Retention must be 30 days from upload')
+        ids, orders = set(), {}
+        for block in self.blocks:
+            if block.blockId in ids or block.page > self.pageCount or block.readingOrder <= orders.get(block.page, -1):
+                raise ValueError('Duplicate block or invalid reading order/page')
+            ids.add(block.blockId)
+            orders[block.page] = block.readingOrder
+        return self
+
+
+class DraftFact(StrictModel):
+    key: ResumeId
+    label: str = Field(max_length=100)
+    value: str = Field(max_length=2000)
+    included: bool
+
+
+class ResumeDraftItem(StrictModel):
+    itemId: ResumeId
+    order: int = Field(ge=0, le=100)
+    title: str = Field(max_length=300)
+    details: str = Field(max_length=12000)
+    facts: list[DraftFact] = Field(max_length=100)
+    sourceBlockIds: list[ResumeId] = Field(max_length=500)
+    confidence: float = Field(ge=0, le=1)
+    segmentationConfidence: float = Field(ge=0, le=1)
+    needsReview: bool
+    included: bool
+    origin: Literal['agent', 'user']
+
+    @model_validator(mode='after')
+    def valid_evidence(self):
+        if self.origin == 'agent' and not self.sourceBlockIds:
+            raise ValueError('Agent item requires evidence')
+        if len(set(self.sourceBlockIds)) != len(self.sourceBlockIds) or len({f.key for f in self.facts}) != len(self.facts):
+            raise ValueError('Duplicate source/fact')
+        return self
+
+
+class ResumeDraftSection(StrictModel):
+    id: ResumeModuleKind
+    kind: ResumeModuleKind
+    mappedDesignModule: str
+    order: int = Field(ge=0, le=9)
+    visible: bool
+    items: list[ResumeDraftItem] = Field(max_length=100)
+
+    @model_validator(mode='after')
+    def fixed_mapping(self):
+        if self.id != self.kind or self.mappedDesignModule != RESUME_MODULE_MAPPING[self.kind]:
+            raise ValueError('Invalid fixed design mapping')
+        return self
+
+
+class ResumeDraftV1(StrictModel):
+    version: Literal['resume-draft-v1']
+    resumeId: ResumeId
+    fileId: ResumeId
+    revision: int = Field(ge=0, le=2147483647)
+    sections: list[ResumeDraftSection] = Field(min_length=10, max_length=10)
+
+    @model_validator(mode='after')
+    def complete_modules(self):
+        if {s.kind for s in self.sections} != set(RESUME_MODULE_MAPPING) or len({s.order for s in self.sections}) != 10:
+            raise ValueError('Ten unique modules and orders required')
+        items = [i.itemId for s in self.sections for i in s.items]
+        if len(items) != len(set(items)) or any(len({i.order for i in s.items}) != len(s.items) for s in self.sections):
+            raise ValueError('Duplicate item ID/order')
+        return self
+
+
+def validate_resume_draft(raw: object, source: ResumeSourceV1) -> ResumeDraftV1:
+    draft = ResumeDraftV1.model_validate(raw)
+    ids = {b.blockId for b in source.blocks}
+    if draft.fileId != source.fileId or any(set(i.sourceBlockIds) - ids for s in draft.sections for i in s.items):
+        raise ValueError('Evidence does not belong to this PDF')
+    return draft

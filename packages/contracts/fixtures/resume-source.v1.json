@@ -1,0 +1,24 @@
+{
+  "version": "resume-source-v1",
+  "fileId": "file_synthetic",
+  "extractionVersion": "pdf-layout-v1",
+  "uploadedAt": "2026-11-09T00:00:00Z",
+  "expiresAt": "2026-12-09T00:00:00Z",
+  "pageCount": 1,
+  "blocks": [
+    {
+      "blockId": "block_1",
+      "page": 1,
+      "bbox": [
+        0,
+        0,
+        100,
+        20
+      ],
+      "fontSize": 12,
+      "bold": false,
+      "readingOrder": 0,
+      "text": "source text"
+    }
+  ]
+}

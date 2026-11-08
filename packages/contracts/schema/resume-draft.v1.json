@@ -1,0 +1,243 @@
+{
+  "$defs": {
+    "DraftFact": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 100,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 2000,
+          "title": "Value",
+          "type": "string"
+        },
+        "included": {
+          "title": "Included",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "value",
+        "included"
+      ],
+      "title": "DraftFact",
+      "type": "object"
+    },
+    "ResumeDraftItem": {
+      "additionalProperties": false,
+      "properties": {
+        "itemId": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Itemid",
+          "type": "string"
+        },
+        "order": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        },
+        "title": {
+          "maxLength": 300,
+          "title": "Title",
+          "type": "string"
+        },
+        "details": {
+          "maxLength": 12000,
+          "title": "Details",
+          "type": "string"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/DraftFact"
+          },
+          "maxItems": 100,
+          "title": "Facts",
+          "type": "array"
+        },
+        "sourceBlockIds": {
+          "items": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "type": "string"
+          },
+          "maxItems": 500,
+          "title": "Sourceblockids",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "segmentationConfidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Segmentationconfidence",
+          "type": "number"
+        },
+        "needsReview": {
+          "title": "Needsreview",
+          "type": "boolean"
+        },
+        "included": {
+          "title": "Included",
+          "type": "boolean"
+        },
+        "origin": {
+          "enum": [
+            "agent",
+            "user"
+          ],
+          "title": "Origin",
+          "type": "string"
+        }
+      },
+      "required": [
+        "itemId",
+        "order",
+        "title",
+        "details",
+        "facts",
+        "sourceBlockIds",
+        "confidence",
+        "segmentationConfidence",
+        "needsReview",
+        "included",
+        "origin"
+      ],
+      "title": "ResumeDraftItem",
+      "type": "object"
+    },
+    "ResumeDraftSection": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "basicInfo",
+            "jobIntent",
+            "selfEvaluation",
+            "education",
+            "workExperience",
+            "projects",
+            "awards",
+            "campusExperience",
+            "skills",
+            "other"
+          ],
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "basicInfo",
+            "jobIntent",
+            "selfEvaluation",
+            "education",
+            "workExperience",
+            "projects",
+            "awards",
+            "campusExperience",
+            "skills",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "mappedDesignModule": {
+          "title": "Mappeddesignmodule",
+          "type": "string"
+        },
+        "order": {
+          "maximum": 9,
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        },
+        "visible": {
+          "title": "Visible",
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ResumeDraftItem"
+          },
+          "maxItems": 100,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "mappedDesignModule",
+        "order",
+        "visible",
+        "items"
+      ],
+      "title": "ResumeDraftSection",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "resume-draft-v1",
+      "title": "Version",
+      "type": "string"
+    },
+    "resumeId": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Resumeid",
+      "type": "string"
+    },
+    "fileId": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Fileid",
+      "type": "string"
+    },
+    "revision": {
+      "maximum": 2147483647,
+      "minimum": 0,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "sections": {
+      "items": {
+        "$ref": "#/$defs/ResumeDraftSection"
+      },
+      "maxItems": 10,
+      "minItems": 10,
+      "title": "Sections",
+      "type": "array"
+    }
+  },
+  "required": [
+    "version",
+    "resumeId",
+    "fileId",
+    "revision",
+    "sections"
+  ],
+  "title": "ResumeDraftV1",
+  "type": "object"
+}

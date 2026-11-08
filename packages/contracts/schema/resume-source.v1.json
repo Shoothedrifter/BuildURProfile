@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "PdfBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "blockId": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Blockid",
+          "type": "string"
+        },
+        "page": {
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Page",
+          "type": "integer"
+        },
+        "bbox": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Bbox",
+          "type": "array"
+        },
+        "fontSize": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Fontsize",
+          "type": "number"
+        },
+        "bold": {
+          "title": "Bold",
+          "type": "boolean"
+        },
+        "readingOrder": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Readingorder",
+          "type": "integer"
+        },
+        "text": {
+          "maxLength": 12000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "blockId",
+        "page",
+        "bbox",
+        "fontSize",
+        "bold",
+        "readingOrder",
+        "text"
+      ],
+      "title": "PdfBlock",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "resume-source-v1",
+      "title": "Version",
+      "type": "string"
+    },
+    "fileId": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "title": "Fileid",
+      "type": "string"
+    },
+    "extractionVersion": {
+      "const": "pdf-layout-v1",
+      "title": "Extractionversion",
+      "type": "string"
+    },
+    "uploadedAt": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "title": "Uploadedat",
+      "type": "string"
+    },
+    "expiresAt": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "title": "Expiresat",
+      "type": "string"
+    },
+    "pageCount": {
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Pagecount",
+      "type": "integer"
+    },
+    "blocks": {
+      "items": {
+        "$ref": "#/$defs/PdfBlock"
+      },
+      "maxItems": 5000,
+      "minItems": 1,
+      "title": "Blocks",
+      "type": "array"
+    }
+  },
+  "required": [
+    "version",
+    "fileId",
+    "extractionVersion",
+    "uploadedAt",
+    "expiresAt",
+    "pageCount",
+    "blocks"
+  ],
+  "title": "ResumeSourceV1",
+  "type": "object"
+}
