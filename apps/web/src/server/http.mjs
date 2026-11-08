@@ -136,6 +136,7 @@ export function createRequestHandler({ db, service, generationService = null, po
         if (parts[1] === "projects" && parts[2]) {
           const id = parts[2];
           if (parts.length === 3 && req.method === "GET") { sendJson(res, 200, service.getProject(sessionId, id)); return; }
+          if (parts.length === 3 && req.method === "DELETE") { sendJson(res, 200, service.deleteProject(sessionId, id)); return; }
           if (parts.length === 3 && req.method === "PUT") {
             sendJson(res, 200, service.updateProject(sessionId, id, (await bodyJson(req)).config)); return;
           }

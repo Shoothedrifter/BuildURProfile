@@ -57,7 +57,6 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
   const jobIntent = resume?.jobIntent.filter((fact) => fact.value.trim()) ?? [];
   const visibleAwards = resume?.awards.some((entry) => entry.details.trim() || entry.title.trim() && entry.title !== "荣誉奖项") ?? false;
   const visibleOther = resume?.other.some((entry) => entry.details.trim() || entry.title.trim() && entry.title !== "其他内容") ?? false;
-  const hasExperience = visibleWork.length > 0 || visibleCampus.length > 0;
   const marqueeItems = config.marquee.items ?? expertise.skills;
   const marqueeLabels = marqueeItems.map((item) => (typeof item === "string" ? item : item.label).trim());
   const skills = expertise.skills.map((skill) => skill.trim()).filter(Boolean);
@@ -142,12 +141,20 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
           <StackedCards {...config.stackedCards} cards={visibleProjects} />
         </section>}
 
-        {(hasExperience || visibleEducation.length > 0) && <section className="resume-section page-container" aria-label="Experience and education">
+        {visibleWork.length > 0 && <section className="resume-section page-container" aria-label="实习/工作经历">
           <div className="section-marker"><span>03 / EXPERIENCE</span><span className="marker-line" /></div>
-          <div className={hasExperience && visibleEducation.length > 0 ? "resume-columns" : "resume-columns resume-columns--single"}>
-            {hasExperience && <div>{visibleWork.length > 0 && <><h2>Experience</h2>{visibleWork.map((entry, index) => <ResumeEntry key={`work-${index}`} value={entry} kind="experience" role={profile.role} />)}</>}{visibleCampus.length > 0 && <><h2>Campus experience</h2>{visibleCampus.map((entry, index) => <ResumeEntry key={`campus-${index}`} value={entry} kind="experience" />)}</>}</div>}
-            {visibleEducation.length > 0 && <div><h2>Education</h2>{visibleEducation.map((entry, index) => <ResumeEntry key={index} value={entry} kind="education" />)}</div>}
-          </div>
+          <h2>实习/工作经历</h2>
+          <div className="resume-columns resume-columns--single"><div>{visibleWork.map((entry, index) => <ResumeEntry key={`work-${index}`} value={entry} kind="experience" role={profile.role} />)}</div></div>
+        </section>}
+        {visibleCampus.length > 0 && <section className="resume-section page-container" aria-label="校园经历">
+          <div className="section-marker"><span>校园经历</span><span className="marker-line" /></div>
+          <h2>校园经历</h2>
+          <div className="resume-columns resume-columns--single"><div>{visibleCampus.map((entry, index) => <ResumeEntry key={`campus-${index}`} value={entry} kind="experience" />)}</div></div>
+        </section>}
+        {visibleEducation.length > 0 && <section className="resume-section page-container" aria-label="教育背景">
+          <div className="section-marker"><span>教育背景</span><span className="marker-line" /></div>
+          <h2>教育背景</h2>
+          <div className="resume-columns resume-columns--single"><div>{visibleEducation.map((entry, index) => <ResumeEntry key={index} value={entry} kind="education" />)}</div></div>
         </section>}
 
         {resume && <>

@@ -81,8 +81,8 @@ describe("resume parser", () => {
 运营技术专栏，累计发表 20 篇文章。
 专业技能
 编程技能：TypeScript`]);
-    expect(draft.version).toBe("resume-candidate-v1");
-    expect(validateResumeDraft({ ...draft, version: "unsupported" as "resume-candidate-v1" })).toContain("简历解析合同版本无效");
+    expect(draft.version).toBe("resume-candidate-v2");
+    expect(validateResumeDraft({ ...draft, version: "unsupported" as "resume-candidate-v2" })).toContain("简历解析合同版本无效");
     expect(draft.basicInfo.map((entry) => entry.value)).toContain("电话：13800138000");
     expect(draft.jobIntent).toHaveLength(2);
     expect(draft.jobIntent.find((entry) => entry.fieldKey === "expectedSalary")?.included).toBe(false);
@@ -180,7 +180,8 @@ describe("resume parser", () => {
     expect(draft.projects[1].value).toContain("无土栽培系统");
     expect(draft.projects[0].value).not.toContain("无土栽培系统");
     expect(draft.skills).toHaveLength(4);
-    expect(draft.workExperience).toHaveLength(2);
+    expect(draft.workExperience).toHaveLength(0);
+    expect(draft.campusExperience).toHaveLength(2);
     expect(validateResumeDraft(draft)).toEqual([]);
   });
 
@@ -195,6 +196,43 @@ describe("resume parser", () => {
     expect(content.workExperience).toEqual([]);
     expect(content.campusExperience).toHaveLength(2);
     expect(content.sourceRefs?.["campusExperience.0"].excerpt).toContain("嵌入式创新实验室");
+  });
+
+  it("keeps campus roles out of projects and separates Chinese-date campus records", () => {
+    const draft = parseResumePages([`林青
+实习经历
+示例公司 前端实习生
+2023 年 01 月 - 2023 年 06 月
+项目经历
+个人网站项目（课程设计·负责人）
+项目描述：制作个人网站。
+工作人员（先进个人）
+2023 年 09 月 - 2024 年 09 月
+华中农业大学信息与计算科学2402班
+学生班主任助理
+2024 年 09 月 - 2026 年 06 月
+校园工作
+学生会宣传部 干事`]);
+    expect(draft.workExperience).toHaveLength(1);
+    expect(draft.campusExperience).toHaveLength(3);
+    expect(draft.campusExperience[0].value).toContain("工作人员（先进个人）");
+    expect(draft.campusExperience[1].value).toContain("学生班主任助理");
+    expect(draft.projects).toHaveLength(1);
+    expect(draft.projects[0].value).not.toContain("学生班主任助理");
+    const content = toResumeContent(draft);
+    expect(content.resume?.campusExperience).toHaveLength(3);
+    expect(content.resume?.workExperience).toHaveLength(1);
+  });
+
+  it("keeps a student organization software project in the project module", () => {
+    const draft = parseResumePages([`林青
+项目经历
+学生会活动管理系统（课程设计）
+2024 年 03 月 - 2024 年 06 月
+实现活动报名与审批流程。`]);
+    expect(draft.projects).toHaveLength(1);
+    expect(draft.projects[0].value).toContain("学生会活动管理系统");
+    expect(draft.campusExperience).toHaveLength(0);
   });
 
   it("recognizes skill rows with the bullet glyph and spacing emitted by PDF.js", () => {

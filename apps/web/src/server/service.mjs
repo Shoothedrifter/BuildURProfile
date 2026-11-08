@@ -15,7 +15,7 @@ function requirePaid(db, projectId) {
   if (entitlement?.status !== "ACTIVE") throw new ServiceError(402, "请先完成本项目的支付。");
 }
 function ownedProject(db, sessionId, projectId) {
-  const project = db.prepare("SELECT * FROM projects WHERE id=? AND owner_session_id=?").get(projectId, sessionId);
+  const project = db.prepare("SELECT * FROM projects WHERE id=? AND owner_session_id=? AND deleted_at IS NULL").get(projectId, sessionId);
   if (!project) notFound();
   return project;
 }
@@ -51,8 +51,23 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     return getProject(sessionId, projectId);
   }
   function listProjects(sessionId) {
-    return db.prepare("SELECT * FROM projects WHERE owner_session_id=? ORDER BY updated_at DESC").all(sessionId)
+    return db.prepare("SELECT * FROM projects WHERE owner_session_id=? AND deleted_at IS NULL ORDER BY updated_at DESC").all(sessionId)
       .map((project) => publicProject(project, db));
+  }
+  function deleteProject(sessionId, projectId) {
+    return transaction(db, () => {
+      ownedProject(db, sessionId, projectId);
+      const unsettled = db.prepare("SELECT 1 FROM orders WHERE project_id=? AND status IN ('PENDING','CLOSED') LIMIT 1").get(projectId);
+      if (unsettled) throw new ServiceError(409, "项目仍有待核实的支付订单，请完成订单核实后再删除。");
+      const time = now();
+      db.prepare("UPDATE shares SET revoked_at=COALESCE(revoked_at,?),config_json='{}' WHERE project_id=?")
+        .run(time, projectId);
+      db.prepare("UPDATE downloads SET expires_at=MIN(expires_at,?) WHERE project_id=?")
+        .run(time, projectId);
+      db.prepare("UPDATE projects SET deleted_at=?,config_json='{}',pending_action=NULL,updated_at=? WHERE id=?")
+        .run(time, time, projectId);
+      return { ok: true };
+    });
   }
   async function checkout(sessionId, projectId, action) {
     if (action !== "share" && action !== "export") throw new ServiceError(400, "未知交付类型。");
@@ -192,8 +207,8 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     }
   }
   function readShare(value) {
-    const record = db.prepare("SELECT shares.*,entitlements.status AS entitlement_status FROM shares JOIN entitlements ON entitlements.project_id=shares.project_id WHERE token=?").get(value);
-    if (!record || record.revoked_at || record.expires_at <= now() || record.entitlement_status !== "ACTIVE") {
+    const record = db.prepare("SELECT shares.*,entitlements.status AS entitlement_status,projects.deleted_at FROM shares JOIN entitlements ON entitlements.project_id=shares.project_id JOIN projects ON projects.id=shares.project_id WHERE token=?").get(value);
+    if (!record || record.deleted_at != null || record.revoked_at || record.expires_at <= now() || record.entitlement_status !== "ACTIVE") {
       throw new ServiceError(404, "分享链接已失效。");
     }
     return { config: JSON.parse(record.config_json), expiresAt: record.expires_at };
@@ -221,8 +236,8 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     return { token: value, expiresAt: expiry };
   }
   function getDownload(sessionId, value) {
-    const record = db.prepare("SELECT downloads.*,projects.config_json,projects.owner_session_id FROM downloads JOIN projects ON projects.id=downloads.project_id WHERE downloads.token=?").get(value);
-    if (!record || record.owner_session_id !== sessionId || record.expires_at <= now()) notFound();
+    const record = db.prepare("SELECT downloads.*,projects.config_json,projects.owner_session_id,projects.deleted_at FROM downloads JOIN projects ON projects.id=downloads.project_id WHERE downloads.token=?").get(value);
+    if (!record || record.owner_session_id !== sessionId || record.deleted_at != null || record.expires_at <= now()) notFound();
     requirePaid(db, record.project_id);
     return { projectId: record.project_id, config: JSON.parse(record.config_json) };
   }
@@ -235,7 +250,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     ownedProject(db, sessionId, projectId);
     return db.prepare("SELECT out_trade_no,amount_fen,status,payment_env,app_id,seller_id,seller_email,alipay_trade_no,created_at FROM orders WHERE project_id=? ORDER BY created_at DESC").all(projectId);
   }
-  return { createProject, updateProject, getProject, listProjects, checkout, notify, reconcile,
+  return { createProject, updateProject, deleteProject, getProject, listProjects, checkout, notify, reconcile,
     publish, readShare, listShares, revokeShare, issueDownload, getDownload, markDownload,
     markDeliveryFailure, orderHistory };
 }

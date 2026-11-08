@@ -30,7 +30,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 图顺序为：校验输入 → 选择 Skill 计划 → 评分 → 设计映射 → 注入确认内容 → 可选肖像 → 最终 QA → 提交配置。Skill 声明稳定 ID、版本、能力、输入输出和超时，执行器只授予当前节点所需能力。
 
-目前 `resume.parse.v2` 仍在浏览器中用规则解析 PDF 文本，输出只存于浏览器内存的 `ResumeCandidateV1`（`packages/contracts/schema/resume-candidate.v1.json`），其中每条候选内容带来源、页码和展示选择。`resume.confirm.v2` 输出去掉来源的 A–D `resume-v1` 合同，`resume.compose.v2` 将确认内容注入固定作品骨架。未来 Agent 解析节点应输出同一候选合同，并在用户确认后复用现有展示映射；PDF 上传及临时存储不属于当前工作流。
+目前 `resume.parse.v3` 仍在浏览器中用规则解析 PDF 文本，输出只存于浏览器内存的 `ResumeCandidateV2`（`packages/contracts/schema/resume-candidate.v2.json`），其中工作与校园经历独立，每条候选内容带来源、页码和展示选择。`resume.confirm.v3` 输出去掉来源的 A–D `resume-v1` 合同，`resume.compose.v2` 将确认内容注入固定作品骨架。未来 Agent 解析节点应输出同一候选合同，并在用户确认后复用现有展示映射；PDF 上传及临时存储不属于当前工作流。
 
 图状态与 checkpoint 可保存任务 ID、清洗后的 brief、评分、配置、Skill 版本、风格与资产 ID、QA 结果。不得保存 PDF 原文、`sourceRefs`、照片字节、密钥和支付数据。照片及风格参考图仅在外部图像请求期间读取。
 

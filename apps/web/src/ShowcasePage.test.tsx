@@ -67,6 +67,19 @@ describe("ShowcasePage image content", () => {
     expect(screen.queryByRole("heading", { name: "Experience" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Education" })).not.toBeInTheDocument();
   });
+  it("renders work and campus experience as independent modules", () => {
+    const config: DesignConfig = { ...defaultConfig, content: { ...defaultConfig.content,
+      workExperience: ["示例公司 前端实习生"],
+      campusExperience: ["学生班主任助理"],
+      education: []
+    } };
+    const { rerender } = render(<ShowcasePage config={config} />);
+    expect(screen.getByRole("region", { name: "实习/工作经历" })).toHaveTextContent("示例公司 前端实习生");
+    expect(screen.getByRole("region", { name: "校园经历" })).toHaveTextContent("学生班主任助理");
+    rerender(<ShowcasePage config={{ ...config, content: { ...config.content, workExperience: [] } }} />);
+    expect(screen.queryByRole("region", { name: "实习/工作经历" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "校园经历" })).toHaveTextContent("学生班主任助理");
+  });
   it("places preview artwork in the first hero section", () => {
     const config = { ...defaultConfig, heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" } } as DesignConfig;
     const { container } = render(<ShowcasePage config={config} />);

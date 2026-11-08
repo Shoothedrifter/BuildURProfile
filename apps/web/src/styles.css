@@ -541,9 +541,14 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-dialog h2 { margin: 4px 0 0; font-size: 32px; }
 .proof-dialog-empty { margin: 30px 0 0; color: var(--proof-muted); }
 .proof-project-list { margin: 24px 0 0; padding: 0; list-style: none; }
-.proof-project-list li { padding: 16px 0; display: flex; justify-content: space-between; align-items: center; gap: 18px; border-top: 1px solid #d8c9c0; }
+.proof-project-list li { padding: 16px 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; border-top: 1px solid #d8c9c0; }
 .proof-project-list li > div { display: grid; gap: 5px; }
 .proof-project-list span { color: var(--proof-muted); font-size: 12px; }
+.proof-project-list .proof-project-actions { display: flex; align-items: center; gap: 8px; }
+.proof-project-list .proof-project-delete-confirm { grid-column: 1 / -1; padding: 14px; border: 1px solid #bd5a47; background: #fff7f2; }
+.proof-project-delete-confirm p { margin: 0; color: #633b32; font-size: 13px; line-height: 1.6; }
+.proof-project-delete-confirm > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.proof-project-delete-confirm p[role="alert"] { margin-top: 10px; color: #a33524; }
 .proof-share-unavailable { background: var(--proof-bg); font-family: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .proof-demo-page { min-height: 100vh; background: var(--proof-bg, #fff5ef); padding: 16px; }
 .proof-demo-toolbar { width: min(100%, 1360px); margin: 0 auto 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; color: #66615d; font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .12em; }
@@ -611,7 +616,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .proof-publish-actions .proof-button, .proof-actions .proof-button { width: 100%; }
   .proof-actions { align-items: stretch; flex-direction: column; }
   .proof-unlock-actions, .proof-share-actions { align-items: stretch; flex-direction: column; }
-  .proof-project-list li { align-items: flex-start; flex-direction: column; }
+  .proof-project-list li { align-items: flex-start; grid-template-columns: 1fr; }
+  .proof-project-list .proof-project-delete-confirm { grid-column: 1; }
   .proof-dialog { padding: 20px; box-shadow: 4px 4px 0 #262626; }
 }
 

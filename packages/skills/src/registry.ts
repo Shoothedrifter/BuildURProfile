@@ -1,5 +1,5 @@
 import type { DesignConfig, JobRole, ResumeContent, StructuredResumeV1, StyleVector } from "../../contracts/src/config.ts";
-import type { ResumeCandidateV1 } from "../../contracts/src/resume-candidate.ts";
+import type { ResumeCandidateV2 } from "../../contracts/src/resume-candidate.ts";
 import { isAssessmentComplete, scoreAnswers } from "./assessment.ts";
 import { styleToConfig } from "./mapping.ts";
 import { AVATAR_STYLES } from "./avatar-catalog.ts";
@@ -41,14 +41,14 @@ const validConfig = (value: unknown): value is DesignConfig => isRecord(value) &
   isRecord(value.marquee) && isRecord(value.stackedCards) && isRecord(value.content) &&
   isRecord(value.content.profile) && isRecord(value.content.expertise) && Array.isArray(value.content.projects);
 const validTextList = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 100 && value.every(isString);
-const candidateModules = ["basicInfo", "jobIntent", "selfEvaluation", "education", "workExperience", "projects", "awards", "skills", "other"] as const;
+const candidateModules = ["basicInfo", "jobIntent", "selfEvaluation", "education", "workExperience", "campusExperience", "projects", "awards", "skills", "other"] as const;
 const validCandidateField = (value: unknown): boolean => isRecord(value) &&
-  Object.keys(value).every((key) => ["value", "source", "page", "included", "experienceKind", "label", "fieldKey"].includes(key)) &&
+  Object.keys(value).every((key) => ["value", "source", "page", "included", "label", "fieldKey"].includes(key)) &&
   isString(value.value) && isString(value.source) && Number.isInteger(value.page) && Number(value.page) >= 1 &&
-  typeof value.included === "boolean" && (value.experienceKind === undefined || value.experienceKind === "campus") &&
+  typeof value.included === "boolean" &&
   (value.label === undefined || isString(value.label)) && (value.fieldKey === undefined || isString(value.fieldKey));
-function validCandidate(value: unknown): value is ResumeCandidateV1 {
-  return isRecord(value) && value.version === "resume-candidate-v1" &&
+function validCandidate(value: unknown): value is ResumeCandidateV2 {
+  return isRecord(value) && value.version === "resume-candidate-v2" &&
     Object.keys(value).every((key) => ["version", "name", "email", ...candidateModules].includes(key)) &&
     validCandidateField(value.name) && validCandidateField(value.email) &&
     candidateModules.every((key) => Array.isArray(value[key]) && value[key].length <= 100 && value[key].every(validCandidateField));
@@ -202,17 +202,17 @@ export function createDefaultSkillRegistry() {
       if (signal.aborted) throw new Error("PDF 读取已取消。");
       return result;
     } });
-  registry.register({ id: "resume.parse.v2", version: "2.0.0", runtime: ["browser"], capabilities: ["parseResumePages"],
+  registry.register({ id: "resume.parse.v3", version: "3.0.0", runtime: ["browser"], capabilities: ["parseResumePages"],
     timeoutMs: 5_000, license: internal,
     validateInput: (input) => isRecord(input) && Array.isArray(input.pages) && input.pages.length > 0 && input.pages.every(isString),
     validateOutput: (output) => isRecord(output) && validCandidate(output.draft),
     execute: ({ pages }: { pages: string[] }, tools: any) => ({ draft: tools.parseResumePages(pages) }) });
-  registry.register({ id: "resume.confirm.v2", version: "2.0.0", runtime: ["browser"],
+  registry.register({ id: "resume.confirm.v3", version: "3.0.0", runtime: ["browser"],
     capabilities: ["validateResumeDraft", "toResumeContent"], timeoutMs: 5_000, license: internal,
     validateInput: (input) => isRecord(input) && validCandidate(input.draft),
     validateOutput: (output) => isRecord(output) && validTextList(output.problems) &&
       (output.problems.length > 0 ? output.content === undefined : validContent(output.content) && !("sourceRefs" in output.content)),
-    execute: ({ draft }: { draft: unknown }, tools: any) => {
+    execute: ({ draft }: { draft: ResumeCandidateV2 }, tools: any) => {
       const problems = tools.validateResumeDraft(draft);
       if (!validTextList(problems)) throw new Error("简历确认结果无效。");
       if (problems.length) return { problems };

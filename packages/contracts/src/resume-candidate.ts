@@ -4,13 +4,12 @@ export type ResumeCandidateField = {
   source: string;
   page: number;
   included: boolean;
-  experienceKind?: "campus";
   label?: string;
   fieldKey?: string;
 };
 
-export type ResumeCandidateV1 = {
-  version: "resume-candidate-v1";
+export type ResumeCandidateV2 = {
+  version: "resume-candidate-v2";
   name: ResumeCandidateField;
   email: ResumeCandidateField;
   basicInfo: ResumeCandidateField[];
@@ -18,6 +17,7 @@ export type ResumeCandidateV1 = {
   selfEvaluation: ResumeCandidateField[];
   education: ResumeCandidateField[];
   workExperience: ResumeCandidateField[];
+  campusExperience: ResumeCandidateField[];
   projects: ResumeCandidateField[];
   awards: ResumeCandidateField[];
   skills: ResumeCandidateField[];

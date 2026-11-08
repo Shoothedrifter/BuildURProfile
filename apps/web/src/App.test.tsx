@@ -25,6 +25,7 @@ vi.mock("./lib/paymentApi", () => ({
     createProject: vi.fn().mockResolvedValue({ id: "project-1", config: null, revision: 1, paid: false, pendingAction: null }),
     project: vi.fn().mockResolvedValue({ id: "project-1", config: null, revision: 1, paid: false, pendingAction: null }),
     updateProject: vi.fn().mockResolvedValue({ id: "project-1", config: null, revision: 2, paid: false, pendingAction: null }),
+    deleteProject: vi.fn().mockResolvedValue({ ok: true }),
     checkout: vi.fn().mockResolvedValue({ alreadyPaid: false, paymentHtml: "<form></form>" }),
     shares: vi.fn().mockResolvedValue([]),
     publish: vi.fn().mockResolvedValue({ token: "a".repeat(43), url: `http://localhost:3000/#share=${"a".repeat(43)}`, expiresAt: Date.now() + 1000 }),
@@ -88,6 +89,8 @@ beforeEach(() => {
   vi.mocked(generationApi.cancelSavedGeneration).mockClear();
   vi.mocked(preparePortrait).mockReset().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=");
   vi.mocked(paymentApi.createProject).mockClear();
+  vi.mocked(paymentApi.projects).mockReset().mockResolvedValue([]);
+  vi.mocked(paymentApi.deleteProject).mockReset().mockResolvedValue({ ok: true });
   vi.mocked(paymentApi.publish).mockClear();
   vi.mocked(paymentApi.export).mockClear();
 });
@@ -95,6 +98,38 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("confirms deletion in My Projects and clears an open deleted project", async () => {
+    const saved = { id: "saved-project", config: rawConfig as DesignConfig, revision: 1,
+      paid: false, pendingAction: null, pendingAmountFen: null };
+    vi.mocked(paymentApi.projects).mockResolvedValueOnce([saved]).mockResolvedValue([]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "我的项目，共 1 个" }));
+    fireEvent.click(screen.getByRole("button", { name: /继续编辑/ }));
+    expect(screen.getByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "我的项目，共 1 个" }));
+    fireEvent.click(screen.getByRole("button", { name: /删除项目/ }));
+    expect(screen.getByText(/分享链接.*失效/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消删除" }));
+    expect(paymentApi.deleteProject).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /删除项目/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(paymentApi.deleteProject).toHaveBeenCalledWith("saved-project"));
+    expect(await screen.findByText(/还没有保存的作品/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "你的能力，值得一个可以体验的网页。" })).toBeInTheDocument();
+  });
+
+  it("keeps a project visible when the server refuses deletion", async () => {
+    const saved = { id: "pending-project", config: rawConfig as DesignConfig, revision: 1,
+      paid: false, pendingAction: "share" as const, pendingAmountFen: 199 };
+    vi.mocked(paymentApi.projects).mockResolvedValueOnce([saved]);
+    vi.mocked(paymentApi.deleteProject).mockRejectedValueOnce(new Error("项目仍有待核实的支付订单"));
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "我的项目，共 1 个" }));
+    fireEvent.click(screen.getByRole("button", { name: /删除项目/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("待核实的支付订单");
+    expect(screen.getByRole("button", { name: /继续编辑/ })).toBeInTheDocument();
+  });
   it("lets an education-only resume reach confirmation", async () => {
     vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: ["林青\n教育背景\n2020.09 - 2024.06 示例大学\n专业：计算机科学"], text: "林青\n教育背景\n示例大学" });
     render(<App />);
@@ -349,8 +384,13 @@ describe("showcase builder", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /解析简历/ }));
     await screen.findByRole("heading", { name: "让每一段经历，都有证据可循" });
-    fireEvent.click(screen.getByRole("button", { name: /工作 \/ 校园经历/ }));
+    expect(screen.getByRole("button", { name: /实习\/工作经历/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /校园经历/ }));
     expect(screen.getByRole("textbox", { name: "校园经历 1" })).toHaveValue("哈尔滨理工大学嵌入式创新实验室 成员");
+    fireEvent.click(screen.getByRole("button", { name: /项目经历/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "条目分类 1" }), { target: { value: "campusExperience" } });
+    fireEvent.click(screen.getByRole("button", { name: /校园经历/ }));
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "校园经历 2" }).value).toContain("无土栽培系统");
   });
 
   it("keeps the PDF confirmation mandatory, allows correction, and changes config when answers change", async () => {
@@ -359,7 +399,7 @@ describe("showcase builder", () => {
     openUpload();
     await chooseAndParse();
     fireEvent.change(screen.getByLabelText("姓名"), { target: { value: "黄 琬斐" } });
-    fireEvent.click(screen.getByRole("button", { name: /工作 \/ 校园经历/ }));
+    fireEvent.click(screen.getByRole("button", { name: /实习\/工作经历/ }));
     expect(screen.getByRole("textbox", { name: /工作.*经历 1/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /项目经历/ }));
     expect(screen.getByRole("textbox", { name: "项目经历 1" })).toBeInTheDocument();
@@ -515,7 +555,7 @@ describe("showcase builder", () => {
       content: { ...rawConfig.content, workExperience: [], campusExperience: ["哈尔滨理工大学嵌入式创新实验室 成员"], education: ["哈尔滨理工大学"] }
     } as DesignConfig;
     render(<ShowcasePage config={config} />);
-    expect(screen.getByRole("heading", { name: "Campus experience" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "校园经历" })).toBeInTheDocument();
     expect(screen.getByText("哈尔滨理工大学嵌入式创新实验室 成员")).toBeInTheDocument();
   });
 

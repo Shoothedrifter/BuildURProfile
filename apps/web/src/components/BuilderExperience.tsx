@@ -21,8 +21,8 @@ import {
 } from "./BuilderChrome";
 import type { WorkflowPhase } from "./BuilderChrome";
 
-export type DraftGroup = "basicInfo" | "jobIntent" | "selfEvaluation" | "workExperience" | "projects" | "awards" | "skills" | "education" | "other";
-export type ReclassifyTarget = DraftGroup | "campusExperience";
+export type DraftGroup = "basicInfo" | "jobIntent" | "selfEvaluation" | "workExperience" | "campusExperience" | "projects" | "awards" | "skills" | "education" | "other";
+export type ReclassifyTarget = DraftGroup;
 export type DeliveryAction = "share" | "export";
 type ConfirmModule = "basic" | DraftGroup;
 type StylePresetId = "warm" | "minimal" | "bold";
@@ -32,9 +32,10 @@ const confirmationGroups: Array<{ key: DraftGroup; title: string; hint: string }
   { key: "jobIntent", title: "求职意向", hint: "目标岗位、到岗时间与薪资" },
   { key: "selfEvaluation", title: "自我评价", hint: "保留原文可核查的评价" },
   { key: "education", title: "教育经历", hint: "学校、学位与学习经历" },
-  { key: "workExperience", title: "工作 / 校园经历", hint: "任职、职责与成果" },
+  { key: "workExperience", title: "实习/工作经历", hint: "公司、职位、工作时间与职责" },
   { key: "projects", title: "项目经历", hint: "仅保留 PDF 原文可核查的项目" },
   { key: "awards", title: "荣誉奖项", hint: "奖项名称、级别与时间" },
+  { key: "campusExperience", title: "校园经历", hint: "校内组织、岗位与成果" },
   { key: "skills", title: "技能与链接", hint: "技术、工具与方法" },
   { key: "other", title: "其他内容", hint: "尚未归入以上模块的经历" }
 ];
@@ -101,16 +102,6 @@ const stylePresets: Array<{
     }
   }
 ];
-
-function confirmationGroupTitle(key: DraftGroup, title: string, entries: readonly DraftField[]): string {
-  return key === "workExperience" && entries.some((entry) => entry.experienceKind === "campus")
-    ? "工作 / 校园经历"
-    : title;
-}
-
-function confirmationEntryTitle(key: DraftGroup, title: string, entry: DraftField): string {
-  return key === "workExperience" && entry.experienceKind === "campus" ? "校园经历" : title;
-}
 
 function BrandPreview() {
   return <div className="proof-mini-showcase" aria-label="Showcase 演示预览">
@@ -213,6 +204,7 @@ export type BuilderExperienceProps = {
   onStartPayment: () => void;
   onCheckEntitlement: () => void;
   onResumeProject: (project: OwnedProject) => void;
+  onDeleteProject: (project: OwnedProject) => Promise<void>;
   onCopyShare: () => void;
   onRemoveShare: () => void;
   onRemoveSavedShare: (id: string) => void;
@@ -367,7 +359,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
             {confirmationGroups.map((group) => <button type="button" key={group.key}
               className={confirmModule === group.key ? "is-active" : ""} onClick={() => setConfirmModule(group.key)}>
               <span>{group.key === "projects" && confirmModule === group.key ? "●" : draft[group.key].length ? "✓" : "○"}</span>
-              {confirmationGroupTitle(group.key, group.title, draft[group.key])}
+              {group.title}
               <small>{draft[group.key].length}</small>
             </button>)}
           </nav>
@@ -381,7 +373,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           </div> : (() => {
             const group = confirmationGroups.find((entry) => entry.key === confirmModule)!;
             return <div className="proof-form-stack">
-              <header><h2>{confirmationGroupTitle(group.key, group.title, draft[group.key])}</h2><p>{group.hint}</p></header>
+              <header><h2>{group.title}</h2><p>{group.hint}</p></header>
               {draft[group.key].length === 0 ? <ProofCard className="proof-empty-module"><strong>这段简历没有识别到内容</strong><p>返回上传页更换文件，或继续核对其他模块。</p></ProofCard> :
                 draft[group.key].map((entry, index) => <article className="proof-confirm-entry" key={`${group.key}-${index}`}>
                   <div className="proof-entry-top">
@@ -389,14 +381,13 @@ export function BuilderExperience(props: BuilderExperienceProps) {
                     <span>PDF · 第 {entry.page} 页</span>
                   </div>
                   <label className="proof-field"><span>条目分类 {index + 1}</span><select aria-label={`条目分类 ${index + 1}`}
-                    value={group.key === "workExperience" && entry.experienceKind === "campus" ? "campusExperience" : group.key}
+                    value={group.key}
                     onChange={(event) => props.onReclassify(group.key, index, event.target.value as ReclassifyTarget)}>
                     {confirmationGroups.map((option) => <option key={option.key} value={option.key}>{option.title}</option>)}
-                    <option value="campusExperience">校园经历</option>
                   </select></label>
                   <label className="proof-field">
-                    <span>{confirmationEntryTitle(group.key, group.title, entry)} {index + 1}</span>
-                    <textarea aria-label={`${confirmationEntryTitle(group.key, group.title, entry)} ${index + 1}`}
+                    <span>{group.title} {index + 1}</span>
+                    <textarea aria-label={`${group.title} ${index + 1}`}
                       rows={Math.min(9, Math.max(4, entry.value.split("\n").length + 1))} value={entry.value} disabled={!entry.included}
                       onChange={(event) => props.onUpdateGroup(group.key, index, { value: event.target.value })} />
                   </label>
@@ -577,6 +568,6 @@ export function BuilderExperience(props: BuilderExperienceProps) {
 
     {error && phase !== "upload" && phase !== "confirm" && phase !== "quiz" && phase !== "result" && <p className="proof-inline-error" role="alert">{error}</p>}
     <ProjectsDialog open={projectsOpen} projects={projects} onClose={() => setProjectsOpen(false)}
-      onSelect={(project) => { setProjectsOpen(false); props.onResumeProject(project); }} />
+      onSelect={props.onResumeProject} onDelete={props.onDeleteProject} />
   </BuilderChrome>;
 }

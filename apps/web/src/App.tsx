@@ -235,7 +235,7 @@ export default function App() {
       }, { runtime: "browser", capabilities: { extractPdfText } }) as { text: string; pages: string[] };
       if (currentPdfVersion !== pdfVersion.current) return;
       if (!extracted.text.trim()) throw new Error("这份 PDF 没有可提取文本。当前版本暂不支持扫描件 OCR。");
-      const { draft: nextDraft } = workflowSkills.runSync("resume.parse.v2", { pages: extracted.pages },
+      const { draft: nextDraft } = workflowSkills.runSync("resume.parse.v3", { pages: extracted.pages },
         { runtime: "browser", capabilities: { parseResumePages } }) as { draft: ResumeDraft };
       if (!nextDraft.name.value) {
         throw new Error("PDF 文本已提取，但未能识别姓名。请检查排版或换一份带清晰姓名的 PDF。");
@@ -267,20 +267,18 @@ export default function App() {
     setDraft((previous) => {
       if (!previous) return previous;
       const entry = previous[key][index];
-      if (!entry || (key === target && !(key === "workExperience" && entry.experienceKind))) return previous;
+      if (!entry || key === target) return previous;
       const next = { ...previous, [key]: previous[key].filter((_, at) => at !== index) };
-      const destination: DraftGroup = target === "campusExperience" ? "workExperience" : target;
-      const moved: DraftField = { ...entry, included: destination === "basicInfo" ? false : entry.included,
-        experienceKind: target === "campusExperience" ? "campus" : undefined,
-        label: destination === "other" ? entry.label ?? "其他内容" : undefined,
-        fieldKey: destination === "basicInfo" || destination === "jobIntent" ? entry.fieldKey : undefined };
-      return { ...next, [destination]: [...next[destination], moved] };
+      const moved: DraftField = { ...entry, included: target === "basicInfo" ? false : entry.included,
+        label: target === "other" ? entry.label ?? "其他内容" : undefined,
+        fieldKey: target === "basicInfo" || target === "jobIntent" ? entry.fieldKey : undefined };
+      return { ...next, [target]: [...next[target], moved] };
     });
   };
 
   const confirm = () => {
     if (!draft) return;
-    const { problems } = workflowSkills.runSync("resume.confirm.v2", { draft },
+    const { problems } = workflowSkills.runSync("resume.confirm.v3", { draft },
       { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as { problems: string[] };
     if (problems.length) {
       setError(problems.slice(0, 3).join("；"));
@@ -376,7 +374,7 @@ export default function App() {
 
   const generate = async () => {
     if (!draft || !isAssessmentComplete(answers)) return;
-    const confirmation = workflowSkills.runSync("resume.confirm.v2", { draft },
+    const confirmation = workflowSkills.runSync("resume.confirm.v3", { draft },
       { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as
       { problems: string[]; content?: ResumeContent };
     if (confirmation.problems.length || !confirmation.content) {
@@ -559,6 +557,33 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "instant" });
   };
 
+  const deleteProject = async (project: OwnedProject) => {
+    await paymentApi.deleteProject(project.id);
+    setProjects((previous) => previous.filter((item) => item.id !== project.id));
+    if (projectId !== project.id) return;
+    pdfVersion.current++;
+    generationVersion.current++;
+    void generationApi.cancelSavedGeneration();
+    photoDataRef.current = null;
+    setSelectedFile(null);
+    setFileName("");
+    setDraft(null);
+    setAnswers({});
+    setPhotoDataUrl(null);
+    setPhotoName("");
+    setGenerated(null);
+    setProjectId(null);
+    setProjectPaid(false);
+    setShare(null);
+    setSavedShares([]);
+    setShareSnapshot("");
+    setPaymentIntent(null);
+    setProgress("");
+    setError("");
+    setResultError("");
+    setPhase("landing");
+  };
+
   const removeShare = async () => {
     if (!share || !projectId) return;
     try {
@@ -668,6 +693,7 @@ export default function App() {
     onStartPayment={() => void startPayment()}
     onCheckEntitlement={() => void checkEntitlement()}
     onResumeProject={resumeProject}
+    onDeleteProject={deleteProject}
     onCopyShare={() => void copyShare()}
     onRemoveShare={() => void removeShare()}
     onRemoveSavedShare={(id) => void removeSavedShare(id)}

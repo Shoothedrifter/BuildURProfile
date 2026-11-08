@@ -36,6 +36,39 @@ test("concurrent checkout reuses one pending order and a server price snapshot",
   assert.equal(db.prepare("SELECT amount_fen FROM orders").get().amount_fen, 199);
 });
 
+test("only the owner can delete a project and its content leaves the project list", () => {
+  const id = setupProject();
+  assert.throws(() => service.deleteProject("other", id), /不存在|无权/);
+  assert.deepEqual(service.deleteProject("owner", id), { ok: true });
+  assert.deepEqual(service.listProjects("owner"), []);
+  assert.throws(() => service.getProject("owner", id), /不存在|无权/);
+  assert.throws(() => service.deleteProject("owner", id), /不存在|无权/);
+  const saved = db.prepare("SELECT config_json,deleted_at FROM projects WHERE id=?").get(id);
+  assert.equal(saved.config_json, "{}");
+  assert.equal(saved.deleted_at, time);
+});
+
+test("deleting a paid project revokes delivery links but preserves verified payment facts", async () => {
+  const id = setupProject();
+  const order = await service.checkout("owner", id, "share");
+  await service.notify(paidNotice(order));
+  const share = service.publish("owner", id);
+  const download = service.issueDownload("owner", id);
+  assert.deepEqual(service.deleteProject("owner", id), { ok: true });
+  assert.throws(() => service.readShare(share.token), /失效/);
+  assert.throws(() => service.getDownload("owner", download.token), /不存在|无权/);
+  assert.equal(db.prepare("SELECT config_json,revoked_at FROM shares WHERE token=?").get(share.token).config_json, "{}");
+  assert.equal(db.prepare("SELECT status FROM orders WHERE project_id=?").get(id).status, "PAID");
+  assert.equal(db.prepare("SELECT status FROM entitlements WHERE project_id=?").get(id).status, "ACTIVE");
+});
+
+test("a project with an unsettled payment order cannot be deleted", async () => {
+  const id = setupProject();
+  await service.checkout("owner", id, "share");
+  assert.throws(() => service.deleteProject("owner", id), /订单|支付/);
+  assert.equal(service.listProjects("owner").length, 1);
+});
+
 test("a pending order from another payment environment cannot be reused", async () => {
   const id = setupProject();
   const order = await service.checkout("owner", id, "share");
@@ -336,6 +369,31 @@ test("HTTP flow protects publication and download, then delivers both after veri
     assert.equal(bytes.readUInt32LE(0), 0x04034b50);
     assert.ok(bytes.includes(Buffer.from("BuildURProfile Showcase")));
     assert.equal(db.prepare("SELECT count(*) AS count FROM deliveries WHERE project_id=? AND status='DELIVERED'").get(project.id).count, 2);
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});
+
+test("HTTP project deletion requires CSRF and the owning session", async () => {
+  const server = createPaymentHttpServer({ db, service, paymentConfig: merchant, priceFen: 199, secret: Buffer.alloc(32, 4) });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const ownerSession = await fetch(`${base}/api/session`);
+    const ownerCookie = ownerSession.headers.get("set-cookie").split(";")[0];
+    const ownerCsrf = (await ownerSession.json()).csrfToken;
+    const created = await fetch(`${base}/api/projects`, { method: "POST",
+      headers: { cookie: ownerCookie, "x-csrf-token": ownerCsrf, "content-type": "application/json" },
+      body: JSON.stringify({ config }) });
+    assert.equal(created.status, 201);
+    const { id } = await created.json();
+    const path = `${base}/api/projects/${id}`;
+    assert.equal((await fetch(path, { method: "DELETE", headers: { cookie: ownerCookie } })).status, 403);
+    const otherSession = await fetch(`${base}/api/session`);
+    const otherCookie = otherSession.headers.get("set-cookie").split(";")[0];
+    const otherCsrf = (await otherSession.json()).csrfToken;
+    assert.equal((await fetch(path, { method: "DELETE", headers: { cookie: otherCookie, "x-csrf-token": otherCsrf } })).status, 404);
+    assert.equal((await fetch(path, { method: "DELETE", headers: { cookie: ownerCookie, "x-csrf-token": ownerCsrf } })).status, 200);
+    assert.deepEqual(await (await fetch(`${base}/api/projects`, { headers: { cookie: ownerCookie } })).json(), []);
+    assert.equal((await fetch(path, { headers: { cookie: ownerCookie } })).status, 404);
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
 

@@ -35,6 +35,7 @@ export const paymentApi = {
   project: (id: string) => request<OwnedProject>(`/api/projects/${encodeURIComponent(id)}`),
   createProject: (config: DesignConfig) => request<OwnedProject>("/api/projects", "POST", { config }),
   updateProject: (id: string, config: DesignConfig) => request<OwnedProject>(`/api/projects/${encodeURIComponent(id)}`, "PUT", { config }),
+  deleteProject: (id: string) => request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}`, "DELETE"),
   checkout: (id: string, action: "share" | "export") => request<{ alreadyPaid: boolean; paymentHtml?: string; amountYuan?: string }>(
     `/api/projects/${encodeURIComponent(id)}/checkout`, "POST", { action }),
   reconcile: (id: string) => request<OwnedProject>(`/api/projects/${encodeURIComponent(id)}/reconcile`, "POST"),

@@ -10,7 +10,7 @@ const content = { profile: { name: "张三", role: "", location: "", availabilit
 
 test("default registry runs scoring, mapping and confirmed content as versioned skills", async () => {
   const registry = createDefaultSkillRegistry();
-  assert.deepEqual(registry.list().map((skill) => skill.id), ["resume.extract.v1", "resume.parse.v2", "resume.confirm.v2",
+  assert.deepEqual(registry.list().map((skill) => skill.id), ["resume.extract.v1", "resume.parse.v3", "resume.confirm.v3",
     "assessment.score.v1", "design.map.v1", "resume.compose.v2", "avatar.wibi.v1", "artifact.qa.v1"]);
   const { vector } = await registry.run("assessment.score.v1", { answers }, { runtime: "worker" });
   const { config } = await registry.run("design.map.v1", { vector, role: "frontend-creative-developer" }, { runtime: "worker" });
@@ -25,23 +25,23 @@ test("default registry runs scoring, mapping and confirmed content as versioned 
 test("browser Skills extract, parse, and confirm without exposing PDF evidence in output", async () => {
   const registry = createDefaultSkillRegistry();
   const file = { name: "resume.pdf" };
-  const candidate = { version: "resume-candidate-v1",
+  const candidate = { version: "resume-candidate-v2",
     name: { value: "张三", source: "张三", page: 1, included: true },
     email: { value: "", source: "", page: 1, included: true },
-    basicInfo: [], jobIntent: [], selfEvaluation: [], education: [], workExperience: [], projects: [], awards: [], skills: [], other: [] };
+    basicInfo: [], jobIntent: [], selfEvaluation: [], education: [], workExperience: [], campusExperience: [], projects: [], awards: [], skills: [], other: [] };
   const extraction = await registry.run("resume.extract.v1", { file },
     { runtime: "browser", capabilities: { extractPdfText: async () => ({ text: "简历", pages: ["简历"] }) } });
-  const parsed = registry.runSync("resume.parse.v2", { pages: extraction.pages },
+  const parsed = registry.runSync("resume.parse.v3", { pages: extraction.pages },
     { runtime: "browser", capabilities: { parseResumePages: () => candidate } });
-  assert.throws(() => registry.runSync("resume.parse.v2", { pages: extraction.pages },
+  assert.throws(() => registry.runSync("resume.parse.v3", { pages: extraction.pages },
     { runtime: "browser", capabilities: { parseResumePages: () => ({ ...candidate, version: "unknown" }) } }), /输出无效/);
-  const confirmed = registry.runSync("resume.confirm.v2", { draft: parsed.draft },
+  const confirmed = registry.runSync("resume.confirm.v3", { draft: parsed.draft },
     { runtime: "browser", capabilities: { validateResumeDraft: () => [],
       toResumeContent: () => ({ ...content, sourceRefs: { name: { page: 1, excerpt: "原文" } } }) } });
   assert.deepEqual(confirmed.problems, []);
   assert.equal(confirmed.content.profile.name, "张三");
   assert.equal("sourceRefs" in confirmed.content, false);
-  const invalid = registry.runSync("resume.confirm.v2", { draft: parsed.draft },
+  const invalid = registry.runSync("resume.confirm.v3", { draft: parsed.draft },
     { runtime: "browser", capabilities: { validateResumeDraft: () => ["请确认姓名"], toResumeContent: () => { throw new Error("must not compose"); } } });
   assert.deepEqual(invalid, { problems: ["请确认姓名"] });
   await assert.rejects(registry.run("resume.extract.v1", { file }, { runtime: "worker", capabilities: {} }), /不能在 worker/);

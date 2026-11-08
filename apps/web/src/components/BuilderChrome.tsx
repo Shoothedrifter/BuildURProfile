@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import type { OwnedProject } from "../lib/paymentApi";
 
@@ -53,24 +53,47 @@ export function StepHeader({ number, title, description }: { number: number; tit
   </header>;
 }
 
-export function ProjectsDialog({ open, projects, onClose, onSelect }: {
+export function ProjectsDialog({ open, projects, onClose, onSelect, onDelete }: {
   open: boolean;
   projects: readonly OwnedProject[];
   onClose: () => void;
   onSelect: (project: OwnedProject) => void;
+  onDelete: (project: OwnedProject) => Promise<void>;
 }) {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const close = () => {
+    if (deletingId) return;
+    setConfirmingId(null);
+    setDeleteError("");
+    onClose();
+  };
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") close();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, open]);
+  }, [deletingId, onClose, open]);
+
+  const deleteSelected = async (project: OwnedProject) => {
+    setDeletingId(project.id);
+    setDeleteError("");
+    try {
+      await onDelete(project);
+      setConfirmingId(null);
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : "删除项目失败，请重试。");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   if (!open) return null;
   return <div className="proof-dialog-backdrop" role="presentation" onMouseDown={(event) => {
-    if (event.target === event.currentTarget) onClose();
+    if (event.target === event.currentTarget) close();
   }}>
     <section className="proof-dialog" role="dialog" aria-modal="true" aria-labelledby="projects-dialog-title">
       <header>
@@ -78,7 +101,7 @@ export function ProjectsDialog({ open, projects, onClose, onSelect }: {
           <p>MY PROJECTS</p>
           <h2 id="projects-dialog-title">我的项目</h2>
         </div>
-        <ProofButton variant="quiet" aria-label="关闭我的项目" onClick={onClose}>×</ProofButton>
+        <ProofButton variant="quiet" aria-label="关闭我的项目" onClick={close}>×</ProofButton>
       </header>
       {projects.length === 0 ? <p className="proof-dialog-empty">还没有保存的作品。完成生成后，项目会出现在这里。</p> : <ul className="proof-project-list">
         {projects.map((project) => {
@@ -88,7 +111,21 @@ export function ProjectsDialog({ open, projects, onClose, onSelect }: {
               <strong>{name}</strong>
               <span>{project.paid ? "已解锁分享与导出" : "未付款 · 可继续编辑"}</span>
             </div>
-            <ProofButton onClick={() => onSelect(project)}>继续编辑 →</ProofButton>
+            <div className="proof-project-actions">
+              <ProofButton disabled={Boolean(deletingId)} onClick={() => { close(); onSelect(project); }}>继续编辑 →</ProofButton>
+              <ProofButton variant="quiet" disabled={Boolean(deletingId)} aria-label={`删除项目 ${name}`}
+                onClick={() => { setConfirmingId(project.id); setDeleteError(""); }}>删除项目</ProofButton>
+            </div>
+            {confirmingId === project.id && <div className="proof-project-delete-confirm">
+              <p>删除后无法恢复；已支付项目也无法继续分享或导出。分享链接和未使用的下载链接会失效，支付记录仍会保留。</p>
+              <div>
+                <ProofButton variant="primary" disabled={Boolean(deletingId)} onClick={() => void deleteSelected(project)}>
+                  {deletingId === project.id ? "正在删除…" : "确认删除"}
+                </ProofButton>
+                <ProofButton variant="quiet" disabled={Boolean(deletingId)} onClick={() => { setConfirmingId(null); setDeleteError(""); }}>取消删除</ProofButton>
+              </div>
+              {deleteError && <p role="alert">{deleteError}</p>}
+            </div>}
           </li>;
         })}
       </ul>}

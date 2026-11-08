@@ -109,6 +109,11 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
     if (!columns.has("cancel_requested_at")) db.exec("ALTER TABLE generations ADD COLUMN cancel_requested_at INTEGER");
     db.exec("CREATE INDEX IF NOT EXISTS generation_cancel_requested ON generations(status, cancel_requested_at, lease_until)");
   });
+  applyMigration(db, 5, () => {
+    const columns = new Set(db.prepare("PRAGMA table_info(projects)").all().map((column) => column.name));
+    if (!columns.has("deleted_at")) db.exec("ALTER TABLE projects ADD COLUMN deleted_at INTEGER");
+    db.exec("CREATE INDEX IF NOT EXISTS active_projects_by_owner ON projects(owner_session_id, deleted_at, updated_at)");
+  });
   return db;
 }
 
