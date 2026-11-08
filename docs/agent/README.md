@@ -42,6 +42,8 @@ Cloudflare 适配器使用 `@cf/black-forest-labs/flux-2-klein-4b`，经 `httpx`
 
 照片字节和供应商密钥不进入图状态或 checkpoint；供应商失败应明确报错，不伪造成功成图。超时、取消与有限重试规则见[架构与协议](../shared/architecture.md)。
 
+开发期不设置应用内肖像生成次数上限，以便反复验证风格与工作流；Cloudflare Workers AI 自身额度和计费仍然生效。**Follow-up（生产开放肖像前）**：结合供应商实际用量、会话或账号身份，以及失败和重试的计数语义，重新设计成本与滥用控制。
+
 ## 验证与上线门槛
 
 在仓库根目录执行：

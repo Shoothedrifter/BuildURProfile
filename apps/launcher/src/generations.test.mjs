@@ -358,7 +358,7 @@ test("paid project config refuses preview-only hero artwork", () => {
   assert.throws(() => cleanConfig({ ...config, heroArtwork: { assetUrl: "/api/hero-assets/x", styleId: "retro-flat-anime-head", alt: "avatar" } }), /肖像|仅供预览/);
 });
 
-test("local generation limits model calls per session and removes expired photo files", () => {
+test("local generation allows repeated portrait tests and removes expired photo files", () => {
   const db = openDatabase(":memory:");
   let time = Date.now();
   db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, time + 2 * 86400000);
@@ -366,8 +366,10 @@ test("local generation limits model calls per session and removes expired photo 
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
     const portrait = service.savePortrait("a", png);
-    for (let i = 0; i < 5; i++) service.enqueue("a", { portraitAssetId: portrait.id, styleId: "retro-flat-anime-head", idempotencyKey: `try-${i}` });
-    assert.throws(() => service.enqueue("a", { portraitAssetId: portrait.id, styleId: "retro-flat-anime-head", idempotencyKey: "try-6" }), /上限|次数/);
+    for (let i = 0; i < 7; i++) {
+      assert.equal(service.enqueue("a", { portraitAssetId: portrait.id, styleId: "retro-flat-anime-head", idempotencyKey: `try-${i}` }).status, "QUEUED");
+    }
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM generations WHERE owner_session_id='a' AND portrait_asset_id IS NOT NULL").get().count, 7);
     const path = db.prepare("SELECT path FROM avatar_assets WHERE id=?").get(portrait.id).path;
     time += 86400001;
     assert.equal(service.purgeExpired(), 1);

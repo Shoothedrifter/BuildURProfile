@@ -5,7 +5,6 @@ import { listAvatarStyles } from "../../../skills/src/wibi.ts";
 import { cleanGenerationBrief } from "./brief.mjs";
 import { validateImage } from "./assets.mjs";
 
-const DAY = 24 * 60 * 60 * 1000;
 export const WORKFLOW_VERSION = "python-agent-v2";
 
 export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, maxAttempts, retryBaseMs,
@@ -56,10 +55,6 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       if (existing.portrait_asset_id !== portraitAssetId || existing.style_id !== styleId ||
         existing.config_json !== safeConfig || existing.brief_json !== safeBrief) throw new ServiceError(409, "生成请求标识已用于其他内容。");
       return publicTask(existing);
-    }
-    if (portraitAssetId) {
-      const attempts = db.prepare("SELECT COUNT(*) AS count FROM generations WHERE owner_session_id=? AND portrait_asset_id IS NOT NULL AND created_at>?").get(sessionId, now() - DAY).count;
-      if (attempts >= 5) throw new ServiceError(429, "本机肖像生成次数已达每日上限（5 次）。");
     }
     const id = randomUUID(), time = now();
     db.prepare("INSERT INTO generations(id,owner_session_id,portrait_asset_id,style_id,config_json,brief_json,idempotency_key,workflow_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,?)")
