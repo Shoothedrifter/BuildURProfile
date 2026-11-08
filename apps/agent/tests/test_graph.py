@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import json
+import random
 from pathlib import Path
 from uuid import uuid4
 
@@ -33,6 +34,7 @@ class FakeClient:
         self.failed = None
         self.cancelled = False
         self.writes = 0
+        self.stored_image = None
 
     async def check_cancel(self, task):
         if self.cancelled:
@@ -51,6 +53,7 @@ class FakeClient:
 
     async def store_output(self, task, image):
         self.writes += 1
+        self.stored_image = image
         self.asset_id = str(uuid4())
         return self.asset_id
 
@@ -68,12 +71,20 @@ class FakeClient:
 
 
 class FakeProvider:
-    def __init__(self):
+    def __init__(self, image=None):
         self.calls = 0
+        self.image = image or GeneratedImage(png())
 
     async def edit(self, portrait, recipe, *, task_id):
         self.calls += 1
-        return GeneratedImage(png())
+        return self.image
+
+
+def noisy_png() -> bytes:
+    stream = io.BytesIO()
+    pixels = random.Random(42).randbytes(1024 * 1024 * 3)
+    Image.frombytes("RGB", (1024, 1024), pixels).save(stream, format="PNG")
+    return stream.getvalue()
 
 
 def task(*, portrait=False):
@@ -106,6 +117,19 @@ async def test_avatar_skill_runs_with_capabilities_and_reuses_asset():
     assert provider.calls == client.writes == 1
     await graph.ainvoke(task_input(item), config={"configurable": {"thread_id": item.id + "-retry"}})
     assert provider.calls == client.writes == 1
+
+
+@pytest.mark.asyncio
+async def test_avatar_skill_compacts_large_generated_image_before_storage():
+    client = FakeClient()
+    provider = FakeProvider(GeneratedImage(noisy_png()))
+    item = task(portrait=True)
+    graph = build_generation_graph(item, client, provider, default_registry(), checkpointer=MemorySaver())
+    await graph.ainvoke(task_input(item), config={"configurable": {"thread_id": item.id}})
+    assert client.stored_image.mime == "image/webp"
+    assert len(client.stored_image.bytes) <= 600_000
+    with Image.open(io.BytesIO(client.stored_image.bytes)) as image:
+        assert image.size[0] >= 512 and image.size[1] >= 512
 
 
 @pytest.mark.asyncio

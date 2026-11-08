@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../../web/src/server/database.mjs";
 import { createGenerationService } from "../../web/src/server/generations.mjs";
+import { createAssetStore } from "../../../packages/storage/src/generation/assets.mjs";
 import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
 import { cleanConfig } from "../../web/src/server/service.mjs";
 
@@ -255,6 +256,26 @@ test("portrait storage validates bytes and binds assets to a session", () => {
     assert.match(asset.id, /^[a-f0-9-]{36}$/);
     assert.equal(service.readAsset("a", asset.id, "portrait").mime, "image/png");
     assert.throws(() => service.readAsset("b", asset.id, "portrait"), /不存在|无权/);
+  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test("private hero serves a compact sidecar and removes both files after expiry", () => {
+  const db = openDatabase(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "burp-hero-compact-"));
+  let time = Date.now();
+  try {
+    db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", time, time + 8 * 24 * 60 * 60 * 1000);
+    const assets = createAssetStore({ db, assetRoot: root, minPixels: 1, now: () => time, allowPortraits: true });
+    const original = Buffer.from(png.split(",")[1], "base64");
+    const compact = Buffer.from("synthetic compact image");
+    const { id } = assets.store("owner", "hero", original, "image/png");
+    writeFileSync(join(root, `${id}.webp`), compact, { mode: 0o600 });
+    assert.deepEqual(assets.readAsset("owner", id), { bytes: compact, mime: "image/webp", kind: "hero" });
+    assert.throws(() => assets.readAsset("other", id), /不存在|无权/);
+    time += 7 * 24 * 60 * 60 * 1000 + 1;
+    assert.equal(assets.purgeExpired(), 1);
+    assert.equal(existsSync(join(root, id)), false);
+    assert.equal(existsSync(join(root, `${id}.webp`)), false);
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 

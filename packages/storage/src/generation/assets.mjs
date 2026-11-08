@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { imageSize } from "image-size";
 import { ServiceError } from "../../../contracts/src/validation.mjs";
@@ -23,7 +23,9 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
   mkdirSync(assetRoot, { recursive: true, mode: 0o700 });
   chmodSync(assetRoot, 0o700);
   function deleteFile(id) {
-    try { unlinkSync(join(assetRoot, id)); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    for (const path of [join(assetRoot, id), join(assetRoot, `${id}.webp`)]) {
+      try { unlinkSync(path); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
   }
   function store(sessionId, kind, bytes, mime) {
     const id = randomUUID(), path = join(assetRoot, id);
@@ -47,6 +49,10 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
   function readAsset(sessionId, id, kind = "hero") {
     const row = db.prepare("SELECT * FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind=? AND expires_at>?").get(id, sessionId, kind, now());
     if (!row) throw new ServiceError(404, "图片不存在或无权访问。");
+    const compactPath = join(assetRoot, `${id}.webp`);
+    if (kind === "hero" && existsSync(compactPath)) {
+      return { bytes: readFileSync(/*turbopackIgnore: true*/ compactPath), mime: "image/webp", kind };
+    }
     return { bytes: readFileSync(/*turbopackIgnore: true*/ row.path), mime: row.mime, kind: row.kind };
   }
   function readAssetForWorker(id) {
