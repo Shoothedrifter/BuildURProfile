@@ -114,6 +114,28 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
     if (!columns.has("deleted_at")) db.exec("ALTER TABLE projects ADD COLUMN deleted_at INTEGER");
     db.exec("CREATE INDEX IF NOT EXISTS active_projects_by_owner ON projects(owner_session_id, deleted_at, updated_at)");
   });
+  applyMigration(db, 6, () => {
+    db.exec(`CREATE TABLE resume_files (
+      id TEXT PRIMARY KEY, owner_session_id TEXT NOT NULL REFERENCES sessions(id),
+      file_name TEXT NOT NULL, size INTEGER NOT NULL, page_count INTEGER NOT NULL,
+      uploaded_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX resume_files_expiry ON resume_files(expires_at);
+    CREATE INDEX resume_files_owner ON resume_files(owner_session_id);
+    CREATE TABLE resumes (
+      id TEXT PRIMARY KEY, file_id TEXT NOT NULL UNIQUE REFERENCES resume_files(id) ON DELETE CASCADE,
+      owner_session_id TEXT NOT NULL REFERENCES sessions(id), status TEXT NOT NULL,
+      draft_json TEXT, revision INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX resumes_owner ON resumes(owner_session_id);
+    CREATE TABLE resume_blocks (
+      resume_id TEXT NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+      block_id TEXT NOT NULL, block_json TEXT NOT NULL, PRIMARY KEY(resume_id,block_id)
+    );
+    CREATE TABLE resume_tombstones (
+      resume_id TEXT PRIMARY KEY, file_id TEXT NOT NULL, owner_session_id TEXT NOT NULL, reason TEXT NOT NULL
+    );`);
+  });
   return db;
 }
 

@@ -1,3 +1,6 @@
+import { Readable } from "node:stream";
+import { handleResumeRoutes } from "./routes/resumes.mjs";
+import { PDF_MAX_BYTES } from "../../../../packages/storage/src/resumes/files.mjs";
 import { createServer } from "node:http";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -75,7 +78,7 @@ function parseRoute(path) {
   return raw;
 }
 
-export function createRequestHandler({ db, service, generationService = null, portraitEnabled = true, agentToken = null,
+export function createRequestHandler({ db, service, generationService = null, resumeRepository = null, portraitEnabled = true, agentToken = null,
   agentStyleLoader, paymentConfig, priceFen, configurationError = null,
   secret = loadSessionSecret(), zipBuilder = buildStaticZip }) {
   const configuredAgentToken = validateAgentToken(agentToken);
@@ -127,6 +130,7 @@ export function createRequestHandler({ db, service, generationService = null, po
       if (parts[0] === "api") {
         const sessionId = requireSession(req, db, secret);
         if (!["GET", "HEAD"].includes(req.method)) requireCsrf(req, secret, sessionId);
+        if (resumeRepository && await handleResumeRoutes({ req, res, parts, sessionId, repository: resumeRepository, sendJson })) return;
         if (generationService && await handleGenerationRoutes({ req, res, url, parts, sessionId,
           service: generationService, portraitEnabled, bodyJson, sendJson })) return;
         if (req.method === "GET" && url.pathname === "/api/projects") { sendJson(res, 200, service.listProjects(sessionId)); return; }
@@ -185,8 +189,8 @@ export function createRequestHandler({ db, service, generationService = null, po
     } catch (error) {
       const isNotify = req.url?.startsWith("/api/payment/notify");
       if (isNotify) { res.writeHead(400, { "content-type": "text/plain; charset=utf-8" }); res.end("fail"); return; }
-      const status = error instanceof ServiceError ? error.status : 500;
-      sendJson(res, status, { error: status === 500 ? "服务暂时不可用。" : error.message });
+      const status = error instanceof ServiceError || error.errorCode ? error.status : 500;
+      sendJson(res, status, { error: status === 500 ? "服务暂时不可用。" : error.message, ...(error.errorCode ? {errorCode:error.errorCode} : {}) });
     }
   };
 }
@@ -197,18 +201,23 @@ export async function dispatchWebRequest(request, handler) {
   request.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
   });
+  const isResumeUpload = request.method === "POST" && url.pathname === "/api/resumes/upload";
+  if (isResumeUpload && headers["content-length"] && (!/^\d+$/.test(headers["content-length"]) || Number(headers["content-length"]) > PDF_MAX_BYTES)) {
+    await request.body?.cancel();
+    return Response.json({errorCode:"FILE_TOO_LARGE",error:"FILE_TOO_LARGE"},{status:413,headers:{"cache-control":"no-store","x-content-type-options":"nosniff"}});
+  }
   let binaryBuffer = Buffer.alloc(0);
-  if (!["GET", "HEAD"].includes(request.method)) {
+  if (!isResumeUpload && !["GET", "HEAD"].includes(request.method)) {
     const ab = await request.arrayBuffer();
     binaryBuffer = Buffer.from(ab);
   }
-  const req = {
+  const req = Object.assign(isResumeUpload ? (request.body ? Readable.fromWeb(request.body) : Readable.from([])) : {}, {
     method: request.method,
     url: url.pathname + url.search,
     headers,
     socket: { encrypted: url.protocol === "https:" },
-    _webBinaryBuffer: binaryBuffer
-  };
+    ...(isResumeUpload ? {} : {_webBinaryBuffer: binaryBuffer})
+  });
   let statusCode = 200;
   const responseHeaders = new Headers();
   let responseBody = null;

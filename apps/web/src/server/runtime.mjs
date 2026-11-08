@@ -1,3 +1,4 @@
+import { createResumeRepository } from "../../../../packages/storage/src/resumes/repository.mjs";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { bindPaymentEnvironment, openDatabase } from "./database.mjs";
@@ -41,8 +42,11 @@ export function getAppRuntime() {
     ["127.0.0.1", "localhost", "::1"].includes(host) && process.env.PAYMENT_ENV !== "production";
   const assetRoot = process.env.AVATAR_ASSET_ROOT || join(repoRoot, "data/avatar-assets");
   const generationService = createGenerationService({ db, assetRoot, allowPortraits: avatarDemoEnabled });
+  const resumeRepository = createResumeRepository({db, root: process.env.RESUME_FILE_ROOT || join(repoRoot, "data/resume-files")});
+  const cleanupTimer = setInterval(() => { try { resumeRepository.cleanup(); } catch { /* Retry on the next bounded sweep. */ } }, 60_000);
+  cleanupTimer.unref();
   const handler = createRequestHandler({
-    db, service, generationService, portraitEnabled: avatarDemoEnabled,
+    db, service, generationService, resumeRepository, portraitEnabled: avatarDemoEnabled,
     agentToken: process.env.AGENT_SERVICE_TOKEN, paymentConfig: config, priceFen, configurationError
   });
 
