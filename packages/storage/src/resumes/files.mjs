@@ -1,4 +1,4 @@
-import { mkdirSync, chmodSync, writeFileSync, renameSync, rmSync, readFileSync } from 'node:fs';
+import { mkdirSync, chmodSync, writeFileSync, renameSync, rmSync, readFileSync, opendirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 export const PDF_MAX_BYTES = 10_000_000;
 export function resumeError(status, errorCode) { return Object.assign(new Error(errorCode), {status,errorCode}); }
@@ -25,5 +25,23 @@ export async function validatePdf(bytes) {
 export function createResumeFileStore(root) {
  mkdirSync(root,{recursive:true,mode:0o700});chmodSync(root,0o700);
  const path=id=>{if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Invalid file ID');return join(root,`${id}.pdf`);};
- return {write(id,bytes){const target=path(id),temp=target+'.tmp';try{writeFileSync(temp,bytes,{mode:0o600,flag:'wx'});renameSync(temp,target);}catch(error){rmSync(temp,{force:true});throw error;}},read:id=>readFileSync(path(id)),remove:id=>rmSync(path(id),{force:true})};
+ let scan=null;
+ function reconcile(hasFile, now, limit=25) {
+  // Retain a directory cursor so each sweep examines only a bounded number of
+  // entries, without materializing the directory or starving later entries.
+  scan ??= opendirSync(root);
+  for(let n=0;n<limit;n++) {
+   const entry=scan.readSync();
+   if(!entry){scan.closeSync();scan=null;break;}
+   const match=/^([a-f0-9-]{36})\.pdf(\.tmp)?$/.exec(entry.name);
+   if(!entry.isFile()||!match)continue;
+   const target=join(root,entry.name);
+   try {
+    // A grace period avoids racing another process between rename and INSERT.
+    if(statSync(target).mtimeMs>now-3600000)continue;
+    if(match[2]||!hasFile(match[1]))rmSync(target,{force:true});
+   }catch(error){if(error.code!=='ENOENT')throw error;}
+  }
+ }
+ return {reconcile,write(id,bytes){const target=path(id),temp=target+'.tmp';try{writeFileSync(temp,bytes,{mode:0o600,flag:'wx'});renameSync(temp,target);}catch(error){rmSync(temp,{force:true});throw error;}},read:id=>readFileSync(path(id)),remove:id=>rmSync(path(id),{force:true})};
 }

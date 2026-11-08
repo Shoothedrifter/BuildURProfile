@@ -201,7 +201,7 @@ export async function dispatchWebRequest(request, handler) {
   request.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
   });
-  const isResumeUpload = request.method === "POST" && url.pathname === "/api/resumes/upload";
+  const isResumeUpload = request.method === "POST" && parseRoute(url.pathname).join("/") === "api/resumes/upload";
   if (isResumeUpload && headers["content-length"] && (!/^\d+$/.test(headers["content-length"]) || Number(headers["content-length"]) > PDF_MAX_BYTES)) {
     await request.body?.cancel();
     return Response.json({errorCode:"FILE_TOO_LARGE",error:"FILE_TOO_LARGE"},{status:413,headers:{"cache-control":"no-store","x-content-type-options":"nosniff"}});

@@ -9,6 +9,7 @@ export async function handleResumeRoutes({req,res,parts,sessionId,repository,sen
   let name;try{name=decodeURIComponent(req.headers['x-file-name']??'');}catch{throw resumeError(400,'FILE_TYPE_INVALID');}
   sendJson(res,201,await repository.upload(sessionId,Buffer.concat(chunks,total),name,req.headers['content-type']));return true;
  }
+ if(parts.length===4&&parts[2]==='files'&&req.method==='DELETE'){sendJson(res,200,repository.deleteFile(sessionId,parts[3]));return true;}
  if(parts.length===4&&parts[3]==='source'&&req.method==='GET'){
   const bytes=repository.readSource(sessionId,parts[2]);res.writeHead(200,{'content-type':'application/pdf','content-length':bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});res.end(bytes);return true;
  }
