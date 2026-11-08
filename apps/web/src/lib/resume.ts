@@ -1,28 +1,53 @@
-import type { ResumeContent } from "../../../../packages/contracts/src/config";
+import type { ResumeContent, ResumeEntry, ResumeFact, StructuredResumeV1 } from "../../../../packages/contracts/src/config";
+import type { ResumeCandidateField, ResumeCandidateV1 } from "../../../../packages/contracts/src/resume-candidate";
 
-export type DraftField = { value: string; source: string; page: number; included: boolean; experienceKind?: "campus" };
-export type ResumeDraft = {
-  name: DraftField;
-  email: DraftField;
-  workExperience: DraftField[];
-  projects: DraftField[];
-  skills: DraftField[];
-  education: DraftField[];
-};
+export type DraftField = ResumeCandidateField;
+export type ResumeDraft = ResumeCandidateV1;
 
 const dateAtStart = /^\d{4}[./]\d{2}\s*[-–—~至]\s*\d{4}[./]\d{2}/;
 const dateAtEnd = /\d{4}[./]\d{2}\s*[-–—~至]\s*\d{4}[./]\d{2}\s*$/;
 const skillHeading = /^(?:[•●·\uF000-\uF8FF]\s*)?(编程与数据|模型训练与\s*NLP|智能体开发|模型推理与部署|工程化开发)\s*[:：]/;
 const bulletOnly = /^[•●·\uF000-\uF8FF\s]+$/;
 const bulletStart = /^[•●·\uF000-\uF8FF]\s*/;
-type Section = "education" | "awards" | "projects" | "skills" | "work" | "campus";
+type Section = "basic" | "education" | "awards" | "projects" | "skills" | "work" | "campus" | "jobIntent" | "selfEvaluation" | "other";
 const sectionNames: Record<string, Section> = {
+  基本信息: "basic", 个人信息: "basic",
+  求职意向: "jobIntent", 求职目标: "jobIntent", 自我评价: "selfEvaluation", 个人评价: "selfEvaluation",
   教育背景: "education", 教育经历: "education",
   获奖经历: "awards", 荣誉奖项: "awards",
   项目实践: "projects", 项目经历: "projects", 项目经验: "projects",
   专业技能: "skills", 相关技能: "skills",
-  工作经历: "work", 实习经历: "work", 校园经历: "campus"
+  工作经历: "work", 实习经历: "work", 校园经历: "campus",
+  其他内容: "other", 其他经历: "other", 自媒体经历: "other", 创业经历: "other"
 };
+
+const basicLabels: Record<string, string> = {
+  英文名: "englishName", 性别: "gender", 年龄: "age", 出生日期: "birthDate", 政治面貌: "politicalStatus",
+  国籍: "nationality", 所在地: "location", 电话: "phone", 手机: "phone", 微信: "wechat"
+};
+const intentLabels: Record<string, string> = { 目标岗位: "targetRole", 求职岗位: "targetRole", 到岗时间: "availability", 期待薪资: "expectedSalary", 期望薪资: "expectedSalary" };
+
+function labeledFields(lines: string[], page: number, labels: Record<string, string>, included: boolean): DraftField[] {
+  return lines.flatMap((line) => {
+    const match = /^([^:：]{2,8})\s*[:：]\s*(.+)$/.exec(line);
+    if (!match || !labels[match[1].trim()]) return [];
+    return [{ ...field([line], page), label: match[1].trim(), fieldKey: labels[match[1].trim()], included }];
+  });
+}
+
+function basicCandidates(lines: string[], page = 1): DraftField[] {
+  const explicit = labeledFields(lines, page, basicLabels, false);
+  const inferred = ([
+    { key: "phone", label: "电话", pattern: /(?<!\d)1[3-9]\d{9}(?!\d)/u },
+    { key: "age", label: "年龄", pattern: /(?<!\d)\d{1,3}岁/u }
+  ] as const).flatMap(({ key, label, pattern }) => {
+    if (explicit.some((entry) => entry.fieldKey === key)) return [];
+    const line = lines.find((candidate) => pattern.test(candidate));
+    const value = line?.match(pattern)?.[0];
+    return line && value ? [{ value, source: line, page, included: false, label, fieldKey: key }] : [];
+  });
+  return [...explicit, ...inferred];
+}
 
 function canonical(text: string): string {
   return text.normalize("NFKC").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
@@ -56,7 +81,8 @@ function splitBlocks(lines: string[], starts: number[], page: number): DraftFiel
 }
 
 function sectionOf(line: string): Section | undefined {
-  return sectionNames[line.normalize("NFKC").replace(/\s/g, "").replace(/^[•●·\uF000-\uF8FF]/, "").replace(/[：:]$/, "")];
+  const title = line.normalize("NFKC").replace(/\s/g, "").replace(/^[•●·\uF000-\uF8FF]/, "").replace(/[：:]$/, "");
+  return sectionNames[title] ?? (/^[\p{Script=Han}]{2,12}(?:经历|奖项|技能|评价)$/u.test(title) ? "other" : undefined);
 }
 
 function splitAt(lines: string[], page: number, isStart: (line: string) => boolean): DraftField[] {
@@ -67,18 +93,18 @@ function splitAt(lines: string[], page: number, isStart: (line: string) => boole
   return splitBlocks(lines, starts, page);
 }
 
-function parseNamedSections(pages: string[][], firstHeading: number): Pick<ResumeDraft, "education" | "skills" | "workExperience" | "projects"> {
-  const sections: { kind: Section; page: number; lines: string[] }[] = [];
+function parseNamedSections(pages: string[][], firstHeading: number): Pick<ResumeDraft, "basicInfo" | "education" | "skills" | "workExperience" | "projects" | "awards" | "other" | "jobIntent" | "selfEvaluation"> {
+  const sections: { kind: Section; heading: string; page: number; lines: string[] }[] = [];
   let current: (typeof sections)[number] | undefined;
   pages.forEach((lines, pageIndex) => {
     lines.forEach((line) => {
       const kind = sectionOf(line);
       if (kind) {
-        current = { kind, page: pageIndex + 1, lines: [] };
+        current = { kind, heading: line, page: pageIndex + 1, lines: [] };
         sections.push(current);
       } else if (current) {
         if (current.page !== pageIndex + 1) {
-          current = { kind: current.kind, page: pageIndex + 1, lines: [] };
+          current = { kind: current.kind, heading: current.heading, page: pageIndex + 1, lines: [] };
           sections.push(current);
         }
         current.lines.push(line);
@@ -90,12 +116,19 @@ function parseNamedSections(pages: string[][], firstHeading: number): Pick<Resum
   const skills: DraftField[] = [];
   const workExperience: DraftField[] = [];
   const projects: DraftField[] = [];
+  const awards: DraftField[] = [];
+  const other: DraftField[] = [];
+  const jobIntent: DraftField[] = [];
+  const selfEvaluation: DraftField[] = [];
+  const basicInfo: DraftField[] = [];
   const headerSchool = pages[0].slice(0, firstHeading).find((line) => /大学|学院|学校/.test(line));
   sections.forEach((section) => {
     const lines = section.kind === "education" && section.page === 1 && headerSchool
       ? [headerSchool, ...section.lines]
       : section.lines;
-    if (section.kind === "education") {
+    if (section.kind === "basic") {
+      basicInfo.push(...basicCandidates(lines, section.page));
+    } else if (section.kind === "education") {
       education.push(...splitAt(lines, section.page, (line) => dateAtStart.test(line)));
     } else if (section.kind === "skills") {
       skills.push(...splitAt(lines, section.page, (line) => bulletStart.test(line) || skillHeading.test(line)));
@@ -109,9 +142,20 @@ function parseNamedSections(pages: string[][], firstHeading: number): Pick<Resum
       projects.push(...splitAt(lines, section.page, (line) =>
         // Undated title rows in the supplied Word PDF end with a parenthesized project role.
         dateAtEnd.test(line) || (!bulletStart.test(line) && !/[：:。；，,]$/.test(line) && /[（(][^）)]{2,}[）)]$/.test(line))));
+    } else if (section.kind === "awards") {
+      awards.push(...splitAt(lines, section.page, (line) => dateAtStart.test(line) || /^\d{4}[./]\d{1,2}/.test(line) || bulletStart.test(line)));
+    } else if (section.kind === "jobIntent") {
+      jobIntent.push(...labeledFields(lines, section.page, intentLabels, true).map((entry) =>
+        entry.fieldKey === "expectedSalary" ? { ...entry, included: false } : entry));
+      const recognized = new Set(jobIntent.filter((entry) => entry.page === section.page).map((entry) => entry.source));
+      other.push(...lines.filter((line) => !recognized.has(line)).map((line) => ({ ...field([line], section.page), label: section.heading })));
+    } else if (section.kind === "selfEvaluation") {
+      if (lines.length) selfEvaluation.push(field(lines, section.page));
+    } else if (section.kind === "other") {
+      if (lines.length) other.push({ ...field(lines, section.page), label: section.heading });
     }
   });
-  return { education, skills, workExperience, projects };
+  return { basicInfo, education, skills, workExperience, projects, awards, other, jobIntent, selfEvaluation };
 }
 
 function identifyEmail(lines: string[]): DraftField {
@@ -135,10 +179,14 @@ export function parseResumePages(pages: string[]): ResumeDraft {
   const email = identifyEmail(first);
   const firstHeading = first.findIndex((line) => sectionOf(line));
   const header = firstHeading >= 0 ? first.slice(0, firstHeading) : first;
-  const nameLine = header.find((line) => /^[\p{Script=Han}]{2,3}$/u.test(line)) ??
-    header.find((line) => line !== "RESUME" && line !== email.source && !dateAtStart.test(line)) ?? "";
+  const basicInfo = basicCandidates(header);
+  const explicitName = first.find((line) => /^姓名\s*[:：]\s*\S+/.test(line));
+  const nameLine = explicitName?.replace(/^姓名\s*[:：]\s*/, "") ?? header.find((line) => /^[\p{Script=Han}]{2,3}$/u.test(line)) ??
+    header.find((line) => /^[A-Za-z]+(?:[ -][A-Za-z]+){1,3}$/.test(line) && line.toUpperCase() !== "RESUME") ?? "";
+  const name = explicitName ? { value: nameLine, source: explicitName, page: 1, included: true } : field(nameLine ? [nameLine] : [], 1);
   if (firstHeading >= 0) {
-    return { name: field(nameLine ? [nameLine] : [], 1), email, ...parseNamedSections(pages.map(linesOf), firstHeading) };
+    const parsed = parseNamedSections(pages.map(linesOf), firstHeading);
+    return { version: "resume-candidate-v1", name, email, ...parsed, basicInfo: [...basicInfo, ...parsed.basicInfo] };
   }
   const skillStart = first.findIndex((line) => skillHeading.test(line));
   const workStart = first.findIndex((line, index) => index > skillStart && dateAtEnd.test(line) && !dateAtStart.test(line));
@@ -166,16 +214,23 @@ export function parseResumePages(pages: string[]): ResumeDraft {
   });
 
   return {
-    name: field(nameLine ? [nameLine] : [], 1),
+    version: "resume-candidate-v1",
+    name,
     email,
+    basicInfo,
+    jobIntent: [],
+    selfEvaluation: [],
     workExperience,
     projects,
+    awards: [],
     skills,
-    education
+    education,
+    other: []
   };
 }
 
 export function validateResumeDraft(draft: ResumeDraft): string[] {
+  if (draft.version !== "resume-candidate-v1") return ["简历解析合同版本无效"];
   const errors: string[] = [];
   if (!draft.name.value.trim()) errors.push("请确认姓名");
   if (draft.name.value.trim() && !followsSourceOrder(draft.name.value, draft.name.source)) {
@@ -188,7 +243,12 @@ export function validateResumeDraft(draft: ResumeDraft): string[] {
     { label: "工作经历", entries: draft.workExperience },
     { label: "项目", entries: draft.projects },
     { label: "技能", entries: draft.skills },
-    { label: "教育", entries: draft.education }
+    { label: "教育", entries: draft.education },
+    { label: "基本信息", entries: draft.basicInfo },
+    { label: "求职意向", entries: draft.jobIntent },
+    { label: "自我评价", entries: draft.selfEvaluation },
+    { label: "荣誉奖项", entries: draft.awards },
+    { label: "其他内容", entries: draft.other }
   ];
   for (const group of groups) {
     group.entries.forEach((entry, index) => {
@@ -204,7 +264,8 @@ export function validateResumeDraft(draft: ResumeDraft): string[] {
       for (const number of valueNumbers) {
         if (!sourceNumbers.includes(number)) errors.push(`${group.label} ${index + 1} 含原文没有的数字：${number}`);
       }
-      if (valueNumbers.every((number) => sourceNumbers.includes(number)) &&
+      const extractedBasicDetail = group.label === "基本信息" && ["phone", "age"].includes(entry.fieldKey ?? "");
+      if (!extractedBasicDetail && valueNumbers.every((number) => sourceNumbers.includes(number)) &&
           (valueNumbers.length !== sourceNumbers.length || valueNumbers.some((number, at) => number !== sourceNumbers[at]))) {
         errors.push(`${group.label} ${index + 1} 的数字顺序或次数与原文不符`);
       }
@@ -251,6 +312,52 @@ export function reflowResumeEntry(value: string): string {
   return [...lines.slice(0, 2), reflowVisualLines(lines.slice(2).join("\n"))].filter(Boolean).join("\n");
 }
 
+const detailKeys: Record<string, string> = {
+  学校: "school", 院系: "department", 专业: "major", 成绩: "grade", 专业课程: "courses", 主修: "courses",
+  公司: "company", 职位: "role", 工作内容: "responsibilities", 职责: "responsibilities", 成果: "outcomes",
+  项目类型: "projectType", 奖项级别: "level", 获奖时间: "date", 组织: "organization", 岗位: "role",
+  语言成绩: "language", 编程技能: "programming", 办公技能: "office"
+};
+
+function resumeFact(entry: DraftField): ResumeFact {
+  const match = /^([^:：]+)\s*[:：]\s*(.*)$/.exec(entry.value.trim());
+  const label = entry.label ?? match?.[1]?.trim() ?? "其他";
+  return { key: entry.fieldKey ?? basicLabels[label] ?? intentLabels[label] ?? "other", label, value: match?.[2]?.trim() ?? entry.value.trim() };
+}
+
+function resumeEntry(entry: DraftField): ResumeEntry {
+  const value = reflowVisualLines(entry.value);
+  const lines = value.split("\n");
+  const facts = lines.flatMap((line) => {
+    const match = /^([^:：]{2,12})\s*[:：]\s*(.+)$/.exec(line);
+    const label = match?.[1]?.trim() ?? "";
+    return detailKeys[label] ? [{ key: detailKeys[label], label, value: match![2].trim() }] : [];
+  });
+  return { title: entry.label ?? lines[0] ?? "", details: value, facts };
+}
+
+function structuredResume(draft: ResumeDraft): StructuredResumeV1 {
+  const selected = (entries: DraftField[]) => entries.filter((entry) => entry.included && entry.value.trim());
+  const experience = selected(draft.workExperience);
+  return {
+    version: "resume-v1",
+    basicInfo: [
+      { key: "name", label: "姓名", value: draft.name.value.trim() },
+      ...(draft.email.value.trim() ? [{ key: "email", label: "邮箱", value: draft.email.value.trim() }] : []),
+      ...selected(draft.basicInfo).map(resumeFact)
+    ],
+    jobIntent: selected(draft.jobIntent).map(resumeFact),
+    selfEvaluation: selected(draft.selfEvaluation).map(resumeEntry),
+    education: selected(draft.education).map(resumeEntry),
+    workExperience: experience.filter((entry) => entry.experienceKind !== "campus").map(resumeEntry),
+    projects: selected(draft.projects).map(resumeEntry),
+    awards: selected(draft.awards).map(resumeEntry),
+    campusExperience: experience.filter((entry) => entry.experienceKind === "campus").map(resumeEntry),
+    skills: selected(draft.skills).map(resumeEntry),
+    other: selected(draft.other).map(resumeEntry)
+  };
+}
+
 export function toResumeContent(draft: ResumeDraft): ResumeContent {
   const included = (entries: DraftField[]) => entries.filter((entry) => entry.included && entry.value.trim());
   const skills = included(draft.skills);
@@ -267,16 +374,19 @@ export function toResumeContent(draft: ResumeDraft): ResumeContent {
   campus.forEach((entry, index) => cite(`campusExperience.${index}`, entry));
   education.forEach((entry, index) => cite(`education.${index}`, entry));
   projects.forEach((entry, index) => cite(`projects.${index}`, entry));
-  const role = work[0]?.value.split("\n").find((line) => /实习生|工程师|设计师|开发/.test(line) && !dateAtEnd.test(line)) ?? "";
-  if (role && work[0]) cite("profile.role", work[0]);
+  const resume = structuredResume(draft);
+  const targetRole = resume.jobIntent.find((entry) => entry.key === "targetRole")?.value ?? "";
+  const role = targetRole || work[0]?.value.split("\n").find((line) => /实习生|工程师|设计师|开发/.test(line) && !dateAtEnd.test(line)) || "";
+  const roleSource = targetRole ? included(draft.jobIntent).find((entry) => resumeFact(entry).key === "targetRole") : work[0];
+  if (role && roleSource) cite("profile.role", roleSource);
   return {
     profile: {
       name: draft.name.value.trim(),
       role,
-      location: "",
-      availability: "",
+      location: resume.basicInfo.find((entry) => entry.key === "location")?.value ?? "",
+      availability: resume.jobIntent.find((entry) => entry.key === "availability")?.value ?? "",
       intro: "",
-      summary: "",
+      summary: resume.selfEvaluation.map((entry) => entry.details).join("\n"),
       email: draft.email.value.trim()
     },
     expertise: {
@@ -306,6 +416,7 @@ export function toResumeContent(draft: ResumeDraft): ResumeContent {
     workExperience: work.map((entry) => reflowResumeEntry(entry.value)),
     campusExperience: campus.map((entry) => reflowResumeEntry(entry.value)),
     education: education.map((entry) => reflowResumeEntry(entry.value)),
+    resume,
     sourceRefs
   };
 }

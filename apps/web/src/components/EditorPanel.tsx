@@ -68,9 +68,24 @@ function PanelGroup({ title, children }: { title: string; children: ReactNode })
 export function EditorPanel({ config, onChange, isTouch }: Props) {
   const [imageError, setImageError] = useState("");
   const items = marqueeItems(config);
-  const editProfile = (key: ProfileKey, value: string) => onChange((current) => ({
-    ...current, content: { ...withoutSourceRef(current.content, "profile." + key), profile: { ...current.content.profile, [key]: value } }
-  }));
+  const editProfile = (key: ProfileKey, value: string) => onChange((current) => {
+    const content = withoutSourceRef(current.content, "profile." + key);
+    const resume = content.resume;
+    if (!resume) return { ...current, content: { ...content, profile: { ...content.profile, [key]: value } } };
+    const updateFacts = (facts: typeof resume.basicInfo, factKey: string, label: string) => {
+      const exists = facts.some((fact) => fact.key === factKey);
+      return exists ? facts.map((fact) => fact.key === factKey ? { ...fact, value } : fact)
+        : value.trim() ? [...facts, { key: factKey, label, value }] : facts;
+    };
+    const basicKey = key === "name" || key === "email" || key === "location" ? key : null;
+    const intentKey = key === "availability" ? "availability" : key === "role" && resume.jobIntent.some((fact) => fact.key === "targetRole") ? "targetRole" : null;
+    const updatedResume = { ...resume,
+      basicInfo: basicKey ? updateFacts(resume.basicInfo, basicKey, { name: "姓名", email: "邮箱", location: "所在地" }[basicKey]) : resume.basicInfo,
+      jobIntent: intentKey ? updateFacts(resume.jobIntent, intentKey, intentKey === "availability" ? "到岗时间" : "目标岗位") : resume.jobIntent,
+      selfEvaluation: key === "summary" ? (value.trim() ? [{ title: "自我评价", details: value, facts: [] }] : []) : resume.selfEvaluation
+    };
+    return { ...current, content: { ...content, profile: { ...content.profile, [key]: value }, resume: updatedResume } };
+  });
   const editExpertise = (key: ExpertiseKey, value: string) => onChange((current) => ({
     ...current, content: { ...withoutSourceRef(current.content, "expertise." + key), expertise: { ...current.content.expertise, [key]: value } }
   }));
@@ -91,6 +106,24 @@ export function EditorPanel({ config, onChange, isTouch }: Props) {
       ? { ...project, ...projectPresentation(project), [key]: key === "tags" ? value.split(",").map((tag) => tag.trim()).filter(Boolean) : value }
       : project);
     return { ...current, content: { ...withoutSourceRef(current.content, "projects." + index), projects } };
+  });
+  const editResumeEntry = (key: "awards" | "other" | "selfEvaluation", index: number, field: "title" | "details", value: string) => onChange((current) => {
+    const resume = current.content.resume;
+    if (!resume) return current;
+    const entries = resume[key].map((entry, at) => at === index ? { ...entry, [field]: value } : entry);
+    return { ...current, content: { ...current.content,
+      ...(key === "selfEvaluation" && field === "details" ? { profile: { ...current.content.profile, summary: entries.map((entry) => entry.details).join("\n") } } : {}),
+      resume: { ...resume, [key]: entries } } };
+  });
+  const editResumeFact = (key: "basicInfo" | "jobIntent", index: number, value: string) => onChange((current) => {
+    const resume = current.content.resume;
+    if (!resume) return current;
+    const facts = resume[key].map((fact, at) => at === index ? { ...fact, value } : fact);
+    const editedFact = resume[key][index];
+    const profileKey = editedFact?.key === "location" ? "location" : editedFact?.key === "targetRole" ? "role" : editedFact?.key === "availability" ? "availability" : null;
+    return { ...current, content: { ...current.content,
+      ...(profileKey ? { profile: { ...current.content.profile, [profileKey]: value } } : {}),
+      resume: { ...resume, [key]: facts } } };
   });
   const editMarqueeLabel = (index: number, value: string) => onChange((current) => {
     const next = [...marqueeItems(current)];
@@ -166,6 +199,18 @@ export function EditorPanel({ config, onChange, isTouch }: Props) {
     <PanelGroup title="经历与教育">
       {(["workExperience", "campusExperience", "education"] as const).map((key) => (config.content[key] ?? []).map((entry, index) => <TextField key={key + "-" + index} label={(key === "workExperience" ? "工作经历" : key === "campusExperience" ? "校园经历" : "教育") + " " + (index + 1)} value={entry} onChange={(value) => editList(key, index, value)} multiline />))}
     </PanelGroup>
+    {config.content.resume && <PanelGroup title="其他简历模块">
+      {config.content.resume.basicInfo.map((fact, index) => ["name", "email"].includes(fact.key) ? null :
+        <TextField key={`basic-${index}`} label={`个人信息 ${fact.label}`} value={fact.value} onChange={(value) => editResumeFact("basicInfo", index, value)} />)}
+      {config.content.resume.jobIntent.map((fact, index) => <TextField key={`intent-${index}`} label={`求职意向 ${fact.label}`} value={fact.value} onChange={(value) => editResumeFact("jobIntent", index, value)} />)}
+      {(["selfEvaluation", "awards", "other"] as const).map((key) => config.content.resume![key].map((entry, index) => {
+        const title = key === "selfEvaluation" ? "自我评价" : key === "awards" ? "荣誉奖项" : "其他内容";
+        return <div className="editor-item" key={`${key}-${index}`}>
+          <TextField label={`${title} ${index + 1} 标题`} value={entry.title} onChange={(value) => editResumeEntry(key, index, "title", value)} />
+          <TextField label={`${title} ${index + 1} 内容`} value={entry.details} onChange={(value) => editResumeEntry(key, index, "details", value)} multiline />
+        </div>;
+      }))}
+    </PanelGroup>}
     {imageError && <p className="editor-error" role="alert">{imageError}</p>}
   </aside>;
 }

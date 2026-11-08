@@ -44,7 +44,7 @@ test("internal Agent bridge requires token and leases only the versioned public 
     assert.equal(leaseResponse.status, 200);
     const leased = await leaseResponse.json();
     assert.equal(leased.id, task.id);
-    assert.equal(leased.workflowVersion, "python-agent-v1");
+    assert.equal(leased.workflowVersion, "python-agent-v2");
     assert.equal(leased.brief.content.profile.name, "测试用户");
     assert.equal(leased.config, null);
     assert.ok(!JSON.stringify(leased).includes("owner_session_id"));

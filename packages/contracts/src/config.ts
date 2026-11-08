@@ -46,6 +46,23 @@ export type StackedCardsConfig = Readonly<{
   autoPlay: boolean;
 }>;
 
+/** Confirmed, source-free resume modules. Empty arrays mean the module has no display content. */
+export type ResumeFact = Readonly<{ key: string; label: string; value: string }>;
+export type ResumeEntry = Readonly<{ title: string; details: string; facts: readonly ResumeFact[] }>;
+export type StructuredResumeV1 = Readonly<{
+  version: "resume-v1";
+  basicInfo: readonly ResumeFact[];
+  jobIntent: readonly ResumeFact[];
+  selfEvaluation: readonly ResumeEntry[];
+  education: readonly ResumeEntry[];
+  workExperience: readonly ResumeEntry[];
+  projects: readonly ResumeEntry[];
+  awards: readonly ResumeEntry[];
+  campusExperience: readonly ResumeEntry[];
+  skills: readonly ResumeEntry[];
+  other: readonly ResumeEntry[];
+}>;
+
 /** Three sections of mock resume content, held locally in config.json. */
 export type ResumeContent = Readonly<{
   profile: Readonly<{
@@ -68,6 +85,7 @@ export type ResumeContent = Readonly<{
   workExperience?: readonly string[];
   campusExperience?: readonly string[];
   education?: readonly string[];
+  resume?: StructuredResumeV1;
   sourceRefs?: Readonly<Record<string, Readonly<{ page: number; excerpt: string }>>>;
 }>;
 

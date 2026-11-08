@@ -77,7 +77,7 @@ class FakeProvider:
 
 
 def task(*, portrait=False):
-    return AgentTask(str(uuid4()), str(uuid4()), "python-agent-v1", GOLDEN["input"], None,
+    return AgentTask(str(uuid4()), str(uuid4()), "python-agent-v2", GOLDEN["input"], None,
                      str(uuid4()) if portrait else None, "retro-flat-anime-head" if portrait else None, None)
 
 
@@ -90,7 +90,7 @@ async def test_golden_text_only_graph():
     assert state["vector"] == GOLDEN["expected"]["vector"]
     assert state["config"] == GOLDEN["expected"]["config"]
     assert state["qa"] is True
-    assert state["skill_plan"] == ["assessment.score.v1", "design.map.v1", "resume.compose.v1", "artifact.qa.v1"]
+    assert state["skill_plan"] == ["assessment.score.v1", "design.map.v1", "resume.compose.v2", "artifact.qa.v1"]
     assert client.writes == 0
 
 

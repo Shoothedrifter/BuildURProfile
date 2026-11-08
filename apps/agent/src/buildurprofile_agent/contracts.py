@@ -47,6 +47,32 @@ class ProjectCard(StrictModel):
     link: str | None = None
 
 
+class ResumeFact(StrictModel):
+    key: str = Field(max_length=12000)
+    label: str = Field(max_length=12000)
+    value: str = Field(max_length=12000)
+
+
+class ResumeEntry(StrictModel):
+    title: str = Field(max_length=12000)
+    details: str = Field(max_length=12000)
+    facts: list[ResumeFact] = Field(max_length=100)
+
+
+class StructuredResumeV1(StrictModel):
+    version: Literal["resume-v1"]
+    basicInfo: list[ResumeFact] = Field(max_length=100)
+    jobIntent: list[ResumeFact] = Field(max_length=100)
+    selfEvaluation: list[ResumeEntry] = Field(max_length=100)
+    education: list[ResumeEntry] = Field(max_length=100)
+    workExperience: list[ResumeEntry] = Field(max_length=100)
+    projects: list[ResumeEntry] = Field(max_length=100)
+    awards: list[ResumeEntry] = Field(max_length=100)
+    campusExperience: list[ResumeEntry] = Field(max_length=100)
+    skills: list[ResumeEntry] = Field(max_length=100)
+    other: list[ResumeEntry] = Field(max_length=100)
+
+
 class ResumeContent(StrictModel):
     profile: Profile
     expertise: Expertise
@@ -54,6 +80,7 @@ class ResumeContent(StrictModel):
     workExperience: list[str] = Field(default_factory=list, max_length=100)
     campusExperience: list[str] = Field(default_factory=list, max_length=100)
     education: list[str] = Field(default_factory=list, max_length=100)
+    resume: StructuredResumeV1 | None = None
 
 
 class GenerationBriefV1(StrictModel):

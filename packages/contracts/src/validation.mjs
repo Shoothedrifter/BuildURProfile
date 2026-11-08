@@ -2,6 +2,41 @@ export class ServiceError extends Error {
   constructor(status, message) { super(message); this.name = "ServiceError"; this.status = status; }
 }
 
+const RESUME_MODULES = ["selfEvaluation", "education", "workExperience", "projects", "awards", "campusExperience", "skills", "other"];
+
+/** A strict allowlist prevents PDF evidence from entering queued or published content. */
+export function cleanStructuredResume(resume) {
+  const record = (value, keys) => {
+    if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((key) => !keys.includes(key))) {
+      throw new ServiceError(400, "简历模块字段无效或包含来源原文。");
+    }
+    return value;
+  };
+  const text = (value) => {
+    if (typeof value !== "string" || value.length > 12000 || value.includes("\0")) throw new ServiceError(400, "简历模块文本无效。");
+    return value;
+  };
+  const list = (value, map) => {
+    if (!Array.isArray(value) || value.length > 100) throw new ServiceError(400, "简历模块条目无效或过多。");
+    return value.map(map);
+  };
+  const fact = (input) => {
+    const value = record(input, ["key", "label", "value"]);
+    return { key: text(value.key), label: text(value.label), value: text(value.value) };
+  };
+  const entry = (input) => {
+    const value = record(input, ["title", "details", "facts"]);
+    return { title: text(value.title), details: text(value.details), facts: list(value.facts, fact) };
+  };
+  const value = record(resume, ["version", "basicInfo", "jobIntent", ...RESUME_MODULES]);
+  if (value.version !== "resume-v1") throw new ServiceError(400, "简历模块版本无效。");
+  return {
+    version: "resume-v1",
+    basicInfo: list(value.basicInfo, fact), jobIntent: list(value.jobIntent, fact),
+    ...Object.fromEntries(RESUME_MODULES.map((key) => [key, list(value[key], entry)]))
+  };
+}
+
 export function cleanConfig(config) {
   if (config?.heroArtwork) throw new ServiceError(403, "Wibi 肖像仅供本机预览，不能用于付费分享或导出。");
   if (!config || typeof config !== "object" || Array.isArray(config) ||
@@ -47,7 +82,8 @@ export function cleanConfig(config) {
         ...(project?.link ? { link: text(project.link) } : {})
       })),
       workExperience: textList(config.content.workExperience),
-      campusExperience: textList(config.content.campusExperience), education: textList(config.content.education)
+      campusExperience: textList(config.content.campusExperience), education: textList(config.content.education),
+      ...(config.content.resume === undefined ? {} : { resume: cleanStructuredResume(config.content.resume) })
     }
   };
   if (![clone.styleVector.E, clone.styleVector.K, clone.styleVector.P, clone.styleVector.S].every((score) =>

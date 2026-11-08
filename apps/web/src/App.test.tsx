@@ -75,6 +75,7 @@ async function reachResult(optionIndex = 0) {
 beforeEach(() => {
   sessionStorage.clear();
   vi.stubGlobal("scrollTo", vi.fn());
+  vi.mocked(extractPdfText).mockClear();
   vi.mocked(extractPdfText).mockResolvedValue({ pages, text: pages.join("\n\n") });
   vi.mocked(generationApi.generatePortfolio).mockReset().mockImplementation(async (brief) => {
     const mapped = styleToConfig(scoreAnswers(brief.answers), brief.role);
@@ -94,6 +95,35 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("lets an education-only resume reach confirmation", async () => {
+    vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: ["林青\n教育背景\n2020.09 - 2024.06 示例大学\n专业：计算机科学"], text: "林青\n教育背景\n示例大学" });
+    render(<App />);
+    openUpload();
+    await chooseAndParse();
+    expect(screen.getByRole("button", { name: /教育经历/ })).toBeInTheDocument();
+  });
+
+  it("lets a basic-only resume reach confirmation with the other modules empty", async () => {
+    vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: ["基本信息\n姓名：林青\n邮箱：lin@example.com"], text: "基本信息\n姓名：林青\n邮箱：lin@example.com" });
+    render(<App />);
+    openUpload();
+    await chooseAndParse();
+    expect(screen.getByRole("textbox", { name: "姓名" })).toHaveValue("林青");
+  });
+
+  it("shows awards and other candidates for review before generation", async () => {
+    vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: ["林青\n荣誉奖项\n校级创新奖\n自媒体经历\n运营技术专栏"], text: "林青\n荣誉奖项\n校级创新奖\n自媒体经历\n运营技术专栏" });
+    render(<App />);
+    openUpload();
+    await chooseAndParse();
+    fireEvent.click(screen.getByRole("button", { name: /荣誉奖项/ }));
+    expect(screen.getByRole("textbox", { name: /荣誉奖项 1/ })).toHaveValue("校级创新奖");
+    fireEvent.click(screen.getByRole("button", { name: /其他内容/ }));
+    expect(screen.getByRole("textbox", { name: /其他内容 1/ })).toHaveValue("运营技术专栏");
+    fireEvent.change(screen.getByRole("combobox", { name: /条目分类 1/ }), { target: { value: "awards" } });
+    fireEvent.click(screen.getByRole("button", { name: /荣誉奖项/ }));
+    expect(screen.getByRole("textbox", { name: /荣誉奖项 2/ })).toHaveValue("运营技术专栏");
+  });
   it("starts on the landing page and opens both the sample and project panel", async () => {
     render(<App />);
     expect(screen.getByRole("heading", { name: "你的能力，值得一个可以体验的网页。" })).toBeInTheDocument();
@@ -306,7 +336,7 @@ describe("showcase builder", () => {
       target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] }
     });
     fireEvent.click(screen.getByRole("button", { name: /解析简历/ }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("PDF 文本已提取，但未能自动识别简历章节");
+    expect(await screen.findByRole("alert")).toHaveTextContent("PDF 文本已提取，但未能识别姓名");
   });
 
   it("labels campus entries as campus experience in the confirmation form", async () => {

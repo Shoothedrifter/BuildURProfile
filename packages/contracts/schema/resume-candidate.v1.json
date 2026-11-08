@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://buildurprofile.local/contracts/resume-candidate.v1.json",
+  "title": "ResumeCandidateV1",
+  "description": "Browser-memory PDF candidates with evidence and display choices. Never send this document to a generation API.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": "string" },
+        "source": { "type": "string" },
+        "page": { "type": "integer", "minimum": 1 },
+        "included": { "type": "boolean" },
+        "experienceKind": { "const": "campus" },
+        "label": { "type": "string" },
+        "fieldKey": { "type": "string" }
+      },
+      "required": ["value", "source", "page", "included"]
+    },
+    "fields": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/field" },
+      "maxItems": 100
+    }
+  },
+  "properties": {
+    "version": { "const": "resume-candidate-v1" },
+    "name": { "$ref": "#/$defs/field" },
+    "email": { "$ref": "#/$defs/field" },
+    "basicInfo": { "$ref": "#/$defs/fields" },
+    "jobIntent": { "$ref": "#/$defs/fields" },
+    "selfEvaluation": { "$ref": "#/$defs/fields" },
+    "education": { "$ref": "#/$defs/fields" },
+    "workExperience": { "$ref": "#/$defs/fields" },
+    "projects": { "$ref": "#/$defs/fields" },
+    "awards": { "$ref": "#/$defs/fields" },
+    "skills": { "$ref": "#/$defs/fields" },
+    "other": { "$ref": "#/$defs/fields" }
+  },
+  "required": ["version", "name", "email", "basicInfo", "jobIntent", "selfEvaluation", "education", "workExperience", "projects", "awards", "skills", "other"]
+}

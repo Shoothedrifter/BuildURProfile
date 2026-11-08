@@ -11,7 +11,7 @@
 | `src/avatar-catalog.ts` | 浏览器可用的三风格目录 |
 | `src/wibi.ts` | 仅服务端使用；校验并读取固定本机风格资源，不打包进浏览器客户端 |
 
-前端使用 `resume.extract.v1`、`resume.parse.v1`、`resume.confirm.v1`。注册表保留评分、设计、内容组装与 worker 类型的声明及兼容测试，TS/Python 的规则一致性由共享黄金样例验证。
+前端使用 `resume.extract.v1`、`resume.parse.v2`、`resume.confirm.v2`。注册表保留评分、设计、内容组装与 worker 类型的声明及兼容测试，TS/Python 的规则一致性由共享黄金样例验证。
 
 `run` 在超时后中止信号；`runSync` 只能在同步函数返回后检查耗时，不能中断同步执行。能力实现须遵守取消信号或自行限制耗时。
 

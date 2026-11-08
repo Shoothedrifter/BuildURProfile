@@ -75,7 +75,7 @@ def default_registry() -> SkillRegistry:
                             lambda inputs, _: {"vector": score_answers(inputs["answers"])}))
     registry.register(Skill("design.map.v1", "1.0.0", frozenset(), True, 1.0,
                             lambda inputs, _: {"config": style_to_config(inputs["vector"], inputs["role"])}))
-    registry.register(Skill("resume.compose.v1", "1.0.0", frozenset(), True, 1.0, compose_resume))
+    registry.register(Skill("resume.compose.v2", "2.0.0", frozenset(), True, 1.0, compose_resume))
     registry.register(Skill("avatar.wibi.v1", "1.0.0", frozenset({"read_portrait", "load_recipe", "existing_output",
         "store_output", "output_exists", "image_provider", "check_cancel"}), False, 30 * 60.0, generate_avatar))
     registry.register(Skill("artifact.qa.v1", "1.0.0", frozenset({"output_exists"}), True, 5.0, verify_artifact))

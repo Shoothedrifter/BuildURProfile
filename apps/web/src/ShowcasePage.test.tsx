@@ -7,6 +7,66 @@ import { ShowcasePage } from "./ShowcasePage";
 const defaultConfig = rawConfig as DesignConfig;
 
 describe("ShowcasePage image content", () => {
+  it("matches confirmed awards and other content while omitting an empty project module", () => {
+    const config: DesignConfig = {
+      ...defaultConfig,
+      content: {
+        ...defaultConfig.content,
+        projects: [],
+        resume: {
+          version: "resume-v1",
+          basicInfo: [{ key: "name", label: "姓名", value: "林青" }], jobIntent: [], selfEvaluation: [],
+          education: [], workExperience: [], projects: [],
+          awards: [{ title: "校级创新奖", details: "2023.10 校级创新奖", facts: [] }],
+          campusExperience: [], skills: [],
+          other: [{ title: "自媒体经历", details: "运营技术专栏", facts: [] }]
+        }
+      }
+    };
+    render(<ShowcasePage config={config} />);
+    expect(screen.getByRole("heading", { name: "荣誉奖项" })).toBeVisible();
+    expect(screen.getByText("2023.10 校级创新奖")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "其他内容" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: /Selected work/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+  });
+
+  it("places self evaluation in its own module without empty skills or projects", () => {
+    const config: DesignConfig = { ...defaultConfig, content: { ...defaultConfig.content,
+      projects: [], profile: { ...defaultConfig.content.profile, summary: "重视用户体验" },
+      expertise: { eyebrow: "相关技能", headline: "技能与专长", summary: "", skills: [], disciplines: [] },
+      resume: { version: "resume-v1", basicInfo: [], jobIntent: [],
+        selfEvaluation: [{ title: "自我评价", details: "重视用户体验", facts: [] }],
+        education: [], workExperience: [], projects: [], awards: [], campusExperience: [], skills: [], other: [] }
+    } };
+    render(<ShowcasePage config={config} />);
+    expect(screen.getByRole("heading", { name: "自我评价" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "技能与专长" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Skills" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+  });
+  it("omits structured modules whose confirmed values were cleared", () => {
+    const config: DesignConfig = { ...defaultConfig, content: { ...defaultConfig.content,
+      resume: { version: "resume-v1", basicInfo: [{ key: "phone", label: "电话", value: "" }],
+        jobIntent: [{ key: "targetRole", label: "目标岗位", value: "" }], selfEvaluation: [],
+        education: [], workExperience: [], projects: [],
+        awards: [{ title: "", details: "", facts: [] }], campusExperience: [], skills: [], other: [] }
+    } };
+    render(<ShowcasePage config={config} />);
+    expect(screen.queryByRole("heading", { name: "求职意向" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "个人信息" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "荣誉奖项" })).not.toBeInTheDocument();
+  });
+  it("hides legacy project and experience sections after their entries are cleared", () => {
+    const config: DesignConfig = { ...defaultConfig, content: { ...defaultConfig.content,
+      projects: [{ ...defaultConfig.content.projects[0], title: "", description: "" }],
+      workExperience: ["   "], campusExperience: [""], education: [""]
+    } };
+    render(<ShowcasePage config={config} />);
+    expect(screen.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Experience" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Education" })).not.toBeInTheDocument();
+  });
   it("places preview artwork in the first hero section", () => {
     const config = { ...defaultConfig, heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" } } as DesignConfig;
     const { container } = render(<ShowcasePage config={config} />);

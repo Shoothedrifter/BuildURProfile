@@ -284,6 +284,17 @@
           "maxItems": 100,
           "title": "Education",
           "type": "array"
+        },
+        "resume": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StructuredResumeV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -292,6 +303,63 @@
         "projects"
       ],
       "title": "ResumeContent",
+      "type": "object"
+    },
+    "ResumeEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 12000,
+          "title": "Title",
+          "type": "string"
+        },
+        "details": {
+          "maxLength": 12000,
+          "title": "Details",
+          "type": "string"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/ResumeFact"
+          },
+          "maxItems": 100,
+          "title": "Facts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "details",
+        "facts"
+      ],
+      "title": "ResumeEntry",
+      "type": "object"
+    },
+    "ResumeFact": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 12000,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 12000,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 12000,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "value"
+      ],
+      "title": "ResumeFact",
       "type": "object"
     },
     "StackedCards": {
@@ -341,6 +409,111 @@
         "autoPlay"
       ],
       "title": "StackedCards",
+      "type": "object"
+    },
+    "StructuredResumeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "resume-v1",
+          "title": "Version",
+          "type": "string"
+        },
+        "basicInfo": {
+          "items": {
+            "$ref": "#/$defs/ResumeFact"
+          },
+          "maxItems": 100,
+          "title": "Basicinfo",
+          "type": "array"
+        },
+        "jobIntent": {
+          "items": {
+            "$ref": "#/$defs/ResumeFact"
+          },
+          "maxItems": 100,
+          "title": "Jobintent",
+          "type": "array"
+        },
+        "selfEvaluation": {
+          "items": {
+            "$ref": "#/$defs/ResumeEntry"
+          },
+          "maxItems": 100,
+          "title": "Selfevaluation",
+          "type": "array"
+        },
+        "education": {
+          "items": {
+            "$ref": "#/$defs/ResumeEntry"
+          },
+          "maxItems": 100,
+          "title": "Education",
+          "type": "array"
+        },
+        "workExperience": {
+          "items": {
+            "$ref": "#/$defs/ResumeEntry"
+          },
+          "maxItems": 100,
+          "title": "Workexperience",
+          "type": "array"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ResumeEntry"
+          },
+          "maxItems": 100,
+          "title": "Projects",
+          "type": "array"
+        },
+        "awards": {
+          "items": {
+            "$ref": "#/$defs/ResumeEntry"
+          },
+          "maxItems": 100,
+          "title": "Awards",
+          "type": "array"
+        },
+        "campusExperience": {
+          "items": {
+            "$ref": "#/$defs/ResumeEntry"
+          },
+          "maxItems": 100,
+          "title": "Campusexperience",
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/ResumeEntry"
+          },
+          "maxItems": 100,
+          "title": "Skills",
+          "type": "array"
+        },
+        "other": {
+          "items": {
+            "$ref": "#/$defs/ResumeEntry"
+          },
+          "maxItems": 100,
+          "title": "Other",
+          "type": "array"
+        }
+      },
+      "required": [
+        "version",
+        "basicInfo",
+        "jobIntent",
+        "selfEvaluation",
+        "education",
+        "workExperience",
+        "projects",
+        "awards",
+        "campusExperience",
+        "skills",
+        "other"
+      ],
+      "title": "StructuredResumeV1",
       "type": "object"
     },
     "StyleVector": {

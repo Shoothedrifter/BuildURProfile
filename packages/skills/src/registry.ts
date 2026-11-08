@@ -1,4 +1,5 @@
-import type { DesignConfig, JobRole, ResumeContent, StyleVector } from "../../contracts/src/config.ts";
+import type { DesignConfig, JobRole, ResumeContent, StructuredResumeV1, StyleVector } from "../../contracts/src/config.ts";
+import type { ResumeCandidateV1 } from "../../contracts/src/resume-candidate.ts";
 import { isAssessmentComplete, scoreAnswers } from "./assessment.ts";
 import { styleToConfig } from "./mapping.ts";
 import { AVATAR_STYLES } from "./avatar-catalog.ts";
@@ -40,6 +41,38 @@ const validConfig = (value: unknown): value is DesignConfig => isRecord(value) &
   isRecord(value.marquee) && isRecord(value.stackedCards) && isRecord(value.content) &&
   isRecord(value.content.profile) && isRecord(value.content.expertise) && Array.isArray(value.content.projects);
 const validTextList = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 100 && value.every(isString);
+const candidateModules = ["basicInfo", "jobIntent", "selfEvaluation", "education", "workExperience", "projects", "awards", "skills", "other"] as const;
+const validCandidateField = (value: unknown): boolean => isRecord(value) &&
+  Object.keys(value).every((key) => ["value", "source", "page", "included", "experienceKind", "label", "fieldKey"].includes(key)) &&
+  isString(value.value) && isString(value.source) && Number.isInteger(value.page) && Number(value.page) >= 1 &&
+  typeof value.included === "boolean" && (value.experienceKind === undefined || value.experienceKind === "campus") &&
+  (value.label === undefined || isString(value.label)) && (value.fieldKey === undefined || isString(value.fieldKey));
+function validCandidate(value: unknown): value is ResumeCandidateV1 {
+  return isRecord(value) && value.version === "resume-candidate-v1" &&
+    Object.keys(value).every((key) => ["version", "name", "email", ...candidateModules].includes(key)) &&
+    validCandidateField(value.name) && validCandidateField(value.email) &&
+    candidateModules.every((key) => Array.isArray(value[key]) && value[key].length <= 100 && value[key].every(validCandidateField));
+}
+const resumeModules = ["selfEvaluation", "education", "workExperience", "projects", "awards", "campusExperience", "skills", "other"] as const;
+const validFact = (value: unknown): boolean => isRecord(value) && Object.keys(value).every((key) => ["key", "label", "value"].includes(key)) &&
+  ["key", "label", "value"].every((key) => isString(value[key]));
+const validEntry = (value: unknown): boolean => isRecord(value) && Object.keys(value).every((key) => ["title", "details", "facts"].includes(key)) &&
+  isString(value.title) && isString(value.details) && Array.isArray(value.facts) && value.facts.length <= 100 && value.facts.every(validFact);
+function validResume(value: unknown): value is StructuredResumeV1 {
+  return isRecord(value) && value.version === "resume-v1" &&
+    Object.keys(value).every((key) => ["version", "basicInfo", "jobIntent", ...resumeModules].includes(key)) &&
+    ["basicInfo", "jobIntent"].every((key) => Array.isArray(value[key]) && value[key].length <= 100 && value[key].every(validFact)) &&
+    resumeModules.every((key) => Array.isArray(value[key]) && value[key].length <= 100 && value[key].every(validEntry));
+}
+
+function publicResume(resume: StructuredResumeV1): StructuredResumeV1 {
+  const fact = (value: StructuredResumeV1["basicInfo"][number]) => ({ key: value.key, label: value.label, value: value.value });
+  const entry = (value: StructuredResumeV1["awards"][number]) => ({ title: value.title, details: value.details, facts: value.facts.map(fact) });
+  return { version: "resume-v1", basicInfo: resume.basicInfo.map(fact), jobIntent: resume.jobIntent.map(fact),
+    selfEvaluation: resume.selfEvaluation.map(entry), education: resume.education.map(entry),
+    workExperience: resume.workExperience.map(entry), projects: resume.projects.map(entry), awards: resume.awards.map(entry),
+    campusExperience: resume.campusExperience.map(entry), skills: resume.skills.map(entry), other: resume.other.map(entry) };
+}
 function validContent(value: unknown): value is ResumeContent {
   if (!isRecord(value) || !isRecord(value.profile) || !isRecord(value.expertise) || !Array.isArray(value.projects)) return false;
   const { profile, expertise, projects } = value;
@@ -50,7 +83,8 @@ function validContent(value: unknown): value is ResumeContent {
       ["id", "index", "title", "category", "year", "description"].every((key) => isString(project[key])) &&
       ["mint", "lilac", "peach"].includes(String(project.visual)) && validTextList(project.tags) &&
       (project.image === undefined || isString(project.image)) && (project.link === undefined || isString(project.link))) &&
-    ["workExperience", "campusExperience", "education"].every((key) => value[key] === undefined || validTextList(value[key]));
+    ["workExperience", "campusExperience", "education"].every((key) => value[key] === undefined || validTextList(value[key])) &&
+    (value.resume === undefined || validResume(value.resume));
 }
 
 function publicContent(content: ResumeContent): ResumeContent {
@@ -64,7 +98,8 @@ function publicContent(content: ResumeContent): ResumeContent {
     projects: content.projects.map((project) => ({ id: text(project.id), index: text(project.index), title: text(project.title),
       category: text(project.category), year: text(project.year), description: text(project.description), tags: list(project.tags),
       visual: project.visual, ...(project.image ? { image: project.image } : {}), ...(project.link ? { link: project.link } : {}) })),
-    workExperience: list(content.workExperience), campusExperience: list(content.campusExperience), education: list(content.education)
+    workExperience: list(content.workExperience), campusExperience: list(content.campusExperience), education: list(content.education),
+    ...(content.resume ? { resume: publicResume(content.resume) } : {})
   };
 }
 
@@ -167,14 +202,14 @@ export function createDefaultSkillRegistry() {
       if (signal.aborted) throw new Error("PDF 读取已取消。");
       return result;
     } });
-  registry.register({ id: "resume.parse.v1", version: "1.0.0", runtime: ["browser"], capabilities: ["parseResumePages"],
+  registry.register({ id: "resume.parse.v2", version: "2.0.0", runtime: ["browser"], capabilities: ["parseResumePages"],
     timeoutMs: 5_000, license: internal,
     validateInput: (input) => isRecord(input) && Array.isArray(input.pages) && input.pages.length > 0 && input.pages.every(isString),
-    validateOutput: (output) => isRecord(output) && isRecord(output.draft),
+    validateOutput: (output) => isRecord(output) && validCandidate(output.draft),
     execute: ({ pages }: { pages: string[] }, tools: any) => ({ draft: tools.parseResumePages(pages) }) });
-  registry.register({ id: "resume.confirm.v1", version: "1.0.0", runtime: ["browser"],
+  registry.register({ id: "resume.confirm.v2", version: "2.0.0", runtime: ["browser"],
     capabilities: ["validateResumeDraft", "toResumeContent"], timeoutMs: 5_000, license: internal,
-    validateInput: (input) => isRecord(input) && isRecord(input.draft),
+    validateInput: (input) => isRecord(input) && validCandidate(input.draft),
     validateOutput: (output) => isRecord(output) && validTextList(output.problems) &&
       (output.problems.length > 0 ? output.content === undefined : validContent(output.content) && !("sourceRefs" in output.content)),
     execute: ({ draft }: { draft: unknown }, tools: any) => {
@@ -196,7 +231,7 @@ export function createDefaultSkillRegistry() {
       ["ui-ux-designer", "frontend-creative-developer", "brand-motion-copy"].includes(String(input.role)),
     validateOutput: (output) => isRecord(output) && validConfig(output.config),
     execute: ({ vector, role }: { vector: StyleVector; role: JobRole }) => ({ config: styleToConfig(vector, role) }) });
-  registry.register({ id: "resume.compose.v1", version: "1.0.0", runtime: ["browser", "worker"], capabilities: [],
+  registry.register({ id: "resume.compose.v2", version: "2.0.0", runtime: ["browser", "worker"], capabilities: [],
     timeoutMs: 1_000, license: internal,
     validateInput: (input) => isRecord(input) && validConfig(input.config) && validContent(input.content),
     validateOutput: (output) => isRecord(output) && validConfig(output.config) && !isRecord(output.config.content.sourceRefs),

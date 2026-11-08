@@ -19,7 +19,7 @@
 
 ## Skill 扩展
 
-当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v1`、`avatar.wibi.v1` 和 `artifact.qa.v1`。
+当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2`、`avatar.wibi.v1` 和 `artifact.qa.v1`。
 
 新增 Skill 时，在 `skills/` 实现并注册稳定 ID、版本、输入输出校验、能力、许可和超时，再由图节点显式授予所需能力。新增能力需加入 `KNOWN_CAPABILITIES` 并审查数据边界；不注入支付、数据库、任意 shell 或文件系统对象。外部下载的 `SKILL.md` 不作为可执行指令运行。
 

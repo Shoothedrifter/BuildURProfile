@@ -11,8 +11,8 @@ from .skills.registry import SkillRegistry
 from .transport.node_api import AgentTask, NodeAgentClient
 
 
-WORKFLOW_VERSION = "python-agent-v1"
-DESIGN_SKILLS = ("assessment.score.v1", "design.map.v1", "resume.compose.v1")
+WORKFLOW_VERSION = "python-agent-v2"
+DESIGN_SKILLS = ("assessment.score.v1", "design.map.v1", "resume.compose.v2")
 AVATAR_SKILL = "avatar.wibi.v1"
 QA_SKILL = "artifact.qa.v1"
 

@@ -1,4 +1,4 @@
-import { ServiceError } from "../../../contracts/src/validation.mjs";
+import { ServiceError, cleanStructuredResume } from "../../../contracts/src/validation.mjs";
 import { QUESTIONS, isAssessmentComplete } from "../../../skills/src/assessment.ts";
 
 const ROLES = new Set(["ui-ux-designer", "frontend-creative-developer", "brand-motion-copy"]);
@@ -34,7 +34,7 @@ export function cleanGenerationBrief(input) {
     throw new ServiceError(400, "测评答案无效或不完整。");
   }
   const content = record(brief.content,
-    ["profile", "expertise", "projects", "workExperience", "campusExperience", "education"], "展示内容");
+    ["profile", "expertise", "projects", "workExperience", "campusExperience", "education", "resume"], "展示内容");
   const profile = record(content.profile, PROFILE_FIELDS, "个人资料");
   const expertise = record(content.expertise, EXPERTISE_FIELDS, "能力资料");
   if (!Array.isArray(content.projects) || content.projects.length > 100) throw new ServiceError(400, "项目字段无效或过多。");
@@ -69,7 +69,8 @@ export function cleanGenerationBrief(input) {
       projects,
       workExperience: fieldList(content.workExperience, "工作经历"),
       campusExperience: fieldList(content.campusExperience, "校园经历"),
-      education: fieldList(content.education, "教育经历")
+      education: fieldList(content.education, "教育经历"),
+      ...(content.resume === undefined ? {} : { resume: cleanStructuredResume(content.resume) })
     }
   };
   if (!result.content.profile.name.trim()) throw new ServiceError(400, "请确认简历姓名。");

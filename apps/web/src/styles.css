@@ -322,7 +322,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-form-stack > header h2 { margin: 0; font-size: 22px; }
 .proof-form-stack > header p { margin: 0; color: var(--proof-muted); font-size: 15px; }
 .proof-field { display: grid; gap: 8px; color: var(--proof-ink); font-size: 14px; font-weight: 700; }
-.proof-field input, .proof-field textarea, .proof-role-select select {
+.proof-field input, .proof-field textarea, .proof-field select, .proof-role-select select {
   width: 100%;
   border: 1.5px solid var(--proof-line);
   border-radius: var(--proof-radius);

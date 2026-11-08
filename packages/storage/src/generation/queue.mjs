@@ -6,7 +6,7 @@ import { cleanGenerationBrief } from "./brief.mjs";
 import { validateImage } from "./assets.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
-export const WORKFLOW_VERSION = "python-agent-v1";
+export const WORKFLOW_VERSION = "python-agent-v2";
 
 export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, maxAttempts, retryBaseMs,
   allowPortraits, requireBrief }) {

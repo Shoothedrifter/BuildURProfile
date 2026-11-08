@@ -6,7 +6,7 @@ import type { DesignConfig, JobRole, ResumeContent } from "../../../packages/con
 import type { AvatarStyleId, GenerationStatus } from "./lib/generationApi";
 import type { Offer, OwnedProject } from "./lib/paymentApi";
 import type { DraftField, ResumeDraft } from "./lib/resume";
-import type { DeliveryAction, DraftGroup } from "./components/BuilderExperience";
+import type { DeliveryAction, DraftGroup, ReclassifyTarget } from "./components/BuilderExperience";
 import type { WorkflowPhase } from "./components/BuilderChrome";
 import { ShowcasePage } from "./ShowcasePage";
 import { BuilderExperience } from "./components/BuilderExperience";
@@ -235,10 +235,10 @@ export default function App() {
       }, { runtime: "browser", capabilities: { extractPdfText } }) as { text: string; pages: string[] };
       if (currentPdfVersion !== pdfVersion.current) return;
       if (!extracted.text.trim()) throw new Error("这份 PDF 没有可提取文本。当前版本暂不支持扫描件 OCR。");
-      const { draft: nextDraft } = workflowSkills.runSync("resume.parse.v1", { pages: extracted.pages },
+      const { draft: nextDraft } = workflowSkills.runSync("resume.parse.v2", { pages: extracted.pages },
         { runtime: "browser", capabilities: { parseResumePages } }) as { draft: ResumeDraft };
-      if (!nextDraft.name.value || (!nextDraft.projects.length && !nextDraft.workExperience.length)) {
-        throw new Error("PDF 文本已提取，但未能自动识别简历章节。请检查排版或换一份带清晰章节标题的 PDF。");
+      if (!nextDraft.name.value) {
+        throw new Error("PDF 文本已提取，但未能识别姓名。请检查排版或换一份带清晰姓名的 PDF。");
       }
       setDraft(nextDraft);
       setProgress("");
@@ -263,9 +263,24 @@ export default function App() {
     });
   };
 
+  const reclassify = (key: DraftGroup, index: number, target: ReclassifyTarget) => {
+    setDraft((previous) => {
+      if (!previous) return previous;
+      const entry = previous[key][index];
+      if (!entry || (key === target && !(key === "workExperience" && entry.experienceKind))) return previous;
+      const next = { ...previous, [key]: previous[key].filter((_, at) => at !== index) };
+      const destination: DraftGroup = target === "campusExperience" ? "workExperience" : target;
+      const moved: DraftField = { ...entry, included: destination === "basicInfo" ? false : entry.included,
+        experienceKind: target === "campusExperience" ? "campus" : undefined,
+        label: destination === "other" ? entry.label ?? "其他内容" : undefined,
+        fieldKey: destination === "basicInfo" || destination === "jobIntent" ? entry.fieldKey : undefined };
+      return { ...next, [destination]: [...next[destination], moved] };
+    });
+  };
+
   const confirm = () => {
     if (!draft) return;
-    const { problems } = workflowSkills.runSync("resume.confirm.v1", { draft },
+    const { problems } = workflowSkills.runSync("resume.confirm.v2", { draft },
       { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as { problems: string[] };
     if (problems.length) {
       setError(problems.slice(0, 3).join("；"));
@@ -361,7 +376,7 @@ export default function App() {
 
   const generate = async () => {
     if (!draft || !isAssessmentComplete(answers)) return;
-    const confirmation = workflowSkills.runSync("resume.confirm.v1", { draft },
+    const confirmation = workflowSkills.runSync("resume.confirm.v2", { draft },
       { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as
       { problems: string[]; content?: ResumeContent };
     if (confirmation.problems.length || !confirmation.content) {
@@ -641,6 +656,7 @@ export default function App() {
     onClearPhoto={clearPhoto}
     onUpdateSingle={updateSingle}
     onUpdateGroup={updateGroup}
+    onReclassify={reclassify}
     onConfirm={confirm}
     onRoleChange={setRole}
     onAnswer={(questionId, optionIndex) => setAnswers((previous) => ({ ...previous, [questionId]: optionIndex }))}

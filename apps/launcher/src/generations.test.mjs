@@ -78,6 +78,29 @@ test("generation accepts a minimal confirmed brief and rejects PDF provenance or
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("structured resume survives queue and publication without accepting PDF evidence", () => {
+  const resume = {
+    version: "resume-v1",
+    basicInfo: [{ key: "name", label: "姓名", value: "张三" }], jobIntent: [], selfEvaluation: [],
+    education: [], workExperience: [], projects: [],
+    awards: [{ title: "创新奖", details: "2023 创新奖", facts: [] }],
+    campusExperience: [], skills: [], other: []
+  };
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+  const root = mkdtempSync(join(tmpdir(), "burp-resume-contract-"));
+  try {
+    const service = createGenerationService({ db, assetRoot: root });
+    const task = service.enqueue("owner", { brief: { ...brief, content: { ...brief.content, resume } }, idempotencyKey: "structured" });
+    const row = db.prepare("SELECT brief_json FROM generations WHERE id=?").get(task.id);
+    assert.deepEqual(JSON.parse(row.brief_json).content.resume.awards, resume.awards);
+    assert.throws(() => service.enqueue("owner", { brief: { ...brief, content: { ...brief.content,
+      resume: { ...resume, awards: [{ ...resume.awards[0], source: "PDF text" }] } } }, idempotencyKey: "bad-source" }), /字段|来源|原文/);
+    const config = JSON.parse(readFileSync("apps/web/src/demo/config.json", "utf8"));
+    assert.deepEqual(JSON.parse(cleanConfig({ ...config, content: { ...config.content, resume } })).content.resume.awards, resume.awards);
+  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
 test("production policy requires confirmed brief and denies portrait generation", () => {
   const db = openDatabase(":memory:");
   db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);

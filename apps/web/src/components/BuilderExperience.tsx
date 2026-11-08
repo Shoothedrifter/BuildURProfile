@@ -21,16 +21,22 @@ import {
 } from "./BuilderChrome";
 import type { WorkflowPhase } from "./BuilderChrome";
 
-export type DraftGroup = "workExperience" | "projects" | "skills" | "education";
+export type DraftGroup = "basicInfo" | "jobIntent" | "selfEvaluation" | "workExperience" | "projects" | "awards" | "skills" | "education" | "other";
+export type ReclassifyTarget = DraftGroup | "campusExperience";
 export type DeliveryAction = "share" | "export";
 type ConfirmModule = "basic" | DraftGroup;
 type StylePresetId = "warm" | "minimal" | "bold";
 
 const confirmationGroups: Array<{ key: DraftGroup; title: string; hint: string }> = [
+  { key: "basicInfo", title: "更多基本信息", hint: "电话、所在地等默认不展示，请主动选择" },
+  { key: "jobIntent", title: "求职意向", hint: "目标岗位、到岗时间与薪资" },
+  { key: "selfEvaluation", title: "自我评价", hint: "保留原文可核查的评价" },
   { key: "education", title: "教育经历", hint: "学校、学位与学习经历" },
   { key: "workExperience", title: "工作 / 校园经历", hint: "任职、职责与成果" },
   { key: "projects", title: "项目经历", hint: "仅保留 PDF 原文可核查的项目" },
-  { key: "skills", title: "技能与链接", hint: "技术、工具与方法" }
+  { key: "awards", title: "荣誉奖项", hint: "奖项名称、级别与时间" },
+  { key: "skills", title: "技能与链接", hint: "技术、工具与方法" },
+  { key: "other", title: "其他内容", hint: "尚未归入以上模块的经历" }
 ];
 
 const roles: Array<{ value: JobRole; label: string }> = [
@@ -195,6 +201,7 @@ export type BuilderExperienceProps = {
   onClearPhoto: () => void;
   onUpdateSingle: (key: "name" | "email", value: string) => void;
   onUpdateGroup: (key: DraftGroup, index: number, change: Partial<DraftField>) => void;
+  onReclassify: (key: DraftGroup, index: number, target: ReclassifyTarget) => void;
   onConfirm: () => void;
   onRoleChange: (role: JobRole) => void;
   onAnswer: (questionId: string, optionIndex: number) => void;
@@ -367,7 +374,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
         </ProofCard>
         <ProofCard as="section" className="proof-confirm-editor" aria-label="当前资料模块">
           {confirmModule === "basic" ? <div className="proof-form-stack">
-            <header><h2>基本信息</h2><p>只会使用你确认后的姓名与邮箱。</p></header>
+            <header><h2>基本信息</h2><p>姓名与邮箱用于作品页；其他个人信息需单独选择展示。</p></header>
             <label className="proof-field"><span>姓名</span><input aria-label="姓名" value={draft.name.value} onChange={(event) => props.onUpdateSingle("name", event.target.value)} /></label>
             <label className="proof-field"><span>邮箱</span><input aria-label="邮箱" value={draft.email.value} onChange={(event) => props.onUpdateSingle("email", event.target.value)} /></label>
             <details className="proof-source"><summary>查看 PDF 原文 →</summary><pre>姓名 · 第 {draft.name.page} 页：{draft.name.source}</pre></details>
@@ -381,6 +388,12 @@ export function BuilderExperience(props: BuilderExperienceProps) {
                     <label><input type="checkbox" checked={entry.included} onChange={(event) => props.onUpdateGroup(group.key, index, { included: event.target.checked })} />用于展示</label>
                     <span>PDF · 第 {entry.page} 页</span>
                   </div>
+                  <label className="proof-field"><span>条目分类 {index + 1}</span><select aria-label={`条目分类 ${index + 1}`}
+                    value={group.key === "workExperience" && entry.experienceKind === "campus" ? "campusExperience" : group.key}
+                    onChange={(event) => props.onReclassify(group.key, index, event.target.value as ReclassifyTarget)}>
+                    {confirmationGroups.map((option) => <option key={option.key} value={option.key}>{option.title}</option>)}
+                    <option value="campusExperience">校园经历</option>
+                  </select></label>
                   <label className="proof-field">
                     <span>{confirmationEntryTitle(group.key, group.title, entry)} {index + 1}</span>
                     <textarea aria-label={`${confirmationEntryTitle(group.key, group.title, entry)} ${index + 1}`}

@@ -17,6 +17,28 @@ function edited(): DesignConfig {
 }
 
 describe("result editor", () => {
+  it("edits confirmed award and other modules in the publishable config", () => {
+    const resume = {
+      version: "resume-v1" as const,
+      basicInfo: [], jobIntent: [], selfEvaluation: [], education: [], workExperience: [], projects: [],
+      awards: [{ title: "创新奖", details: "2023 创新奖", facts: [] }], campusExperience: [], skills: [],
+      other: [{ title: "自媒体经历", details: "技术专栏", facts: [] }]
+    };
+    render(<Harness initial={{ ...base, content: { ...base.content, resume } }} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "荣誉奖项 1 内容" }), { target: { value: "2024 创新奖" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "其他内容 1 内容" }), { target: { value: "技术专栏与播客" } });
+    expect(edited().content.resume?.awards[0].details).toBe("2024 创新奖");
+    expect(edited().content.resume?.other[0].details).toBe("技术专栏与播客");
+  });
+
+  it("keeps the structured identity aligned with the edited hero name", () => {
+    const resume = { version: "resume-v1" as const,
+      basicInfo: [{ key: "name", label: "姓名", value: "旧姓名" }], jobIntent: [], selfEvaluation: [],
+      education: [], workExperience: [], projects: [], awards: [], campusExperience: [], skills: [], other: [] };
+    render(<Harness initial={{ ...base, content: { ...base.content, resume } }} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "新姓名" } });
+    expect(edited().content.resume?.basicInfo[0].value).toBe("新姓名");
+  });
   it("edits profile, expertise, and project copy in the live config", () => {
     render(<Harness />);
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "New Name" } });

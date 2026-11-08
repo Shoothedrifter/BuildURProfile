@@ -63,6 +63,92 @@ ARM 体系结构及编程、嵌入式 Linux 系统设计
 • 哈尔滨理工大学百度飞桨领航团 社团长`;
 
 describe("resume parser", () => {
+  it("keeps A–D categories and source evidence available for confirmation", () => {
+    const draft = parseResumePages([`林青
+电话：13800138000
+所在地：上海
+求职意向
+目标岗位：前端开发
+期待薪资：20k
+自我评价
+重视可访问性与协作。
+教育背景
+2020.09 - 2024.06 示例大学
+专业：计算机科学
+荣誉奖项
+2023.10 校级创新奖
+自媒体经历
+运营技术专栏，累计发表 20 篇文章。
+专业技能
+编程技能：TypeScript`]);
+    expect(draft.version).toBe("resume-candidate-v1");
+    expect(validateResumeDraft({ ...draft, version: "unsupported" as "resume-candidate-v1" })).toContain("简历解析合同版本无效");
+    expect(draft.basicInfo.map((entry) => entry.value)).toContain("电话：13800138000");
+    expect(draft.jobIntent).toHaveLength(2);
+    expect(draft.jobIntent.find((entry) => entry.fieldKey === "expectedSalary")?.included).toBe(false);
+    expect(draft.selfEvaluation).toHaveLength(1);
+    expect(draft.education).toHaveLength(1);
+    expect(draft.awards[0]).toMatchObject({ page: 1, value: "2023.10 校级创新奖" });
+    expect(draft.other[0].value).toContain("运营技术专栏");
+    expect(draft.skills).toHaveLength(1);
+    expect(draft.basicInfo.find((entry) => entry.value.startsWith("电话"))?.included).toBe(false);
+  });
+
+  it("projects only selected A–D facts into a source-free confirmed contract", () => {
+    const draft = parseResumePages([`林青
+电话：13800138000
+求职意向
+目标岗位：前端开发
+自我评价
+重视协作。
+荣誉奖项
+校级创新奖
+其他经历
+运营技术专栏。`]);
+    draft.basicInfo[0].included = true;
+    const content = toResumeContent(draft);
+    expect(content.resume?.basicInfo).toContainEqual({ key: "phone", label: "电话", value: "13800138000" });
+    expect(content.resume?.jobIntent).toContainEqual({ key: "targetRole", label: "目标岗位", value: "前端开发" });
+    expect(content.resume?.awards[0].details).toContain("校级创新奖");
+    expect(content.resume?.other[0].details).toContain("技术专栏");
+    expect(JSON.stringify(content.resume)).not.toContain("source");
+    expect(JSON.stringify(content.resume)).not.toContain("page");
+  });
+
+  it("offers unlabeled phone and age from the PDF header without publishing them by default", () => {
+    const draft = parseResumePages(["林青\nlin@example.com 13800138000 21岁\n教育背景\n2020.09 - 2024.06 示例大学"]);
+    expect(draft.basicInfo).toEqual(expect.arrayContaining([
+      expect.objectContaining({ fieldKey: "phone", value: "13800138000", included: false }),
+      expect.objectContaining({ fieldKey: "age", value: "21岁", included: false })
+    ]));
+    expect(toResumeContent(draft).resume?.basicInfo.map((fact) => fact.key)).not.toContain("phone");
+    draft.basicInfo.forEach((entry) => { entry.included = true; });
+    expect(validateResumeDraft(draft)).toEqual([]);
+  });
+
+  it("reads a labeled basic-information section without treating its heading as a name", () => {
+    const draft = parseResumePages(["基本信息\n姓名：林青\n邮箱：lin@example.com\n电话：13800138000\n教育背景\n2020.09 - 2024.06 示例大学"]);
+    expect(draft.name.value).toBe("林青");
+    expect(draft.email.value).toBe("lin@example.com");
+    expect(draft.basicInfo).toEqual(expect.arrayContaining([expect.objectContaining({ fieldKey: "phone", included: false })]));
+    expect(draft.education).toHaveLength(1);
+  });
+
+  it("keeps the correct page for basic details continuing onto another page", () => {
+    const draft = parseResumePages(["基本信息\n姓名：林青", "电话：13800138000\n教育背景\n2020.09 - 2024.06 示例大学"]);
+    expect(draft.basicInfo[0].page).toBe(2);
+  });
+  it("maps a reclassified labeled line to its destination field", () => {
+    const draft = parseResumePages(["林青\n其他内容\n目标岗位：前端开发"]);
+    draft.jobIntent.push({ ...draft.other[0], label: undefined, fieldKey: undefined });
+    draft.other = [];
+    expect(toResumeContent(draft).resume?.jobIntent).toContainEqual({ key: "targetRole", label: "目标岗位", value: "前端开发" });
+  });
+  it("cites the target role from job intent instead of the previous job", () => {
+    const content = toResumeContent(parseResumePages(["林青\n求职意向\n目标岗位：前端开发\n工作经历\n2024.01 - 2024.06 示例公司\n后端工程师"]));
+    expect(content.profile.role).toBe("前端开发");
+    expect(content.sourceRefs?.["profile.role"].excerpt).toBe("目标岗位：前端开发");
+  });
   it("recognizes PDF compatibility ideographs in section headings", () => {
     const draft = parseResumePages(["Demo Person\ndemo@example.com\n项⽬经历\n2025.01 - 2025.06 示例作品集\n项目描述：合成测试内容。\n专业技能\nReact"]);
     expect(draft.name.value).toBe("Demo Person");

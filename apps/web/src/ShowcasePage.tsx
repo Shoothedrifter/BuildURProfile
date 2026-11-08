@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
-import type { DesignConfig, SkinId } from "../../../packages/contracts/src/config";
+import type { DesignConfig, ResumeEntry, SkinId } from "../../../packages/contracts/src/config";
 import { Marquee } from "./components/Marquee";
 import { StackedCards } from "./components/StackedCards";
 import { shouldAnimateMarquee } from "./lib/presentation";
@@ -12,7 +12,7 @@ const skinOptions: { id: SkinId; label: string; short: string }[] = [
   { id: "high-saturation", label: "High saturation", short: "03" }
 ];
 
-const sectionIds = new Set(["top", "about", "work", "contact"]);
+const sectionIds = new Set(["top", "about", "work", "contact", "self-evaluation", "awards", "other"]);
 
 function touchInput(): boolean {
   return typeof navigator !== "undefined" && (navigator.maxTouchPoints > 0 ||
@@ -29,12 +29,35 @@ function ResumeEntry({ value, kind, role = "" }: { value: string; kind: "experie
   </article>;
 }
 
+function AdditionalModule({ title, entries, id }: { title: string; entries: readonly ResumeEntry[]; id?: string }) {
+  const visibleEntries = entries.filter((entry) => entry.details.trim() || (entry.title.trim() && entry.title !== title));
+  if (!visibleEntries.length) return null;
+  return <section className="resume-section page-container" id={id} aria-label={title}>
+    <div className="section-marker"><span>{title}</span><span className="marker-line" /></div>
+    <h2>{title}</h2>
+    <div className="resume-columns resume-columns--single"><div>{visibleEntries.map((entry, index) =>
+      <article className="resume-entry" key={`${entry.title}-${index}`}>
+        {entry.title !== entry.details && entry.title !== title && <h3>{entry.title}</h3>}
+        {entry.details.trim() && <p className="resume-entry-body">{entry.details}</p>}
+      </article>)}</div></div>
+  </section>;
+}
+
 export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean }) {
   const [skin, setSkin] = useState<SkinId>(config.skin);
   const [touchDetected, setTouchDetected] = useState(touchInput);
   const touchMode = touchDowngraded || touchDetected;
   const { profile, expertise, projects, workExperience = [], campusExperience = [], education = [] } = config.content;
-  const hasExperience = workExperience.length > 0 || campusExperience.length > 0;
+  const visibleProjects = projects.filter((project) => project.title.trim() || project.description.trim());
+  const visibleWork = workExperience.filter((entry) => entry.trim());
+  const visibleCampus = campusExperience.filter((entry) => entry.trim());
+  const visibleEducation = education.filter((entry) => entry.trim());
+  const resume = config.content.resume;
+  const basicDetails = resume?.basicInfo.filter((fact) => !["name", "email"].includes(fact.key) && fact.value.trim()) ?? [];
+  const jobIntent = resume?.jobIntent.filter((fact) => fact.value.trim()) ?? [];
+  const visibleAwards = resume?.awards.some((entry) => entry.details.trim() || entry.title.trim() && entry.title !== "荣誉奖项") ?? false;
+  const visibleOther = resume?.other.some((entry) => entry.details.trim() || entry.title.trim() && entry.title !== "其他内容") ?? false;
+  const hasExperience = visibleWork.length > 0 || visibleCampus.length > 0;
   const marqueeItems = config.marquee.items ?? expertise.skills;
   const marqueeLabels = marqueeItems.map((item) => (typeof item === "string" ? item : item.label).trim());
   const skills = expertise.skills.map((skill) => skill.trim()).filter(Boolean);
@@ -45,8 +68,10 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
   const summary = expertise.summary.trim() && !staticSkills.includes(expertise.summary.trim()) && expertise.summary.trim() !== headline
     ? expertise.summary : "";
   const disciplines = expertise.disciplines.filter((item) => item.trim() && !staticSkills.includes(item.trim()) && !marqueeLabels.includes(item.trim()) && item.trim() !== headline && item.trim() !== summary.trim());
-  const hasAbout = Boolean(sourceHeadline || expertise.summary.trim() || staticSkills.length || disciplines.length || profile.summary.trim());
-  const exploreTarget = hasAbout ? "#about" : projects.length ? "#work" : profile.email.trim() ? "#contact" : "#top";
+  const hasSelfEvaluation = Boolean(resume?.selfEvaluation.some((entry) => entry.details.trim() || entry.title.trim() && entry.title !== "自我评价"));
+  const hasAbout = Boolean(expertise.summary.trim() || staticSkills.length || disciplines.length || (!hasSelfEvaluation && profile.summary.trim()));
+  const exploreTarget = hasAbout ? "#about" : visibleProjects.length ? "#work" : hasSelfEvaluation ? "#self-evaluation" :
+    visibleAwards ? "#awards" : visibleOther ? "#other" : profile.email.trim() ? "#contact" : "#top";
   const nameParts = profile.name.trim().split(/\s+/);
   const firstName = nameParts[0] ?? "";
   const restOfName = nameParts.slice(1).join(" ");
@@ -71,7 +96,7 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
     <div className="showcase-page" data-testid="showcase-page" data-skin={skin} data-palette={config.styleVector.PChoice} onClickCapture={preserveShareHash ? handleSectionClick : undefined}>
       <header className="site-header page-container">
         <a className="brand" href="#top" aria-label="BuildURProfile home"><span className="brand-symbol">b<span>u</span>.</span><span className="brand-word">BUILD YOUR<br />PROFILE</span></a>
-        <nav className="main-nav" aria-label="Main navigation">{hasAbout && <a href="#about">Skills</a>}<a href="#work">Projects</a>{profile.email && <a href="#contact">Contact</a>}</nav>
+        <nav className="main-nav" aria-label="Main navigation">{hasAbout && <a href="#about">Skills</a>}{visibleProjects.length > 0 && <a href="#work">Projects</a>}{profile.email.trim() && <a href="#contact">Contact</a>}</nav>
         <span className="header-status"><span className="status-dot" /> SHOWCASE</span>
       </header>
 
@@ -89,7 +114,7 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
               <figure className="hero-artwork"><img src={config.heroArtwork.assetUrl} alt={config.heroArtwork.alt} /><figcaption>{config.heroArtwork.styleId.replaceAll("-", " ")} · Visual Skill by @威比 Hunter Wei.</figcaption></figure>}
             <div className={config.heroArtwork && !profile.intro ? "hero-aside hero-aside--empty" : "hero-aside"}><div className="hero-stamp" aria-hidden="true"><span>WORK<br />IN<br />MOTION</span><span className="stamp-arrow">↗</span></div>{profile.intro && <p>{profile.intro}</p>}</div>
           </div>
-          <div className="hero-bottom"><div className="hero-identity">{(profile.role.trim() || profile.location.trim()) && <p>{profile.role}{profile.role.trim() && profile.location.trim() && <br />}{profile.location.trim() && <span>{profile.location}</span>}</p>}{profile.availability.trim() && <p className="hero-availability">{profile.availability}</p>}</div><div className="hero-links">{projects.length > 0 && <a className="hero-project-link" href="#work">查看项目 ↗</a>}<a className="scroll-hint" href={exploreTarget}>EXPLORE <span>↓</span></a></div></div>
+          <div className="hero-bottom"><div className="hero-identity">{(profile.role.trim() || profile.location.trim()) && <p>{profile.role}{profile.role.trim() && profile.location.trim() && <br />}{profile.location.trim() && <span>{profile.location}</span>}</p>}{profile.availability.trim() && <p className="hero-availability">{profile.availability}</p>}</div><div className="hero-links">{visibleProjects.length > 0 && <a className="hero-project-link" href="#work">查看项目 ↗</a>}<a className="scroll-hint" href={exploreTarget}>EXPLORE <span>↓</span></a></div></div>
         </section>
 
         {showMarquee && <section className="ticker-section" aria-label="Skills highlights">
@@ -102,7 +127,7 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
           <div className="about-grid">
             <div className="about-heading">{expertise.eyebrow.trim() && <p className="section-overline">{expertise.eyebrow}</p>}<h2 id="about-title">{headline}</h2><div className="about-symbol" aria-hidden="true">↗</div></div>
             <div className="about-copy">
-              {profile.summary.trim() && <p className="profile-summary">{profile.summary}</p>}
+              {!hasSelfEvaluation && profile.summary.trim() && <p className="profile-summary">{profile.summary}</p>}
               {summary && <p className="expertise-summary">{summary}</p>}
               {disciplines.length > 0 && <div className="discipline-list">{disciplines.map((discipline) => <span key={discipline}>{discipline}</span>)}</div>}
               {staticSkills.length > 0 && <ul className="skills-list" aria-label="完整技能">{staticSkills.map((skill, index) => <li key={index}>{skill}</li>)}</ul>}
@@ -111,21 +136,29 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
           </div>
         </section>}
 
-        <section className="work-section page-container" id="work" aria-labelledby="work-title">
+        {visibleProjects.length > 0 && <section className="work-section page-container" id="work" aria-labelledby="work-title">
           <div className="section-marker"><span>02 / PROJECTS</span><span className="marker-line" /></div>
-          <div className="work-heading"><div><p className="section-overline">{projects.length} projects</p><h2 id="work-title">Selected<br /><em>work</em><span className="work-period">.</span></h2></div><p>FROM THE CONFIRMED RESUME</p></div>
-          <StackedCards {...config.stackedCards} cards={projects} />
-        </section>
+          <div className="work-heading"><div><p className="section-overline">{visibleProjects.length} projects</p><h2 id="work-title">Selected<br /><em>work</em><span className="work-period">.</span></h2></div><p>FROM THE CONFIRMED RESUME</p></div>
+          <StackedCards {...config.stackedCards} cards={visibleProjects} />
+        </section>}
 
-        {(hasExperience || education.length > 0) && <section className="resume-section page-container" aria-label="Experience and education">
+        {(hasExperience || visibleEducation.length > 0) && <section className="resume-section page-container" aria-label="Experience and education">
           <div className="section-marker"><span>03 / EXPERIENCE</span><span className="marker-line" /></div>
-          <div className={hasExperience && education.length > 0 ? "resume-columns" : "resume-columns resume-columns--single"}>
-            {hasExperience && <div>{workExperience.length > 0 && <><h2>Experience</h2>{workExperience.map((entry, index) => <ResumeEntry key={`work-${index}`} value={entry} kind="experience" role={profile.role} />)}</>}{campusExperience.length > 0 && <><h2>Campus experience</h2>{campusExperience.map((entry, index) => <ResumeEntry key={`campus-${index}`} value={entry} kind="experience" />)}</>}</div>}
-            {education.length > 0 && <div><h2>Education</h2>{education.map((entry, index) => <ResumeEntry key={index} value={entry} kind="education" />)}</div>}
+          <div className={hasExperience && visibleEducation.length > 0 ? "resume-columns" : "resume-columns resume-columns--single"}>
+            {hasExperience && <div>{visibleWork.length > 0 && <><h2>Experience</h2>{visibleWork.map((entry, index) => <ResumeEntry key={`work-${index}`} value={entry} kind="experience" role={profile.role} />)}</>}{visibleCampus.length > 0 && <><h2>Campus experience</h2>{visibleCampus.map((entry, index) => <ResumeEntry key={`campus-${index}`} value={entry} kind="experience" />)}</>}</div>}
+            {visibleEducation.length > 0 && <div><h2>Education</h2>{visibleEducation.map((entry, index) => <ResumeEntry key={index} value={entry} kind="education" />)}</div>}
           </div>
         </section>}
 
-        {profile.email && <section className="contact-section page-container" id="contact" aria-labelledby="contact-title"><div className="section-marker"><span>04 / CONTACT</span><span className="marker-line" /></div><p className="section-overline">CONTACT</p><h2 id="contact-title">Get in<br /><em>touch.</em></h2><a className="contact-link" href={`mailto:${profile.email}`}><span className="contact-link-address">{profile.email}</span><span className="contact-link-arrow" aria-hidden="true">↗</span></a></section>}
+        {resume && <>
+          <AdditionalModule id="self-evaluation" title="自我评价" entries={resume.selfEvaluation} />
+          {jobIntent.length > 0 && <section className="resume-section page-container" aria-label="求职意向"><h2>求职意向</h2><div className="resume-columns resume-columns--single"><div>{jobIntent.map((fact, index) => <article className="resume-entry" key={`${fact.key}-${index}`}><h3>{fact.label}</h3><p>{fact.value}</p></article>)}</div></div></section>}
+          {basicDetails.length > 0 && <section className="resume-section page-container" aria-label="个人信息"><h2>个人信息</h2><div className="resume-columns resume-columns--single"><div>{basicDetails.map((fact, index) => <article className="resume-entry" key={`${fact.key}-${index}`}><h3>{fact.label}</h3><p>{fact.value}</p></article>)}</div></div></section>}
+          <AdditionalModule id="awards" title="荣誉奖项" entries={resume.awards} />
+          <AdditionalModule id="other" title="其他内容" entries={resume.other} />
+        </>}
+
+        {profile.email.trim() && <section className="contact-section page-container" id="contact" aria-labelledby="contact-title"><div className="section-marker"><span>04 / CONTACT</span><span className="marker-line" /></div><p className="section-overline">CONTACT</p><h2 id="contact-title">Get in<br /><em>touch.</em></h2><a className="contact-link" href={`mailto:${profile.email}`}><span className="contact-link-address">{profile.email}</span><span className="contact-link-arrow" aria-hidden="true">↗</span></a></section>}
       </main>
 
       <footer className="site-footer page-container"><span>{profile.name}</span><span>BUILD YOUR PROFILE</span><a href="#top">BACK TO TOP ↑</a></footer>
