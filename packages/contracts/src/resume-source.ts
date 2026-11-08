@@ -1,4 +1,4 @@
-import schema from '../schema/resume-source.v1.json';
+import schema from '../schema/resume-source.v1.json' with { type: 'json' };
 export type PdfBlock = { blockId: string; page: number; bbox: number[]; fontSize: number; bold: boolean; readingOrder: number; text: string };
 export type ResumeSourceV1 = { version: 'resume-source-v1'; fileId: string; extractionVersion: 'pdf-layout-v1'; uploadedAt: string; expiresAt: string; pageCount: number; blocks: PdfBlock[] };
 type Schema = { $ref?: string; $defs?: Record<string, Schema>; type?: string; const?: unknown; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; minItems?: number; maxItems?: number; minLength?: number; maxLength?: number; pattern?: string; minimum?: number; maximum?: number };

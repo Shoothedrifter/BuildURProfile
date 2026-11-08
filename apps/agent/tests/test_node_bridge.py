@@ -57,6 +57,23 @@ async def test_real_node_bridge_text_only():
             await process_task(photo_task, client, provider, default_registry(), MemorySaver(), "python_integration")
             assert provider.calls == 1
             assert await client.lease("python_integration") is None
+            resume_task = await client.lease_resume("python_resume_integration")
+            assert resume_task and resume_task.resume_id == endpoint["resumeId"]
+            assert (await client.resume_source(resume_task)).startswith(b"%PDF-")
+            await client.heartbeat_resume(resume_task, stage="verify_evidence", progress=90)
+            source = json.loads((ROOT / "packages/contracts/fixtures/resume-source.v1.json").read_text())
+            draft = json.loads((ROOT / "packages/contracts/fixtures/resume-draft.v1.json").read_text())
+            source.update(fileId=resume_task.file_id, uploadedAt=resume_task.uploaded_at,
+                          expiresAt=resume_task.expires_at)
+            draft.update(fileId=resume_task.file_id, resumeId=resume_task.resume_id, revision=1)
+            for section in draft["sections"]:
+                for item in section["items"]:
+                    item["included"] = False
+            assert await client.complete_resume(resume_task, source, draft)
+            from buildurprofile_agent.transport.node_api import LeaseLost
+            with pytest.raises(LeaseLost):
+                await client.resume_source(resume_task)
+            assert await client.lease_resume("python_resume_integration") is None
         finally:
             await client.close()
     finally:
@@ -66,3 +83,44 @@ async def test_real_node_bridge_text_only():
         except asyncio.TimeoutError:
             proc.kill()
             await asyncio.to_thread(proc.wait)
+
+
+@pytest.mark.asyncio
+async def test_resume_transport_keeps_private_protocol_separate_and_fences_old_lease():
+    import httpx
+    from buildurprofile_agent.transport.node_api import LeaseLost
+
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        assert request.url.path.startswith('/_internal/agent/resume-tasks/')
+        if request.url.path.endswith('/lease'):
+            return httpx.Response(200, json={"id": "parse-task", "leaseToken": "current-lease",
+                "workflowVersion": "resume-parse-v1", "resumeId": "resume-one", "fileId": "file-one",
+                "pageCount": 1, "uploadedAt": "2026-11-09T00:00:00Z", "expiresAt": "2026-12-09T00:00:00Z"})
+        if request.url.path.endswith('/source'):
+            assert request.headers['x-agent-lease'] == 'current-lease'
+            return httpx.Response(200, content=b'%PDF-synthetic', headers={'content-type': 'application/pdf'})
+        body = json.loads(request.content)
+        if body['leaseToken'] == 'stale':
+            return httpx.Response(409, json={'errorCode': 'LEASE_LOST'})
+        assert body['leaseToken'] == 'current-lease'
+        return httpx.Response(200, json={'ok': True, 'cancelRequested': False})
+
+    async with httpx.AsyncClient(base_url='http://node.test', transport=httpx.MockTransport(handle)) as http:
+        client = NodeAgentClient('http://node.test', 's' * 64, http=http)
+        task = await client.lease_resume('parse_worker')
+        assert task.workflow_version == 'resume-parse-v1'
+        assert task.resume_id == 'resume-one' and task.file_id == 'file-one'
+        assert (await client.resume_source(task)) == b'%PDF-synthetic'
+        assert not (await client.heartbeat_resume(task, stage='extract_layout', progress=10))['cancelRequested']
+        source, draft = {'version': 'resume-source-v1'}, {'version': 'resume-draft-v1'}
+        assert await client.complete_resume(task, source, draft)
+        complete_body = json.loads(requests[-1].content)
+        assert complete_body['source'] == source and complete_body['draft'] == draft
+        assert await client.fail_resume(task, 'PARSE_FAILED', retryable=True)
+        assert await client.ack_cancel_resume(task)
+        from dataclasses import replace
+        with pytest.raises(LeaseLost):
+            await client.heartbeat_resume(replace(task, lease_token='stale'))

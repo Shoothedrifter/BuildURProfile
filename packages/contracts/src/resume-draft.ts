@@ -1,7 +1,7 @@
-import schema from '../schema/resume-draft.v1.json';
+import schema from '../schema/resume-draft.v1.json' with { type: 'json' };
 import { cleanStructuredResume } from './validation.mjs';
 import type { ResumeContent, ResumeEntry, ResumeFact, StructuredResumeV1 } from './config';
-import { validateResumeSource, validateSchema } from './resume-source';
+import { validateResumeSource, validateSchema } from './resume-source.ts';
 export const RESUME_MODULE_MAPPING = { basicInfo: 'hero-profile', jobIntent: 'job-intent-strip', selfEvaluation: 'intro-card', education: 'education-timeline', workExperience: 'work-timeline', projects: 'project-stacked-cards', awards: 'award-badges', campusExperience: 'campus-timeline', skills: 'skill-tags', other: 'free-content-card' } as const;
 export type ResumeModuleKind = keyof typeof RESUME_MODULE_MAPPING;
 export type DraftFact = { key: string; label: string; value: string; included: boolean };

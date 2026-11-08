@@ -1,3 +1,5 @@
+import { pdf } from '../../../launcher/src/test-fixtures/resume-pdf.mjs';
+import { createResumeRepository } from '../../../../packages/storage/src/resumes/repository.mjs';
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
@@ -20,14 +22,17 @@ if (!portraitMime) throw new Error("Unsupported test portrait format");
 const portrait = generationService.savePortrait("test-owner", `data:${portraitMime};base64,${portraitBytes.toString("base64")}`);
 const queuedPortrait = generationService.enqueue("test-owner", { brief, idempotencyKey: "python-bridge-photo",
   portraitAssetId: portrait.id, styleId: "retro-flat-anime-head" });
+const resumeRepository = createResumeRepository({db,root:join(root,'resumes')});
+const uploadedResume = await resumeRepository.upload('test-owner',pdf(),'synthetic.pdf','application/pdf');
+const parsedResume = resumeRepository.queue.parse('test-owner',{fileId:uploadedResume.fileId,idempotencyKey:'python-resume-bridge'});
 const token = process.env.AGENT_SERVICE_TOKEN;
-const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: true,
+const server = createPaymentHttpServer({ db, service: {}, generationService, resumeRepository, portraitEnabled: true,
   agentToken: token, secret: Buffer.alloc(32, 7), agentStyleLoader: (id) => ({ id, version: "test-v1",
     license: "MIT AND LicenseRef-Wibi-Personal-NonCommercial-1.0", sourceCommit: "test", manifestVersion: "1",
     attribution: "test", instructions: "flat anime portrait with solid colored background",
     localSummary: "anime", referencePaths: [] }) });
 server.listen(0, "127.0.0.1", () => {
   process.stdout.write(`${JSON.stringify({ baseUrl: `http://127.0.0.1:${server.address().port}`,
-    taskId: queued.id, portraitTaskId: queuedPortrait.id })}\n`);
+    taskId: queued.id, portraitTaskId: queuedPortrait.id, resumeId:parsedResume.resumeId })}\n`);
 });
 process.on("SIGTERM", () => server.close(() => { db.close(); rmSync(root, { recursive: true, force: true }); }));

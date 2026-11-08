@@ -1,7 +1,14 @@
 import { PDF_MAX_BYTES, resumeError } from '../../../../../packages/storage/src/resumes/files.mjs';
-export async function handleResumeRoutes({req,res,parts,sessionId,repository,sendJson}) {
+export async function handleResumeRoutes({req,res,parts,sessionId,repository,sendJson,bodyJson}) {
  if(parts[1]!=='resumes')return false;
  repository.cleanup();
+ const queue=repository.queue;
+ if(parts.length===3&&parts[2]==='parse'&&req.method==='POST'){sendJson(res,202,queue.parse(sessionId,await bodyJson(req,4096)));return true;}
+ if(parts.length===4&&parts[3]==='status'&&req.method==='GET'){sendJson(res,200,queue.status(sessionId,parts[2]));return true;}
+ if(parts.length===4&&parts[3]==='cancel'&&req.method==='POST'){sendJson(res,200,queue.cancel(sessionId,parts[2]));return true;}
+ if(parts.length===3&&req.method==='GET'){sendJson(res,200,queue.draft(sessionId,parts[2]));return true;}
+ if(parts.length===3&&req.method==='PATCH'){sendJson(res,200,queue.patch(sessionId,parts[2],await bodyJson(req,16*1024*1024)));return true;}
+
  if(parts.length===3&&parts[2]==='upload'&&req.method==='POST'){
   if(req.headers['content-length']&&(!/^\d+$/.test(req.headers['content-length'])||Number(req.headers['content-length'])>PDF_MAX_BYTES))throw resumeError(413,'FILE_TOO_LARGE');
   const chunks=[];let total=0;

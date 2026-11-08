@@ -1,21 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readdirSync, statSync, writeFileSync, utimesSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync, statSync, writeFileSync, utimesSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../../../packages/storage/src/database.mjs';
 import { createRequestHandler, dispatchWebRequest } from '../../web/src/server/http.mjs';
 
-// Synthetic, deterministic PDF; no personal information.
-export function pdf(pages = 1, text = true) {
-  const objects = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Count ${pages} /Kids [${Array.from({length:pages},(_,i)=>`${3+i*2} 0 R`).join(' ')}] >>`];
-  for(let i=0;i<pages;i++) { const stream = text ? 'BT /F1 12 Tf 20 100 Td (Synthetic fixture) Tj ET' : '';
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /Font << /F1 ${3+pages*2} 0 R >> >> /Contents ${4+i*2} 0 R >>`, `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`); }
-  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-  let body='%PDF-1.7\n', offsets=[0]; for(const [i,o] of objects.entries()){offsets.push(Buffer.byteLength(body));body+=`${i+1} 0 obj\n${o}\nendobj\n`;}
-  const start=Buffer.byteLength(body);body+=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n${offsets.slice(1).map(x=>`${String(x).padStart(10,'0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length+1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF`;
-  return Buffer.from(body);
-}
+import { pdf } from './test-fixtures/resume-pdf.mjs';
 async function setup(t) {
  const root=mkdtempSync(join(tmpdir(),'resume-test-')),db=openDatabase(':memory:');let time=Date.now();
  t.after(()=>{db.close();rmSync(root,{recursive:true,force:true});});
@@ -25,7 +16,7 @@ async function setup(t) {
  const session=await dispatchWebRequest(new Request('http://test/api/session'),handler);
  const cookie=session.headers.get('set-cookie').split(';')[0],csrf=(await session.json()).csrfToken;
  const request=(path,method='GET',body,extra={})=>dispatchWebRequest(new Request('http://test/api/resumes/'+path,{method,headers:{cookie,'x-csrf-token':csrf,'content-type':'application/pdf','x-file-name':'fixture.pdf',...extra},...(body?{body}: {})}),handler);
- return {root,db,repo,request,handler,advance:()=>{time+=30*86400000;}};
+ return {root,db,repo,request,handler,advance:(ms=30*86400000)=>{time+=ms;}};
 }
 test('upload retains one private PDF, source remains after parse, ownership and deletion enforced',async t=>{
  const s=await setup(t),r=await s.request('upload','POST',pdf());assert.equal(r.status,201);const file=await r.json();
@@ -93,4 +84,102 @@ test('owner can cancel an upload before parse, with CSRF and ownership enforced'
  assert.equal((await s.request('files/'+file.fileId,'DELETE',null,{'x-csrf-token':'invalid'})).status,403);
  assert.equal((await s.request('files/'+file.fileId,'DELETE')).status,200);assert.equal((await s.request('files/'+file.fileId,'DELETE')).status,200);
  assert.equal(s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(file.fileId),undefined);assert.equal(readdirSync(s.root).length,0);
+});
+
+test('parse queue is idempotent, session scoped, cancellable and retry keeps resume identity',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const parse=(key,id=file.fileId,extra={})=>s.request('parse','POST',JSON.stringify({fileId:id,idempotencyKey:key}),{'content-type':'application/json',...extra});
+ assert.equal((await parse('key1',file.fileId,{'x-csrf-token':'bad'})).status,403);
+ const first=await parse('key1');assert.equal(first.status,202);const a=await first.json();assert.equal(a.status,'QUEUED');
+ assert.deepEqual(await(await parse('key1')).json(),a);
+ assert.equal((await parse('key1','missing')).status,409);
+ assert.equal((await s.request(a.resumeId+'/status')).status,200);
+ assert.equal((await s.request(a.resumeId)).status,409);
+ assert.equal((await s.request(a.resumeId+'/cancel','POST','{}')).status,200);
+ assert.equal((await(await s.request(a.resumeId+'/status')).json()).status,'CANCELLED');
+ assert.equal((await(await parse('key2')).json()).resumeId,a.resumeId);
+ const other=await dispatchWebRequest(new Request('http://test/api/session'),s.handler),otherCsrf=(await other.json()).csrfToken;
+ const headers={cookie:other.headers.get('set-cookie').split(';')[0],'x-csrf-token':otherCsrf};
+ assert.equal((await s.request(a.resumeId+'/status','GET',null,headers)).status,404);
+ assert.equal((await parse('other',file.fileId,headers)).status,404);
+});
+
+test('private resume lease authenticates, reclaims, fences cancelled workers and never leaks PDF in task',async t=>{
+ const s=await setup(t),token='r'.repeat(64);
+ const handler=createRequestHandler({db:s.db,service:{},resumeRepository:s.repo,agentToken:token,secret:Buffer.alloc(32,7)});
+ const internal=async(path,method='POST',body={},lease,auth=token)=>dispatchWebRequest(new Request('http://test/_internal/agent/resume-tasks/'+path,{method,headers:{authorization:'Bearer '+auth,'content-type':'application/json',...(lease?{'x-agent-lease':lease}:{})},...(method==='POST'?{body:JSON.stringify(body)}:{})}),handler);
+ const file=await(await s.request('upload','POST',pdf())).json(),r=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'lease'}))).json();
+ assert.equal((await internal('lease','POST',{workerId:'worker'},null,'bad')).status,403);
+ const response=await internal('lease','POST',{workerId:'worker'});assert.equal(response.status,200);const task=await response.json();assert.equal(task.workflowVersion,'resume-parse-v1');assert.equal(task.fileId,file.fileId);assert.equal(task.resumeId,r.resumeId);assert.equal('blocks' in task,false);
+ assert.deepEqual(Buffer.from(await(await internal(task.id+'/source','GET',{},task.leaseToken)).arrayBuffer()),pdf());
+ s.advance(20_000);assert.equal((await internal(task.id+'/heartbeat','POST',{leaseToken:task.leaseToken,stage:'extract_layout',progress:20})).status,200);
+ s.advance(20_000);assert.equal((await internal(task.id+'/source','GET',{},task.leaseToken)).status,200);
+ assert.equal((await(await s.request(r.resumeId+'/status')).json()).progress,20);
+ assert.equal((await s.request(r.resumeId+'/cancel','POST','{}')).status,200);
+ assert.equal((await internal(task.id+'/source','GET',{},task.leaseToken)).status,409);
+ assert.equal((await internal(task.id+'/complete','POST',{leaseToken:task.leaseToken,source:{},draft:{}})).status,409);
+ assert.equal((await(await internal(task.id+'/heartbeat','POST',{leaseToken:task.leaseToken})).json()).cancelRequested,true);
+ assert.equal((await internal(task.id+'/ack-cancel','POST',{leaseToken:task.leaseToken})).status,200);
+ await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'retry'}));
+ const next=await(await internal('lease','POST',{workerId:'worker'})).json();assert.notEqual(next.id,task.id);
+ assert.equal((await internal(task.id+'/fail','POST',{leaseToken:task.leaseToken,errorCode:'PARSE_FAILED'})).status,409);
+ s.db.prepare('UPDATE resume_parse_tasks SET lease_until=0 WHERE id=?').run(next.id);
+ const status=await(await s.request(r.resumeId+'/status')).json();assert.equal(status.status,'QUEUED');assert.equal(status.errorCode,'PARSE_TIMEOUT');assert.equal(status.stage,'queued');assert.equal(status.progress,0);
+ s.db.prepare('UPDATE resume_parse_tasks SET next_attempt_at=0 WHERE id=?').run(next.id);
+ const reclaimed=await(await internal('lease','POST',{workerId:'worker2'})).json();assert.equal(reclaimed.id,next.id);assert.notEqual(reclaimed.leaseToken,next.leaseToken);
+ assert.equal((await internal(next.id+'/source','GET',{},next.leaseToken)).status,409);
+ assert.equal((await internal(next.id+'/heartbeat','POST',{leaseToken:next.leaseToken})).status,409);
+});
+
+
+test('complete persists validated source and draft atomically; edits use revision and source evidence',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'complete'}))).json();
+ const task=s.repo.queue.lease('worker');
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(file.fileId);
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ Object.assign(source,{fileId:file.fileId,uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:file.fileId,resumeId:parsed.resumeId,revision:1});for(const section of draft.sections)for(const item of section.items)item.included=false;
+ const bad=structuredClone(draft);bad.sections[0].items[0].sourceBlockIds=['invented'];
+ assert.throws(()=>s.repo.queue.complete(task.id,task.leaseToken,source,bad),e=>e.status===400);
+ assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_blocks').get().n,0);
+ const omitted=structuredClone(draft);for(const section of omitted.sections)section.items=[];
+ assert.throws(()=>s.repo.queue.complete(task.id,task.leaseToken,source,omitted),e=>e.status===400);
+ const wrongSource=structuredClone(source);wrongSource.uploadedAt='2020-01-01T00:00:00Z';
+ assert.throws(()=>s.repo.queue.complete(task.id,task.leaseToken,wrongSource,draft),e=>e.status===400);
+ s.db.exec("CREATE TRIGGER reject_resume_complete BEFORE UPDATE OF draft_json ON resumes BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+ assert.throws(()=>s.repo.queue.complete(task.id,task.leaseToken,source,draft));assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_blocks').get().n,0);
+ s.db.exec('DROP TRIGGER reject_resume_complete');s.repo.queue.complete(task.id,task.leaseToken,source,draft);
+ assert.equal((await(await s.request(parsed.resumeId+'/status')).json()).status,'SUCCEEDED');
+ const saved=await(await s.request(parsed.resumeId)).json();assert.deepEqual(saved.draft,draft);assert.equal(saved.expiresAt,source.expiresAt);
+ assert.equal((await(await s.request(parsed.resumeId+'/status')).json()).expiresAt,source.expiresAt);
+ draft.sections[0].items[0].title='User edit';
+ const update=await s.request(parsed.resumeId,'PATCH',JSON.stringify({revision:1,draft}));assert.equal(update.status,200);assert.equal((await update.json()).revision,2);
+ assert.equal((await s.request(parsed.resumeId,'PATCH',JSON.stringify({revision:1,draft}))).status,409);
+ assert.throws(()=>s.repo.queue.complete(task.id,task.leaseToken,source,draft),e=>e.status===409);
+ await s.request(parsed.resumeId,'DELETE');assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_parse_tasks').get().n,0);assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_parse_requests').get().n,0);
+});
+
+test('parse session rate limit and bounded retries do not affect other queues',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();let id;
+ for(let i=0;i<10;i++){const r=await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'rate'+i}));assert.equal(r.status,202);id=(await r.json()).resumeId;}
+ const limited=await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'limited'}));assert.equal(limited.status,429);assert.equal((await limited.json()).errorCode,'RATE_LIMITED');
+ for(let i=0;i<3;i++){const task=s.repo.queue.lease('worker');assert.ok(task);s.repo.queue.fail(task.id,task.leaseToken,'PARSE_FAILED',true);s.db.prepare('UPDATE resume_parse_tasks SET next_attempt_at=0').run();}
+ assert.equal(s.repo.queue.status(s.db.prepare('SELECT owner_session_id FROM resume_files').get().owner_session_id,id).status,'FAILED');assert.equal(s.repo.queue.lease('worker'),null);assert.equal(s.db.prepare('SELECT COUNT(*) n FROM generations').get().n,0);
+});
+
+
+test('UI wait timeout does not terminate queued work and malformed parse input is rejected',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ for(const input of ['null','[]','{}','{"fileId":"x","idempotencyKey":3}'])assert.equal((await s.request('parse','POST',input)).status,400);
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'wait'}))).json();
+ s.advance(60_001);const status=await(await s.request(parsed.resumeId+'/status')).json();assert.equal(status.status,'QUEUED');assert.equal(status.errorCode,null);
+ assert.equal((await s.request(parsed.resumeId+'/source')).status,200);
+});
+
+test('expiry while submitting queue work returns expired rather than nesting transactions',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const owner=s.db.prepare('SELECT owner_session_id FROM resume_files').get().owner_session_id;
+ s.advance();assert.throws(()=>s.repo.queue.parse(owner,{fileId:file.fileId,idempotencyKey:'expired'}),e=>e.status===410&&e.errorCode==='RESUME_EXPIRED');
 });

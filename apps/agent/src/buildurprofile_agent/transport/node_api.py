@@ -41,6 +41,29 @@ class AgentTask:
 
 
 @dataclass(frozen=True)
+class ResumeParseTask:
+    id: str
+    lease_token: str
+    workflow_version: str
+    resume_id: str
+    file_id: str
+    page_count: int
+    uploaded_at: str
+    expires_at: str
+
+    @classmethod
+    def from_json(cls, value: dict[str, Any]) -> "ResumeParseTask":
+        keys = ("id", "leaseToken", "resumeId", "fileId", "uploadedAt", "expiresAt")
+        if any(not isinstance(value.get(key), str) or not value[key] for key in keys):
+            raise ValueError("Invalid resume lease response")
+        if value.get("workflowVersion") != "resume-parse-v1" or type(value.get("pageCount")) is not int or not 1 <= value["pageCount"] <= 20:
+            raise ValueError("Invalid resume lease response")
+        return cls(value["id"], value["leaseToken"], value["workflowVersion"],
+                   value["resumeId"], value["fileId"], value["pageCount"],
+                   value["uploadedAt"], value["expiresAt"])
+
+
+@dataclass(frozen=True)
 class Portrait:
     bytes: bytes
     mime: str
@@ -126,5 +149,45 @@ class NodeAgentClient:
 
     async def ack_cancel(self, task: AgentTask) -> bool:
         response = await self._request("POST", f"/_internal/agent/tasks/{task.id}/ack-cancel",
+                                       json={"leaseToken": task.lease_token})
+        return bool(response.json().get("ok"))
+
+
+    async def lease_resume(self, worker_id: str) -> ResumeParseTask | None:
+        response = await self._request("POST", "/_internal/agent/resume-tasks/lease",
+                                       json={"workerId": worker_id})
+        return None if response.status_code == 204 else ResumeParseTask.from_json(response.json())
+
+    async def resume_source(self, task: ResumeParseTask) -> bytes:
+        response = await self._request("GET", f"/_internal/agent/resume-tasks/{task.id}/source",
+                                       lease=task.lease_token)
+        return response.content
+
+    async def heartbeat_resume(self, task: ResumeParseTask, *, stage: str | None = None,
+                               progress: int | None = None) -> dict:
+        payload: dict[str, Any] = {"leaseToken": task.lease_token}
+        if stage is not None:
+            payload["stage"] = stage
+        if progress is not None:
+            payload["progress"] = progress
+        response = await self._request("POST", f"/_internal/agent/resume-tasks/{task.id}/heartbeat", json=payload)
+        result = response.json()
+        if not result.get("ok"):
+            raise LeaseLost("Resume lease is no longer active")
+        return result
+
+    async def complete_resume(self, task: ResumeParseTask, source: dict, draft: dict) -> bool:
+        response = await self._request("POST", f"/_internal/agent/resume-tasks/{task.id}/complete",
+                                       json={"leaseToken": task.lease_token, "source": source, "draft": draft})
+        return bool(response.json().get("ok"))
+
+    async def fail_resume(self, task: ResumeParseTask, code: str, *, retryable: bool) -> bool:
+        response = await self._request("POST", f"/_internal/agent/resume-tasks/{task.id}/fail",
+                                       json={"leaseToken": task.lease_token, "errorCode": code,
+                                             "retryable": retryable})
+        return bool(response.json().get("ok"))
+
+    async def ack_cancel_resume(self, task: ResumeParseTask) -> bool:
+        response = await self._request("POST", f"/_internal/agent/resume-tasks/{task.id}/ack-cancel",
                                        json={"leaseToken": task.lease_token})
         return bool(response.json().get("ok"))

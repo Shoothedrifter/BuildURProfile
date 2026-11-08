@@ -1,3 +1,4 @@
+import { createResumeParseQueue } from './queue.mjs';
 import { randomUUID } from 'node:crypto';
 import { transaction } from '../database.mjs';
 import { createResumeFileStore, validatePdf, resumeError } from './files.mjs';
@@ -15,7 +16,7 @@ export function createResumeRepository({db,root,now=Date.now}) {
  function cleanup(limit=25){for(const row of db.prepare('SELECT id FROM resume_files WHERE expires_at<=? ORDER BY expires_at LIMIT ?').all(now(),limit))purge(row,'expired');store.reconcile(id=>Boolean(db.prepare('SELECT 1 FROM resume_files WHERE id=?').get(id)),now(),limit);}
  function getFile(owner,id){const row=db.prepare('SELECT * FROM resume_files WHERE id=? AND owner_session_id=?').get(id,owner);if(!row)throw resumeError(404,'RESUME_NOT_FOUND');if(row.expires_at<=now()){purge(row,'expired');throw resumeError(410,'RESUME_EXPIRED');}return row;}
  function getResume(owner,id){const row=db.prepare('SELECT file_id FROM resumes WHERE id=? AND owner_session_id=?').get(id,owner);if(!row){const tomb=db.prepare('SELECT reason FROM resume_tombstones WHERE resume_id=? AND owner_session_id=?').get(id,owner);throw resumeError(tomb?.reason==='expired'?410:404,tomb?.reason==='expired'?'RESUME_EXPIRED':'RESUME_NOT_FOUND');}return getFile(owner,row.file_id);}
- return {cleanup,getFile,
+ const repository = {cleanup,getFile,
  deleteFile(owner,id){
   if(db.prepare('SELECT 1 FROM resume_tombstones WHERE resume_id=? AND owner_session_id=?').get('file:'+id,owner))return {ok:true};
   const row=getFile(owner,id);
@@ -31,4 +32,6 @@ export function createResumeRepository({db,root,now=Date.now}) {
  readSource(owner,id){const row=getResume(owner,id);return store.read(row.id);},
  delete(owner,id){const tomb=db.prepare('SELECT 1 FROM resume_tombstones WHERE resume_id=? AND owner_session_id=?').get(id,owner);if(tomb)return {ok:true};const row=getResume(owner,id);purge(row,'deleted');return {ok:true};}
  };
+ repository.queue=createResumeParseQueue({db,repository,now});
+ return repository;
 }

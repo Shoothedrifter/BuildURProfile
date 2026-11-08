@@ -136,6 +136,25 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
       resume_id TEXT PRIMARY KEY, file_id TEXT NOT NULL, owner_session_id TEXT NOT NULL, reason TEXT NOT NULL
     );`);
   });
+  applyMigration(db, 7, () => {
+    db.exec(`CREATE TABLE resume_parse_tasks (
+      id TEXT PRIMARY KEY, resume_id TEXT NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+      owner_session_id TEXT NOT NULL REFERENCES sessions(id), file_id TEXT NOT NULL,
+      workflow_version TEXT NOT NULL DEFAULT 'resume-parse-v1', idempotency_key TEXT NOT NULL,
+      status TEXT NOT NULL, stage TEXT NOT NULL DEFAULT 'queued', progress INTEGER NOT NULL DEFAULT 0,
+      error_code TEXT, lease_token TEXT, lease_until INTEGER, worker_id TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+      UNIQUE(owner_session_id,idempotency_key)
+    );
+    CREATE INDEX resume_parse_queue ON resume_parse_tasks(status,next_attempt_at,lease_until,created_at);
+    CREATE TABLE resume_parse_requests (
+      owner_session_id TEXT NOT NULL REFERENCES sessions(id), idempotency_key TEXT NOT NULL,
+      file_id TEXT NOT NULL, resume_id TEXT NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL REFERENCES resume_parse_tasks(id) ON DELETE CASCADE, created_at INTEGER NOT NULL,
+      PRIMARY KEY(owner_session_id,idempotency_key)
+    );`);
+  });
   return db;
 }
 

@@ -1,3 +1,4 @@
+import { handleInternalResumeAgentRoutes } from './routes/internal-resume-agent.mjs';
 import { Readable } from "node:stream";
 import { handleResumeRoutes } from "./routes/resumes.mjs";
 import { PDF_MAX_BYTES } from "../../../../packages/storage/src/resumes/files.mjs";
@@ -95,7 +96,9 @@ export function createRequestHandler({ db, service, generationService = null, re
         sendJson(res, agentReady ? 200 : 503, { ok: agentReady, component: "api", agentReady }); return;
       }
       if (parts[0] === "_internal" && parts[1] === "agent") {
-        if (!configuredAgentToken || !generationService) throw new ServiceError(404, "接口不存在。");
+        if (!configuredAgentToken) throw new ServiceError(404, "接口不存在。");
+        if (resumeRepository && await handleInternalResumeAgentRoutes({req,res,parts,repository:resumeRepository,agentToken:configuredAgentToken,bodyJson,sendJson})) return;
+        if (!generationService) throw new ServiceError(404, "接口不存在。");
         if (await handleInternalAgentRoutes({ req, res, parts, service: generationService,
           agentToken: configuredAgentToken, portraitEnabled, bodyJson, sendJson, styleLoader: agentStyleLoader })) return;
         throw new ServiceError(404, "接口不存在。");
@@ -130,7 +133,7 @@ export function createRequestHandler({ db, service, generationService = null, re
       if (parts[0] === "api") {
         const sessionId = requireSession(req, db, secret);
         if (!["GET", "HEAD"].includes(req.method)) requireCsrf(req, secret, sessionId);
-        if (resumeRepository && await handleResumeRoutes({ req, res, parts, sessionId, repository: resumeRepository, sendJson })) return;
+        if (resumeRepository && await handleResumeRoutes({ req, res, parts, sessionId, repository: resumeRepository, sendJson, bodyJson })) return;
         if (generationService && await handleGenerationRoutes({ req, res, url, parts, sessionId,
           service: generationService, portraitEnabled, bodyJson, sendJson })) return;
         if (req.method === "GET" && url.pathname === "/api/projects") { sendJson(res, 200, service.listProjects(sessionId)); return; }
