@@ -1,4 +1,5 @@
 import schema from '../schema/resume-draft.v1.json';
+import { cleanStructuredResume } from './validation.mjs';
 import type { ResumeContent, ResumeEntry, ResumeFact, StructuredResumeV1 } from './config';
 import { validateResumeSource, validateSchema } from './resume-source';
 export const RESUME_MODULE_MAPPING = { basicInfo: 'hero-profile', jobIntent: 'job-intent-strip', selfEvaluation: 'intro-card', education: 'education-timeline', workExperience: 'work-timeline', projects: 'project-stacked-cards', awards: 'award-badges', campusExperience: 'campus-timeline', skills: 'skill-tags', other: 'free-content-card' } as const;
@@ -39,8 +40,7 @@ export function projectConfirmedResume(raw: ResumeDraftV1): ResumeContent {
       return { title: safe(i.title), details: safe(i.details), facts: facts(i) } satisfies ResumeEntry;
     });
   }
-  const structured = resume as StructuredResumeV1;
-  if (structured.basicInfo.length > 100 || structured.jobIntent.length > 100) throw new Error('Confirmed fact limit exceeded');
+  const structured = cleanStructuredResume(resume) as unknown as StructuredResumeV1;
   const basic = (key: string) => structured.basicInfo.find(f => f.key === key)?.value.trim() ?? '';
   if (!basic('name') || !(basic('email') || basic('phone'))) throw new Error('Name and email or phone required');
   return { profile: { name: basic('name'), role: '', location: basic('location'), availability: '', intro: '', summary: '', email: basic('email') }, expertise: { eyebrow: '', headline: '', summary: '', skills: [], disciplines: [] }, projects: [], resume: structured };

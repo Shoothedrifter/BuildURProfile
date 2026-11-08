@@ -64,3 +64,16 @@ it.each(['date', 'retention', 'duplicate', 'page', 'bbox', 'order'])('rejects in
   if (mode === 'order') raw.blocks.push({...raw.blocks[0],blockId:'block_2'});
   expect(() => validateResumeSource(raw)).toThrow();
 });
+
+it.each(['\u0000', '😀'.repeat(6001)])('rejects confirmed prose incompatible with the display boundary', (details) => {
+  const draft = structuredClone(fixture);
+  draft.sections[4].items = [{ ...draft.sections[0].items[0], itemId: 'item_work', details }];
+  const validated = contracts.validateResumeDraft(draft, source);
+  expect(() => contracts.projectConfirmedResume(validated)).toThrow();
+});
+
+it('preserves supplementary Unicode within the confirmed display limit', () => {
+  const draft = structuredClone(fixture);
+  draft.sections[4].items = [{ ...draft.sections[0].items[0], itemId: 'item_work', details: '😀'.repeat(6000) }];
+  expect(contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source)).resume?.workExperience[0].details).toBe('😀'.repeat(6000));
+});
