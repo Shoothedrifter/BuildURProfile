@@ -183,3 +183,52 @@ test('expiry while submitting queue work returns expired rather than nesting tra
  const owner=s.db.prepare('SELECT owner_session_id FROM resume_files').get().owner_session_id;
  s.advance();assert.throws(()=>s.repo.queue.parse(owner,{fileId:file.fileId,idempotencyKey:'expired'}),e=>e.status===410&&e.errorCode==='RESUME_EXPIRED');
 });
+
+test('status recovery cannot overwrite a lease recovered through a second SQLite connection',async t=>{
+ const root=mkdtempSync(join(tmpdir(),'resume-status-race-')),dbA=openDatabase(join(root,'queue.sqlite')),dbB=openDatabase(join(root,'queue.sqlite'));
+ t.after(()=>{dbB.close();dbA.close();rmSync(root,{recursive:true,force:true});});
+ dbB.exec('PRAGMA busy_timeout=0');let time=Date.now();
+ dbA.prepare('INSERT INTO sessions VALUES(?,?,?)').run('owner',time,time+86400000);
+ const {createResumeRepository}=await import('../../../packages/storage/src/resumes/repository.mjs');
+ const {createResumeParseQueue}=await import('../../../packages/storage/src/resumes/queue.mjs');
+ const repoA=createResumeRepository({db:dbA,root:join(root,'files'),now:()=>time});
+ const repoB=createResumeRepository({db:dbB,root:join(root,'files'),now:()=>time});
+ const file=await repoA.upload('owner',pdf(),'synthetic.pdf','application/pdf');
+ const parsed=repoA.queue.parse('owner',{fileId:file.fileId,idempotencyKey:'status-race'});
+ const expired=repoA.queue.lease('worker-a');time+=31_000;
+ let interleaved=false,blocked=false,reclaimed=null;
+ // Pause A after its expiry SELECT returns a snapshot, before any recovery writes.
+ // B then attempts the complete recovery/re-lease sequence on its real connection.
+ const dbProxy=new Proxy(dbA,{get(target,key){
+  if(key==='prepare')return sql=>{
+   const statement=target.prepare(sql);
+   if(!sql.startsWith('SELECT * FROM resume_parse_tasks WHERE status IN'))return statement;
+   return new Proxy(statement,{get(stmt,method){
+    if(method==='all')return (...args)=>{
+     const rows=stmt.all(...args);
+     if(!interleaved&&rows.length){
+      interleaved=true;
+      try{repoB.queue.status('owner',parsed.resumeId);}
+      catch(error){assert.match(error.message,/locked/);blocked=true;}
+      if(!blocked){time+=2000;reclaimed=repoB.queue.lease('worker-b');assert.ok(reclaimed);}
+     }
+     return rows;
+    };
+    const value=Reflect.get(stmt,method,stmt);return typeof value==='function'?value.bind(stmt):value;
+   }});
+  };
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
+ const queueA=createResumeParseQueue({db:dbProxy,repository:repoA,now:()=>time});
+ const observed=queueA.status('owner',parsed.resumeId);assert.equal(interleaved,true);
+ if(reclaimed){
+  assert.equal(observed.status,'RUNNING');
+  assert.equal(dbB.prepare('SELECT lease_token FROM resume_parse_tasks WHERE id=?').get(expired.id).lease_token,reclaimed.leaseToken);
+ }else{
+  assert.equal(blocked,true);assert.equal(observed.status,'QUEUED');
+  time+=2000;reclaimed=repoB.queue.lease('worker-b');assert.ok(reclaimed);
+  assert.equal(queueA.status('owner',parsed.resumeId).status,'RUNNING');
+ }
+ assert.equal(dbA.prepare('SELECT status FROM resumes WHERE id=?').get(parsed.resumeId).status,'RUNNING');
+ assert.equal(repoB.queue.heartbeat(reclaimed.id,reclaimed.leaseToken).ok,true);
+});

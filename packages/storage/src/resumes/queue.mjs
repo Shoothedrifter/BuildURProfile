@@ -111,9 +111,13 @@ export function createResumeParseQueue({
       });
     },
     status(owner, id) {
-      const row = owned(owner, id);
-      sweep();
-      return publicStatus(row);
+      // BEGIN IMMEDIATE fences other connections before selecting expired leases.
+      // Recovery and the returned resume/task state must observe one transaction.
+      return transaction(db, () => {
+        const row = owned(owner, id);
+        sweep();
+        return publicStatus(row);
+      });
     },
     draft(owner, id) {
       const row = owned(owner, id);
