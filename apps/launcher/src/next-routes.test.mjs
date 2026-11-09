@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GET as healthzGet } from "../../web/src/app/healthz/route.ts";
 import { GET as readyzGet } from "../../web/src/app/readyz/route.ts";
-import { GET as apiGet, POST as apiPost } from "../../web/src/app/api/[[...slug]]/route.ts";
+import { GET as apiGet, POST as apiPost, PATCH as apiPatch } from "../../web/src/app/api/[[...slug]]/route.ts";
 
 const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json", import.meta.url)));
 
@@ -39,6 +39,13 @@ test("Next.js App Router route handlers dispatch session, project, healthz, read
     assert.equal(sessionRes.status, 200);
     const cookie = sessionRes.headers.get("set-cookie").split(";")[0];
     const { csrfToken } = await sessionRes.json();
+
+    const missingResume = await apiPatch(new Request("http://127.0.0.1:5173/api/resumes/missing", {
+      method: "PATCH",
+      headers: { cookie, "x-csrf-token": csrfToken, "content-type": "application/json" },
+      body: JSON.stringify({ revision: 1, draft: {} })
+    }));
+    assert.equal(missingResume.status, 404);
 
     const createRes = await apiPost(new Request("http://127.0.0.1:5173/api/projects", {
       method: "POST",

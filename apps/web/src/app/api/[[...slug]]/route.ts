@@ -19,6 +19,10 @@ export async function PUT(request: Request) {
   return handleNextRouteRequest(request);
 }
 
+export async function PATCH(request: Request) {
+  return handleNextRouteRequest(request);
+}
+
 export async function DELETE(request: Request) {
   return handleNextRouteRequest(request);
 }
