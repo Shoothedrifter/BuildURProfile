@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from buildurprofile_agent.skills.pdf_layout import extract_pdf_source
+from buildurprofile_agent.skills.pdf_layout import _page_lines, extract_pdf_source
 from buildurprofile_agent.skills.section_classifier import classify_sections
 from buildurprofile_agent.skills.item_splitter import split_items, make_draft
 from buildurprofile_agent.providers.text_model import OpenAIResumeTextModel
@@ -83,6 +83,29 @@ class FakeModel:
     async def generate_json(self, name: str, schema: dict, prompt: str) -> dict:
         self.calls.append(name)
         return self.answers.pop(0)
+
+
+def test_pdf_layout_discards_decorative_bullet_rows_but_keeps_content():
+    class Page:
+        width = 400
+
+        def extract_words(self, **_):
+            return [
+                {"text": "\uf06c", "top": 20, "bottom": 25, "x0": 20, "x1": 24,
+                 "fontname": "Wingdings", "size": 5},
+                {"text": "Built", "top": 23.5, "bottom": 33.5, "x0": 30, "x1": 55,
+                 "fontname": "Helvetica", "size": 10},
+                {"text": "a", "top": 23.5, "bottom": 33.5, "x0": 58, "x1": 62,
+                 "fontname": "Helvetica", "size": 10},
+                {"text": "service", "top": 23.5, "bottom": 33.5, "x0": 65, "x1": 97,
+                 "fontname": "Helvetica", "size": 10},
+                {"text": "•", "top": 45, "bottom": 55, "x0": 20, "x1": 25,
+                 "fontname": "Helvetica", "size": 10},
+                {"text": "Shipped", "top": 45, "bottom": 55, "x0": 30, "x1": 65,
+                 "fontname": "Helvetica", "size": 10},
+            ]
+
+    assert [line["text"] for line in _page_lines(Page())] == ["Built a service", "• Shipped"]
 
 
 def test_pdf_layout_keeps_column_order_and_stable_evidence_ids():

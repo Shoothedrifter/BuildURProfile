@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from io import BytesIO
+import re
 
 import pdfplumber
 
 from buildurprofile_agent.contracts import ResumeSourceV1
+
+
+DECORATIVE_BULLETS = re.compile(r"^[\s•●·∙▪■◦○▫\uf000-\uf8ff]+$")
 
 
 def _page_lines(page):
@@ -23,7 +27,7 @@ def _page_lines(page):
     for row in rows:
         row.sort(key=lambda item: item["x0"])
         text = " ".join(word["text"] for word in row).strip()
-        if text:
+        if text and not DECORATIVE_BULLETS.fullmatch(text):
             lines.append({"text": text, "x0": min(w["x0"] for w in row),
                           "top": min(w["top"] for w in row), "x1": max(w["x1"] for w in row),
                           "bottom": max(w["bottom"] for w in row),
