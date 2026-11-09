@@ -126,6 +126,87 @@ async def test_formatter_accepts_date_spacing_changes_without_inventing_numbers(
 
 
 @pytest.mark.asyncio
+async def test_formatter_accepts_chinese_calendar_dates_normalized_to_numeric():
+    # 中文简历常写「2022年9月」，模型规范化为 2022.09 时数字必须按等价类回源，而非逐字匹配
+    raw = source("华大学 2022年9月 - 2026年6月 本科在读")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "education", "page": 1,
+         "text": "华大学 2022年9月 - 2026年6月 本科在读"}]})
+    model = FakeModel({"items": [{"anchorId": "a0", "kind": "education", "title": "华大学",
+                                  "details": "2022.09-2026.06 本科在读", "confidence": .9}]})
+    formatted = await format_anchors(raw, anchors, model)
+    assert formatted[0]["details"] == "2022.09-2026.06 本科在读"
+
+
+@pytest.mark.asyncio
+async def test_formatter_accepts_separator_and_leading_zero_variants():
+    # 分隔符（/ - .）与月份前导零属于排版差异：2022/9 与 2022.09 是同一个数字
+    raw = source("某公司 2022/9 - 2026/6 前端实习")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "workExperience", "page": 1,
+         "text": "某公司 2022/9 - 2026/6 前端实习"}]})
+    model = FakeModel({"items": [{"anchorId": "a0", "kind": "workExperience", "title": "某公司",
+                                  "details": "2022.09 - 2026.06 前端实习", "confidence": .9}]})
+    formatted = await format_anchors(raw, anchors, model)
+    assert formatted[0]["details"] == "2022.09 - 2026.06 前端实习"
+
+
+@pytest.mark.asyncio
+async def test_formatter_accepts_dates_from_split_pdf_text_items():
+    # PDF 常把日期拆成独立文本块（2022 09），去空白后粘连成 202209；按数字位整体等价即可回源
+    raw = source("某公司 2022 09 - 2026 06 前端实习")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "workExperience", "page": 1,
+         "text": "某公司 2022 09 - 2026 06 前端实习"}]})
+    model = FakeModel({"items": [{"anchorId": "a0", "kind": "workExperience", "title": "某公司",
+                                  "details": "2022.09-2026.06 前端实习", "confidence": .9}]})
+    formatted = await format_anchors(raw, anchors, model)
+    assert formatted[0]["details"] == "2022.09-2026.06 前端实习"
+
+
+@pytest.mark.asyncio
+async def test_formatter_still_rejects_rearranged_or_invented_number_segments():
+    # 等价类只容忍排版差异：把 9 月改写成 90、或凭空多一个数量级，依然必须拒绝
+    raw = source("华大学 2022年9月 入学", "服务 3000 万用户")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "education", "page": 1, "text": "华大学 2022年9月 入学"},
+        {"anchorId": "a1", "kind": "projects", "page": 1, "text": "服务 3000 万用户"}]})
+    model = FakeModel({"items": [
+        {"anchorId": "a0", "kind": "education", "title": "华大学",
+         "details": "2022.90 入学", "confidence": .9},
+        {"anchorId": "a1", "kind": "projects", "title": "增长项目",
+         "details": "服务 30000 万用户", "confidence": .9}]})
+    with pytest.raises(ValueError, match="number|source|claim"):
+        await format_anchors(raw, anchors, model)
+
+
+@pytest.mark.asyncio
+async def test_number_rejection_names_the_number_and_anchor_for_diagnosis():
+    # 拒绝时必须留下可诊断上下文：被拒数字与锚点原文，线上失败才能定位到具体条目
+    raw = source("项目甲", "完成模型训练")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "projects", "page": 1,
+         "text": "项目甲\n完成模型训练"}]})
+    model = FakeModel({"items": [{"anchorId": "a0", "kind": "projects", "title": "项目甲",
+                                  "details": "训练准确率提升 90%", "confidence": .99}]})
+    with pytest.raises(ValueError, match=r"absent from source.*number=90.*anchor=a0.*项目甲"):
+        await format_anchors(raw, anchors, model)
+
+
+@pytest.mark.asyncio
+async def test_formatter_accepts_a_label_and_score_fused_after_whitespace_removal():
+    # 「CET-6：575」被写成「CET-6 575」后去空白粘连成 6575：按原文数字流的子串回源
+    raw = source("英语类：雅思：6.5 CET-6：575 CET-4：542")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "skills", "page": 1,
+         "text": "英语类：雅思：6.5 CET-6：575 CET-4：542"}]})
+    model = FakeModel({"items": [{"anchorId": "a0", "kind": "skills", "title": "语言能力",
+                                  "details": "CET-6 575、CET-4 542", "confidence": .9}]})
+    formatted = await format_anchors(raw, anchors, model)
+    assert formatted[0]["details"] == "CET-6 575、CET-4 542"
+
+
+@pytest.mark.asyncio
 async def test_unseen_latin_terms_require_review_without_fragmenting_the_item():
     raw = source("项目甲", "完成模型训练")
     anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [

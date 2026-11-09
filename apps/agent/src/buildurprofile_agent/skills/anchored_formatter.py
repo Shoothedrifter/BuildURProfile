@@ -129,12 +129,39 @@ def align_anchors(source: ResumeSourceV1 | dict, plan: dict) -> list[dict]:
     return resolved
 
 
+def _number_equivalent(number: str, original_numbers: list[str], segments: set[str],
+                       digits_stream: str) -> bool:
+    """数字等价比较：容忍分隔符/前导零的排版改写与 PDF 分离文本块的粘连，编造的数字仍不可回源。"""
+    parts = [part.lstrip("0") or "0" for part in re.split(r"[.,/-]", number)]
+    # 每个数字段都在原文出现过：2022.09 ≡ 2022/9 ≡ 2022年9月（段 2022、9 各自命中）
+    if all(part in segments for part in parts):
+        return True
+    digits = re.sub(r"\D", "", number)
+    if not digits:
+        return False
+    # 去掉全部分隔符后数字位完全一致：PDF 分离文本块去空白后粘连成 202209-202606
+    if any(digits == re.sub(r"\D", "", whole) for whole in original_numbers):
+        return True
+    # 标签与分数在去空白后粘连（CET-6：575 写成 CET-6 575 → 6575）：
+    # 数字位须按原顺序落在原文数字流的子串里，重排或编造（202290、30000）不会命中
+    return digits in digits_stream
+
+
 def _grounded_output(item: dict, anchor: dict) -> bool:
     original = re.sub(r"\s+", "", unicodedata.normalize("NFKC", anchor["text"]).lower())
     output = re.sub(r"\s+", "", unicodedata.normalize("NFKC", item["title"] + "\n" + item["details"]).lower())
+    # 原文数字的等价段集合：按 . , / - 切分并去前导零；数字流按出现顺序拼接，供排版变体回源比较
+    original_numbers = re.findall(r"\d+(?:[.,/-]\d+)*", original)
+    segments = {part.lstrip("0") or "0" for whole in original_numbers
+                for part in re.split(r"[.,/-]", whole)}
+    digits_stream = "".join(re.sub(r"\D", "", whole) for whole in original_numbers)
     for number in re.findall(r"\d+(?:[.,/-]\d+)*", output):
-        if number not in original:
-            raise ValueError("PARSE_FAILED: formatted number absent from source")
+        if number not in original and not _number_equivalent(number, original_numbers, segments,
+                                                             digits_stream):
+            # 带上被拒数字与锚点原文，线上失败可定位到具体条目
+            raise ValueError(
+                f"PARSE_FAILED: formatted number absent from source: number={number} "
+                f"anchor={anchor['anchorId']} text={anchor['text'][:120]!r}")
     return any(token not in original for token in re.findall(r"[a-z][a-z0-9._+-]{2,}", output))
 
 
