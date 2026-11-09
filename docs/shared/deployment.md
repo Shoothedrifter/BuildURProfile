@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | [apps/launcher/.env.local.example](../../apps/launcher/.env.local.example) | 本机 Next.js 与开发启动器 | 根 `.env` |
 | [apps/launcher/.env.example](../../apps/launcher/.env.example) | Compose 的 Next.js 支付配置 | 根 `.env.api` |
-| [apps/agent/.env.example](../../apps/agent/.env.example) | Python 图像供应商 | 根 `.env.agent` |
+| [apps/agent/.env.example](../../apps/agent/.env.example) | Python 图像与简历文本供应商 | 根 `.env.agent` |
 | [deploy/.env.compose.example](../../deploy/.env.compose.example) | Compose 的共享服务令牌 | 补入根 `.env` |
 
 已有目标文件时逐项补充，不覆盖文件。不把真实配置或密钥提交到 Git。模块目录中的样例不意味着入口会自动读取模块内的实际 `.env`。
@@ -21,13 +21,13 @@
 | `python -m buildurprofile_agent.server` | 进程环境，不自动读取环境文件 |
 | `docker compose -f compose.agent.yml up --build` | 根 `.env` 用于变量替换，`.env.api` / `.env.agent` 分别注入两个服务 |
 
-支付宝凭据只给 Next.js 服务端，图像凭据只给 Python；共享 `AGENT_SERVICE_TOKEN` 只给服务进程，不暴露给客户端。
+支付宝凭据只给 Next.js 服务端，图像与 OpenAI 文本凭据只给 Python；共享 `AGENT_SERVICE_TOKEN` 只给服务进程，不暴露给客户端。Agent 简历解析需在根 `.env.agent` 配置 `OPENAI_API_KEY` 和 `RESUME_TEXT_MODEL`；缺少时解析任务返回 `PARSE_FAILED`。
 
 ## 本机开发
 
 1. 安装 Node.js 22.12+（推荐 24+）、Python 3.11+ 和 uv 0.11.x。
 2. 运行 `npm ci` 和 `uv sync --project apps/agent --frozen --extra test`。
-3. 无照片预览可直接运行 `npm run dev`。需要支付时，从 `apps/launcher/.env.local.example` 准备根 `.env`；需要肖像时，再准备根 `.env.agent` 并运行 `npm run setup:avatar`。
+3. 旧浏览器解析与无照片预览可直接运行 `npm run dev`。新 Agent 简历解析需从 `apps/agent/.env.example` 准备根 `.env.agent`，填入 `OPENAI_API_KEY` 和 `RESUME_TEXT_MODEL`；需要支付时，再从 `apps/launcher/.env.local.example` 准备根 `.env`；需要肖像时运行 `npm run setup:avatar` 并配置图像供应商。
 4. 打开 `http://127.0.0.1:5173`；Next.js 开发服务默认监听 5173（前后端同源），Agent 默认 8788。图像服务配置见[Agent](../agent/README.md)，支付字段见[支付文档](../api/payment.md)。
 
 启动脚本会自动检测 `apps/agent/.venv/bin/python`（Unix）与 `apps/agent/.venv/Scripts/python.exe`（Windows），也可通过环境变量 `PYTHON` 显式指定 Python 路径。

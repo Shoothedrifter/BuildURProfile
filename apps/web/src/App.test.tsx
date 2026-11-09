@@ -42,7 +42,7 @@ const pages = [
 ];
 
 function openUpload() {
-  fireEvent.click(screen.getByRole("button", { name: /免费开始制作/ }));
+  fireEvent.click(screen.getByRole("button", { name: /浏览器解析（兼容）/ }));
 }
 
 async function chooseAndParse(name = "resume.pdf") {

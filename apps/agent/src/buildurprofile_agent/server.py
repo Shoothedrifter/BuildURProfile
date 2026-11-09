@@ -14,7 +14,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from .providers import create_image_provider
 from .transport.node_api import NodeAgentClient
-from .worker import worker_loop
+from .worker import worker_loop, resume_worker_loop
 
 log = logging.getLogger(__name__)
 
@@ -33,13 +33,19 @@ async def lifespan(app: FastAPI):
         provider = create_image_provider(os.getenv("IMAGE_PROVIDER", "cloudflare"))
         worker = asyncio.create_task(worker_loop(client, provider, saver,
             worker_id=os.getenv("AGENT_WORKER_ID") or None))
+        resume_worker = asyncio.create_task(resume_worker_loop(client, saver,
+            worker_id=os.getenv("AGENT_RESUME_WORKER_ID") or None))
         app.state.worker = worker
+        app.state.resume_worker = resume_worker
         try:
             yield
         finally:
             worker.cancel()
+            resume_worker.cancel()
             with suppress(asyncio.CancelledError):
                 await worker
+            with suppress(asyncio.CancelledError):
+                await resume_worker
             await client.close()
 
 
@@ -49,7 +55,8 @@ app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
 @app.get("/healthz")
 async def healthz(response: Response):
     worker = getattr(app.state, "worker", None)
-    healthy = bool(worker and not worker.done())
+    resume_worker = getattr(app.state, "resume_worker", None)
+    healthy = bool(worker and not worker.done() and resume_worker and not resume_worker.done())
     if not healthy:
         response.status_code = 503
     return {"ok": healthy, "component": "agent"}

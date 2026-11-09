@@ -58,9 +58,11 @@ def extract_pdf_source(pdf_bytes: bytes, *, file_id: str, uploaded_at: str,
             if not 1 <= len(pdf.pages) <= 20:
                 raise ValueError("PARSE_FAILED: page limit")
             blocks = []
+            total_chars = 0
             for page_number, page in enumerate(pdf.pages, 1):
                 for index, line in enumerate(_reading_order(_page_lines(page), page.width)):
-                    if len(blocks) >= 5000 or len(line["text"]) > 12000:
+                    total_chars += len(line["text"])
+                    if len(blocks) >= 5000 or len(line["text"]) > 12000 or total_chars > 200000:
                         raise ValueError("PARSE_FAILED: text limit")
                     blocks.append({"blockId": f"p{page_number}_b{index}", "page": page_number,
                                    "bbox": [round(line["x0"], 2), round(line["top"], 2),
@@ -74,5 +76,5 @@ def extract_pdf_source(pdf_bytes: bytes, *, file_id: str, uploaded_at: str,
                 "expiresAt": expires_at, "pageCount": len(pdf.pages), "blocks": blocks})
     except ValueError:
         raise
-    except Exception as exc:
-        raise ValueError("PARSE_FAILED: invalid PDF") from exc
+    except Exception:
+        raise ValueError("PARSE_FAILED: invalid PDF") from None

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,30 @@ def pdf_at(*texts: tuple[int, int, str]) -> bytes:
         f"<< /Length {len(stream.encode())} >>\nstream\n{stream}\nendstream",
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ]
+    body, offsets = b"%PDF-1.7\n", [0]
+    for index, obj in enumerate(objects, 1):
+        offsets.append(len(body))
+        body += f"{index} 0 obj\n{obj}\nendobj\n".encode()
+    start = len(body)
+    body += f"xref\n0 {len(objects)+1}\n0000000000 65535 f \n".encode()
+    body += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets[1:])
+    body += f"trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{start}\n%%EOF".encode()
+    return body
+
+
+def pdf_pages(pages: list[list[tuple[int, int, str]]]) -> bytes:
+    count = len(pages)
+    font_id = 3 + count * 2
+    objects = ["<< /Type /Catalog /Pages 2 0 R >>",
+               f"<< /Type /Pages /Count {count} /Kids [" +
+               " ".join(f"{3 + index * 2} 0 R" for index in range(count)) + "] >>"]
+    for index, texts in enumerate(pages):
+        stream = "\n".join(f"BT /F1 12 Tf {x} {y} Td ({value}) Tj ET" for x, y, value in texts)
+        objects.extend([
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 240] /Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {4 + index * 2} 0 R >>",
+            f"<< /Length {len(stream.encode())} >>\nstream\n{stream}\nendstream",
+        ])
+    objects.append("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
     body, offsets = b"%PDF-1.7\n", [0]
     for index, obj in enumerate(objects, 1):
         offsets.append(len(body))
@@ -83,19 +109,9 @@ async def test_classifier_rejects_invented_or_unassigned_source_blocks():
 
 @pytest.mark.asyncio
 async def test_agent_classifies_work_and_campus_separately_and_keeps_low_confidence_unsplit():
-    fake = FakeModel([
-        {"assignments": [
-            {"blockId": "p1_b0", "kind": "basicInfo", "confidence": 0.95},
-            {"blockId": "p1_b1", "kind": "workExperience", "confidence": 0.91},
-            {"blockId": "p1_b2", "kind": "workExperience", "confidence": 0.84},
-            {"blockId": "p1_b3", "kind": "campusExperience", "confidence": 0.92},
-        ]},
-        {"groups": [
-            {"kind": "workExperience", "sourceBlockIds": ["p1_b1"], "confidence": 0.91},
-            {"kind": "workExperience", "sourceBlockIds": ["p1_b2"], "confidence": 0.60},
-            {"kind": "campusExperience", "sourceBlockIds": ["p1_b3"], "confidence": 0.90},
-        ]},
-    ])
+    fixture = json.loads((Path(__file__).resolve().parents[3] /
+        "packages/contracts/fixtures/resume-parse-golden.v1.json").read_text())
+    fake = FakeModel([fixture["sections"], fixture["items"]])
     classified = await classify_sections(source(), fake)
     grouped = await split_items(source(), classified, fake)
     draft = make_draft(source(), "resume-1", classified, grouped)
@@ -105,6 +121,7 @@ async def test_agent_classifies_work_and_campus_separately_and_keeps_low_confide
     assert [item.sourceBlockIds for item in by_kind["workExperience"].items] == [["p1_b1", "p1_b2"]]
     assert by_kind["workExperience"].items[0].needsReview
     assert [item.sourceBlockIds for item in by_kind["campusExperience"].items] == [["p1_b3"]]
+    assert len(by_kind["workExperience"].items) == fixture["expected"]["workItems"]
     assert all(not item.included for section in draft.sections for item in section.items)
     basic = by_kind["basicInfo"].items[0]
     assert {fact.key: fact.value for fact in basic.facts}["email"] == "jane@example.com"
@@ -162,3 +179,19 @@ def test_pdf_layout_rejects_invalid_or_textless_files():
     with pytest.raises(ValueError, match="no extractable text"):
         extract_pdf_source(pdf_at(), file_id="f", uploaded_at="2026-11-09T00:00:00Z",
                            expires_at="2026-12-09T00:00:00Z")
+
+
+@pytest.mark.asyncio
+async def test_cross_page_project_keeps_both_source_blocks_and_high_confidence_split():
+    raw = extract_pdf_source(pdf_pages([[(20, 200, "Project Alpha")], [(20, 200, "Result on page two")]]),
+                             file_id="file-cross", uploaded_at="2026-11-09T00:00:00Z",
+                             expires_at="2026-12-09T00:00:00Z")
+    assert [block.blockId for block in raw.blocks] == ["p1_b0", "p2_b0"]
+    fake = FakeModel([{"groups": [{"kind": "projects", "sourceBlockIds": ["p1_b0", "p2_b0"],
+                                    "confidence": .95}]}])
+    classified = [{"blockId": block.blockId, "kind": "projects", "confidence": .9}
+                  for block in raw.blocks]
+    draft = make_draft(raw, "resume-cross", classified, await split_items(raw, classified, fake))
+    project = next(section for section in draft.sections if section.kind == "projects").items[0]
+    assert project.sourceBlockIds == ["p1_b0", "p2_b0"]
+    assert project.details == "Project Alpha\nResult on page two"

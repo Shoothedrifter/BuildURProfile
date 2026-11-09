@@ -14,7 +14,7 @@ from PIL import Image
 from buildurprofile_agent.skills.registry import default_registry
 from buildurprofile_agent.providers.openai_images import GeneratedImage
 from buildurprofile_agent.transport.node_api import NodeAgentClient
-from buildurprofile_agent.worker import process_task
+from buildurprofile_agent.worker import process_task, process_resume_task
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -60,16 +60,16 @@ async def test_real_node_bridge_text_only():
             resume_task = await client.lease_resume("python_resume_integration")
             assert resume_task and resume_task.resume_id == endpoint["resumeId"]
             assert (await client.resume_source(resume_task)).startswith(b"%PDF-")
-            await client.heartbeat_resume(resume_task, stage="verify_evidence", progress=90)
-            source = json.loads((ROOT / "packages/contracts/fixtures/resume-source.v1.json").read_text())
-            draft = json.loads((ROOT / "packages/contracts/fixtures/resume-draft.v1.json").read_text())
-            source.update(fileId=resume_task.file_id, uploadedAt=resume_task.uploaded_at,
-                          expiresAt=resume_task.expires_at)
-            draft.update(fileId=resume_task.file_id, resumeId=resume_task.resume_id, revision=1)
-            for section in draft["sections"]:
-                for item in section["items"]:
-                    item["included"] = False
-            assert await client.complete_resume(resume_task, source, draft)
+
+            class MockTextModel:
+                async def generate_json(self, name, schema, prompt):
+                    assert name == "resume_sections_v1"
+                    assert "Synthetic fixture" in prompt
+                    return {"assignments": [{"blockId": "p1_b0", "kind": "other",
+                                            "confidence": .95}]}
+
+            await process_resume_task(resume_task, client, MockTextModel(), default_registry(),
+                                      MemorySaver(), "python_resume_integration")
             from buildurprofile_agent.transport.node_api import LeaseLost
             with pytest.raises(LeaseLost):
                 await client.resume_source(resume_task)

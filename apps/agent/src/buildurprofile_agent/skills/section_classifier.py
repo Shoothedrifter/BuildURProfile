@@ -32,9 +32,10 @@ async def classify_sections(source: ResumeSourceV1 | dict, model) -> list[dict]:
         if not isinstance(item, dict) or set(item) != {"blockId", "kind", "confidence"}:
             raise ValueError("PARSE_FAILED: invalid assignment")
         block_id, kind, confidence = item["blockId"], item["kind"], item["confidence"]
-        if block_id not in ids or block_id in seen or kind not in RESUME_MODULE_MAPPING or (
+        if (not isinstance(block_id, str) or not isinstance(kind, str)
+                or block_id not in ids or block_id in seen or kind not in RESUME_MODULE_MAPPING or (
                 isinstance(confidence, bool) or not isinstance(confidence, (int, float))
-                or not 0 <= confidence <= 1):
+                or not 0 <= confidence <= 1)):
             raise ValueError("PARSE_FAILED: invented or duplicate evidence block")
         seen.add(block_id)
     if seen != ids:

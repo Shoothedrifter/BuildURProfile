@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-- `apps/web`：Next.js（App Router）全栈应用；前端在浏览器内解析 PDF、确认字段、编辑和展示作品，服务端通过 Route Handlers 提供会话、CSRF、项目、任务、资产、支付核实、交付与内部 Agent 接口。
+- `apps/web`：Next.js（App Router）全栈应用；新流程上传 PDF 并核对 Agent 草稿，旧浏览器解析是兼容入口；服务端通过 Route Handlers 提供会话、CSRF、私有 PDF、项目、任务、资产、支付核实、交付与内部 Agent 接口。
 - `apps/launcher`：服务启动、联调编排、集成测试与容器化部署入口（负责协调启动 Next.js Web 与 Python LangGraph Agent）。
 - `apps/agent`：Python FastAPI + LangGraph；通过私有 HTTP 协议领取任务并调用版本化 Skills。无照片作品同样必须经过图执行。
 - `packages/contracts`：展示合同、运行时校验、JSON Schema 和黄金样例。
@@ -27,7 +27,7 @@
 
 - P0 上传原 PDF、来源块和私有草稿可在受会话保护的服务端从上传起存储 30 天，到期自动删除，用户可提前删除。旧浏览器解析的 `sourceRefs` 仍只留在浏览器内存。模型供应商只接收分类/拆条必要块，上传前须披露期限及供应商。只有用户确认的展示字段、角色和测评答案进入生成 API。
 - 照片只在用户主动提交后进入私有资产区并交给配置的图像供应商；上传界面须说明该传输。
-- checkpoint 不保存 PDF 原文、来源片段、照片字节、密钥或支付数据；只保存任务所需的确认字段和资产 ID。
+- checkpoint 不保存 PDF 原文、来源片段、照片字节、密钥或支付数据；解析图只保存任务 ID、文件 ID、阶段与版本，生成图只保存任务所需的确认字段和资产 ID。
 - `.env` 及其变体、`.alipay-sandbox.json`、`data/`、私钥和真实简历样例不得提交、输出到日志或复制进前端；沙箱凭据文件在类 Unix 环境必须为普通文件且权限 `0600`。
 - 日志只记录任务 ID、节点、耗时和错误码。自动测试使用可提交的合成样例。
 - 匿名项目所有权由服务端会话决定；写操作保持 CSRF 校验，任务和资产按会话隔离。

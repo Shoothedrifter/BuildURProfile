@@ -1,12 +1,13 @@
 # Web（Next.js 全栈应用）
 
-`apps/web` 是基于 Next.js（App Router）+ React + TypeScript + Tailwind CSS 的全栈应用。前端负责浏览器内 PDF 解析、字段确认、八题测评、生成进度、编辑和作品展示；服务端通过 App Router Route Handlers 统一提供会话、任务、资产、支付与作品集交付接口。
+`apps/web` 是基于 Next.js（App Router）+ React + TypeScript + Tailwind CSS 的全栈应用。新简历流程上传 PDF 并交给 Python Agent 解析，前端负责核对、八题测评、生成进度、编辑和作品展示；服务端通过 App Router Route Handlers 提供会话、私有 PDF、解析任务、资产、支付与作品集交付接口。
 
 ## 用户流程与边界
 
-文本型 PDF → 浏览器本地提取与解析 → 用户核对展示字段 → 选择职业并完成测评 → 提交已确认内容与答案到 Next.js API → Python Agent 生成配置 → 编辑与预览 → 付费分享或导出个人作品集网页。
+文本型 PDF → `/upload` 私有上传 → Agent `resume-parse-v1` 分类与拆条 → `/editor/:resumeId` 对照原 PDF 核对十模块并保存 → `/style/:resumeId` 选择职业并完成测评 → 仅提交确认内容与答案 → Python Agent `python-agent-v2` 生成配置 → 编辑与预览 → 付费分享或导出个人作品集网页。
 
-- PDF 字节、提取全文及来源片段始终留在浏览器内存，不上传、不持久化；扫描件 OCR 未接入。
+- 新流程的原 PDF、来源块与私有草稿从上传起在受会话保护的服务端保留 30 天，可提前删除；Agent 仅向 OpenAI 发送分类/拆条必需的文字块。编辑页可刷新后继续预览原件；扫描件 OCR 未接入。
+- 首页保留明确标注的“浏览器解析（兼容）”入口；该旧路径的 PDF 与候选内容仍只留在浏览器内存。新流程模型失败时不会回退到旧路径并假称 AI 解析成功。
 - 确认页覆盖基本信息、求职意向、自我评价、教育、实习/工作、项目、奖项、校园、技能和其他内容。浏览器解析产出带来源、页码和展示选择的 `ResumeCandidateV2`，工作与校园经历是两个独立数组；识别结果可选择展示或调整分类，个人细节与期待薪资默认关闭。确认后生成 `resume-v1` 结构化内容，来源页码和原文不会进入生成 brief。
 - **产品本体 vs. 交付产物**：`apps/web` 是生成器产品本体（全栈应用），不部署到 GitHub Pages；用户生成的**个人作品集页面（Showcase）**才是最终交付产物。
 - 肖像是可选的本机 demo；照片在主动提交前只留在浏览器。提交时须说明会交给图像供应商处理。Wibi 产物的使用限制见[Agent](../agent/README.md)。
@@ -17,6 +18,7 @@
 | --- | --- |
 | `src/app/layout.tsx`、`src/app/page.tsx` | Next.js 根布局与主页入口 |
 | `src/app/payment/return/page.tsx` | 支付宝同步跳转返回恢复路由 |
+| `src/app/upload/page.tsx`、`src/app/editor/[resumeId]/page.tsx`、`src/app/style/[resumeId]/page.tsx` | Agent 上传、十模块核对与风格选择 |
 | `src/app/api/[[...slug]]/route.ts` | 统一 API 与内部 Agent 协议 Route Handler |
 | `src/app/healthz/route.ts`、`src/app/readyz/route.ts` | 健康与 Agent 就绪探针路由 |
 | `src/server/` | 服务端核心实现（配置、会话/CSRF、项目与支付服务、生成与内部桥接路由、作品集 ZIP 打包） |

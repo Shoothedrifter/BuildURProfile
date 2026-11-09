@@ -3,19 +3,19 @@
 ## 模块所有权与数据流
 
 ```text
-浏览器客户端（Next.js Client Components）：PDF 提取 → 字段确认 → 八题答案
-  ↓ 确认 brief + 可选照片资产 ID
+浏览器客户端（Next.js Client Components）：PDF 上传 → 十模块核对 → 八题答案
+  ↓ 私有 PDF 上传与解析任务；确认后提交 brief + 可选照片资产 ID
 Next.js Route Handlers（apps/web/src/app/api & src/server）
-  ├─ 会话 / CSRF / 任务队列 / 私有资产（SQLite via packages/storage）
+  ├─ 会话 / CSRF / 解析与生成队列 / 私有 PDF 和资产（SQLite via packages/storage）
   ├─ ↕ 服务令牌 + 有效任务租约（/_internal/agent/*）
-  │    Python Agent（apps/agent）：LangGraph → 版本化 Skills → 可选外部图像 API
+  │    Python Agent（apps/agent）：简历解析图 → OpenAI 文本模型；生成图 → 可选图像 API
   │      ↓ DesignConfig + 成图资产 ID
   └─ 预览与编辑 → 用户主动请求 → 核实支付 → 正式分享 / 作品集导出
 ```
 
 | 模块 | 所有权与依赖 |
 | --- | --- |
-| `apps/web` | Next.js App Router 全栈应用；前端负责浏览器 PDF 解析、确认、编辑和展示，服务端（`src/server` 与 Route Handlers）独占项目、支付、任务、会话与资产存储 |
+| `apps/web` | Next.js App Router 全栈应用；新流程负责私有 PDF 上传与 Agent 草稿确认，旧浏览器解析为兼容入口；服务端独占项目、支付、任务、会话与资产存储 |
 | `apps/launcher` | 启动、联调、集成测试与容器化部署入口；协调 Next.js 服务与 Python Agent 生命周期 |
 | `apps/agent` | 唯一生成任务消费者；独立 Python Skill 注册表；通过私有 HTTP 读写本任务，不访问支付卷 |
 | `packages/contracts` | TypeScript 类型、Node 校验、版本化 JSON Schema 和跨语言黄金样例 |
@@ -30,7 +30,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 图顺序为：校验输入 → 选择 Skill 计划 → 评分 → 设计映射 → 注入确认内容 → 可选肖像 → 最终 QA → 提交配置。Skill 声明稳定 ID、版本、能力、输入输出和超时，执行器只授予当前节点所需能力。
 
-目前 `resume.parse.v3` 仍在浏览器中用规则解析 PDF 文本，输出只存于浏览器内存的 `ResumeCandidateV2`（`packages/contracts/schema/resume-candidate.v2.json`），其中工作与校园经历独立，每条候选内容带来源、页码和展示选择。`resume.confirm.v3` 输出去掉来源的 A–D `resume-v1` 合同，`resume.compose.v2` 将确认内容注入固定作品骨架。P0 独立 resume-parse-v1 队列使用私有 resume-source-v1 来源块和 resume-draft-v1 十模块草稿，确认投影剥离来源及隐藏字段后复用 resume-v1。用户核对是持久边界；原件、块与草稿受会话隔离，从上传起 30 天自动删除，可提前删除。模型仅接收必要块。接口和工作流由后续 P0 步骤接入，旧候选读取保持兼容。
+新上传路径由 `resume-parse-v1` 独立队列和七节点 LangGraph 图解析；`resume.sections.v1` 与 `resume.items.v1` 调用 OpenAI 文本模型，固定映射和来源校验由代码执行。私有 `resume-source-v1` 块与 `resume-draft-v1` 十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存并确认，投影剥离来源及隐藏字段后复用 `resume-v1`。原件、块与草稿从上传起 30 天自动删除，可提前删除。旧 `resume.parse.v3` 浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
 
 图状态与 checkpoint 可保存任务 ID、清洗后的 brief、评分、配置、Skill 版本、风格与资产 ID、QA 结果。不得保存 PDF 原文、`sourceRefs`、照片字节、密钥和支付数据。照片及风格参考图仅在外部图像请求期间读取。
 

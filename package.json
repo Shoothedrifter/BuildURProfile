@@ -19,8 +19,8 @@
     "test:skills": "node --test packages/skills/src/*.test.mjs",
     "test:agent": "node scripts/test-python-agent.mjs && node --test apps/launcher/src/internal-agent.test.mjs apps/launcher/src/generations.test.mjs",
     "test": "vitest run --config vitest.config.ts",
-    "build": "tsc --noEmit && next build apps/web",
-    "build:tunnel": "NEXT_PUBLIC_APP_MODE=tunnel tsc --noEmit && NEXT_PUBLIC_APP_MODE=tunnel next build apps/web"
+    "build": "tsc --noEmit && next build apps/web --webpack",
+    "build:tunnel": "NEXT_PUBLIC_APP_MODE=tunnel tsc --noEmit && NEXT_PUBLIC_APP_MODE=tunnel next build apps/web --webpack"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.5",

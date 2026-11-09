@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { DesignConfig, JobRole, ResumeContent } from "../../../packages/contracts/src/config";
+import type { ResumeDraftV1 } from "../../../packages/contracts/src/resume-draft";
+import { projectConfirmedResume } from "../../../packages/contracts/src/resume-draft";
 import type { AvatarStyleId, GenerationStatus } from "./lib/generationApi";
 import type { Offer, OwnedProject } from "./lib/paymentApi";
 import type { DraftField, ResumeDraft } from "./lib/resume";
@@ -19,6 +21,7 @@ import { toPublishedConfig } from "./lib/publication";
 import { generationApi } from "./lib/generationApi";
 import { preparePortrait } from "./lib/portrait";
 import { createDefaultSkillRegistry } from "../../../packages/skills/src/registry";
+import { resumeApi } from "./lib/resumeApi";
 
 const workflowSkills = createDefaultSkillRegistry();
 const agentStatusText = (status: GenerationStatus): string => status === "QUEUED"
@@ -61,6 +64,7 @@ export default function App() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<ResumeDraft | null>(null);
+  const [agentDraft, setAgentDraft] = useState<ResumeDraftV1 | null>(null);
   const [role, setRole] = useState<JobRole>("frontend-creative-developer");
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [generated, setGenerated] = useState<DesignConfig | null>(null);
@@ -194,6 +198,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const match = /^\/style\/([A-Za-z0-9_-]+)$/.exec(window.location.pathname);
+    if (!match) return;
+    let active = true;
+    setProgress("正在读取已确认的简历草稿…");
+    void resumeApi.read(match[1]).then(({ draft: nextDraft }) => {
+      projectConfirmedResume(nextDraft);
+      if (!active) return;
+      setAgentDraft(nextDraft);
+      setProgress("");
+      setPhase((current) => current === "landing" ? "quiz" : current);
+    }).catch((cause) => {
+      if (!active) return;
+      setProgress("");
+      setError(cause instanceof Error ? cause.message : "读取简历草稿失败，请返回编辑页。");
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     const onTouch = () => setIsTouch(true);
     window.addEventListener("touchstart", onTouch, { passive: true, once: true });
     return () => window.removeEventListener("touchstart", onTouch);
@@ -218,6 +241,7 @@ export default function App() {
     setSelectedFile(file);
     setFileName(file.name);
     setDraft(null);
+    setAgentDraft(null);
     setGenerated(null);
   };
 
@@ -373,10 +397,17 @@ export default function App() {
   };
 
   const generate = async () => {
-    if (!draft || !isAssessmentComplete(answers)) return;
-    const confirmation = workflowSkills.runSync("resume.confirm.v3", { draft },
-      { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as
-      { problems: string[]; content?: ResumeContent };
+    if ((!draft && !agentDraft) || !isAssessmentComplete(answers)) return;
+    let confirmation: { problems: string[]; content?: ResumeContent };
+    try {
+      confirmation = agentDraft ? { problems: [], content: projectConfirmedResume(agentDraft) }
+        : workflowSkills.runSync("resume.confirm.v3", { draft },
+          { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as
+          { problems: string[]; content?: ResumeContent };
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "请重新确认简历内容。");
+      return;
+    }
     if (confirmation.problems.length || !confirmation.content) {
       setError(confirmation.problems.slice(0, 3).join("；") || "请重新确认简历内容。");
       return;

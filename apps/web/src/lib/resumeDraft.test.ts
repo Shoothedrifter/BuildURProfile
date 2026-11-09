@@ -77,3 +77,17 @@ it('preserves supplementary Unicode within the confirmed display limit', () => {
   draft.sections[4].items = [{ ...draft.sections[0].items[0], itemId: 'item_work', details: '😀'.repeat(6000) }];
   expect(contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source)).resume?.workExperience[0].details).toBe('😀'.repeat(6000));
 });
+
+it('projects selected Agent experience into the existing showcase fields', () => {
+  const draft = structuredClone(fixture);
+  draft.sections[4].items = [{ ...draft.sections[0].items[0], itemId: 'work_1', order: 0,
+    title: '示例公司', details: '前端开发', facts: [], sourceBlockIds: ['block_1'], included: true }];
+  draft.sections[5].items = [{ ...draft.sections[0].items[0], itemId: 'project_1', order: 0,
+    title: '示例项目', details: '合成说明', facts: [], sourceBlockIds: ['block_1'], included: true }];
+  draft.sections[4].visible = true;
+  draft.sections[5].visible = true;
+  const content = contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source));
+  expect(content.workExperience).toContain('示例公司\n前端开发');
+  expect(content.projects[0]).toMatchObject({ title: '示例项目', description: '合成说明' });
+  expect(JSON.stringify(content)).not.toContain('sourceBlockIds');
+});

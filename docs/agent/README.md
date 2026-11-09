@@ -9,6 +9,7 @@
 | `src/buildurprofile_agent/server.py` | FastAPI、checkpoint 和 worker 生命周期 |
 | `src/buildurprofile_agent/worker.py` | 消费任务、心跳、取消与错误分类 |
 | `src/buildurprofile_agent/graph.py` | LangGraph 节点、条件分支与 Skill 计划 |
+| `src/buildurprofile_agent/graphs/resume_parse.py` | 七节点 `resume-parse-v1` 私有解析图；checkpoint 仅含任务元数据 |
 | `src/buildurprofile_agent/contracts.py` | Python 边界数据模型 |
 | `src/buildurprofile_agent/transport/node_api.py` | 带令牌和租约的 Node 客户端 |
 | `src/buildurprofile_agent/skills/` | 注册表、评分、设计、内容组装、肖像和 QA |
@@ -19,7 +20,9 @@
 
 ## Skill 扩展
 
-当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2`、`avatar.wibi.v1` 和 `artifact.qa.v1`。
+当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2`、`resume.sections.v1`、`resume.items.v1`、`avatar.wibi.v1` 和 `artifact.qa.v1`。后两项简历 Skill 仅获得文本模型能力，分类与拆条结果须经来源块校验。
+
+简历解析由独立 Worker 领取 `resume-parse-v1` 队列。PDF 版面提取使用 `pdfplumber`，模型通过 OpenAI Responses API 的严格 JSON Schema 输出分类和分组；原 PDF、提取文本、模型提示与结果只在当前图执行内存中流转，不进入 LangGraph checkpoint。缺少 `OPENAI_API_KEY` 或 `RESUME_TEXT_MODEL` 时任务明确失败为 `PARSE_FAILED`。使用根 `.env.agent` 设置两项，文本模型名称示例见 [Agent 样例](../../apps/agent/.env.example)。合成假模型跨端测试已覆盖真实 Node HTTP 租约和 Python 图；未配置真实密钥时不视为 OpenAI 实时联调验收。
 
 新增 Skill 时，在 `skills/` 实现并注册稳定 ID、版本、输入输出校验、能力、许可和超时，再由图节点显式授予所需能力。新增能力需加入 `KNOWN_CAPABILITIES` 并审查数据边界；不注入支付、数据库、任意 shell 或文件系统对象。外部下载的 `SKILL.md` 不作为可执行指令运行。
 

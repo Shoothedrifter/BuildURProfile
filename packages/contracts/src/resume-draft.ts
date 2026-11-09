@@ -43,5 +43,24 @@ export function projectConfirmedResume(raw: ResumeDraftV1): ResumeContent {
   const structured = cleanStructuredResume(resume) as unknown as StructuredResumeV1;
   const basic = (key: string) => structured.basicInfo.find(f => f.key === key)?.value.trim() ?? '';
   if (!basic('name') || !(basic('email') || basic('phone'))) throw new Error('Name and email or phone required');
-  return { profile: { name: basic('name'), role: '', location: basic('location'), availability: '', intro: '', summary: '', email: basic('email') }, expertise: { eyebrow: '', headline: '', summary: '', skills: [], disciplines: [] }, projects: [], resume: structured };
+  const entryText = (entry: ResumeEntry): string => [entry.title, entry.details].filter(Boolean).join('\n');
+  const projectVisuals = ['mint', 'lilac', 'peach'] as const;
+  return {
+    profile: {
+      name: basic('name'), role: structured.jobIntent.find(f => f.key === 'targetRole')?.value ?? '',
+      location: basic('location'), availability: structured.jobIntent.find(f => f.key === 'availability')?.value ?? '',
+      intro: '', summary: structured.selfEvaluation.map(entryText).join('\n'), email: basic('email')
+    },
+    expertise: { eyebrow: '', headline: '技能与专长', summary: '',
+      skills: structured.skills.map(entryText).filter(Boolean), disciplines: [] },
+    projects: structured.projects.map((entry, index) => ({
+      id: `resume-project-${index + 1}`, index: String(index + 1).padStart(2, '0'),
+      title: entry.title, category: '', year: '', description: entry.details,
+      tags: [], visual: projectVisuals[index % projectVisuals.length]
+    })),
+    workExperience: structured.workExperience.map(entryText).filter(Boolean),
+    campusExperience: structured.campusExperience.map(entryText).filter(Boolean),
+    education: structured.education.map(entryText).filter(Boolean),
+    resume: structured
+  };
 }

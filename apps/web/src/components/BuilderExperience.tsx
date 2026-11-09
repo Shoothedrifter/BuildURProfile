@@ -274,7 +274,8 @@ export function BuilderExperience(props: BuilderExperienceProps) {
         <div className="proof-value">
           <h2>别只说你会。<br />让对方亲自体验。</h2>
           <p>设计师用页面展示审美与叙事，开发者用交互展示技术与创意。把静态经历，变成可探索的能力证明。</p>
-          <ProofButton variant="primary" onClick={() => go("upload")}>免费开始制作 →</ProofButton>
+          <a className="proof-button proof-button--primary" href="/upload">免费开始制作 · Agent 解析 →</a>
+          <ProofButton onClick={() => go("upload")}>浏览器解析（兼容）</ProofButton>
           <ProofButton onClick={() => go("mock")}>浏览作品集样例</ProofButton>
           <small>免费生成、预览和编辑<br />满意后，按项目解锁发布与导出。</small>
         </div>
@@ -447,7 +448,11 @@ export function BuilderExperience(props: BuilderExperienceProps) {
         </ProofCard>
       </div>
       <div className="proof-actions">
-        <ProofButton onClick={() => go("confirm")}>← 返回资料</ProofButton>
+        <ProofButton onClick={() => {
+          const match = /^\/style\/([A-Za-z0-9_-]+)$/.exec(window.location.pathname);
+          if (match) window.location.assign(`/editor/${match[1]}`);
+          else go("confirm");
+        }}>← 返回资料</ProofButton>
         <ProofButton variant="primary" disabled={Object.keys(answers).length !== 8 || generatingAvatar} onClick={props.onGenerate}>
           {generatingAvatar ? "正在生成作品…" : "生成我的 Showcase →"}
         </ProofButton>

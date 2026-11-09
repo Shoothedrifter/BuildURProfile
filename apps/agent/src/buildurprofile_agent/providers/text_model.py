@@ -5,7 +5,13 @@ from __future__ import annotations
 import json
 import os
 
-from openai import AsyncOpenAI
+from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, InternalServerError, RateLimitError
+
+
+class ResumeTextModelError(ValueError):
+    def __init__(self, *, retryable: bool = False):
+        super().__init__("PARSE_FAILED: text model request failed")
+        self.retryable = retryable
 
 
 class OpenAIResumeTextModel:
@@ -32,5 +38,7 @@ class OpenAIResumeTextModel:
             if not isinstance(result, dict):
                 raise ValueError("Invalid structured output")
             return result
-        except Exception as exc:
-            raise ValueError("PARSE_FAILED: text model request failed") from exc
+        except (APIConnectionError, APITimeoutError, InternalServerError, RateLimitError):
+            raise ResumeTextModelError(retryable=True) from None
+        except Exception:
+            raise ResumeTextModelError() from None

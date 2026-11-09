@@ -1,0 +1,20 @@
+{
+  "version": "resume-parse-golden-v1",
+  "description": "Synthetic model decisions for distinct work and campus modules",
+  "sections": {
+    "assignments": [
+      { "blockId": "p1_b0", "kind": "basicInfo", "confidence": 0.95 },
+      { "blockId": "p1_b1", "kind": "workExperience", "confidence": 0.91 },
+      { "blockId": "p1_b2", "kind": "workExperience", "confidence": 0.84 },
+      { "blockId": "p1_b3", "kind": "campusExperience", "confidence": 0.92 }
+    ]
+  },
+  "items": {
+    "groups": [
+      { "kind": "workExperience", "sourceBlockIds": ["p1_b1"], "confidence": 0.91 },
+      { "kind": "workExperience", "sourceBlockIds": ["p1_b2"], "confidence": 0.60 },
+      { "kind": "campusExperience", "sourceBlockIds": ["p1_b3"], "confidence": 0.90 }
+    ]
+  },
+  "expected": { "workItems": 1, "campusItems": 1, "workNeedsReview": true }
+}

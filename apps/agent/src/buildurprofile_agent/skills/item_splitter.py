@@ -53,7 +53,8 @@ async def split_items(source: ResumeSourceV1 | dict, classified: list[dict], mod
         if not isinstance(group, dict) or set(group) != {"kind", "sourceBlockIds", "confidence"}:
             raise ValueError("PARSE_FAILED: invalid item group")
         ids, kind, confidence = group["sourceBlockIds"], group["kind"], group["confidence"]
-        if (kind not in EXPERIENCE_KINDS or not isinstance(ids, list) or not ids
+        if (not isinstance(kind, str) or kind not in EXPERIENCE_KINDS or not isinstance(ids, list)
+                or not ids or any(not isinstance(block_id, str) for block_id in ids)
                 or len(ids) != len(set(ids)) or isinstance(confidence, bool)
                 or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1
                 or any(block_id not in by_id or kind_by_id.get(block_id) != kind
@@ -115,10 +116,12 @@ def make_draft(source: ResumeSourceV1 | dict, resume_id: str, classified: list[d
             if entry["kind"] != kind:
                 continue
             text = "\n".join(blocks[block_id].text for block_id in entry["sourceBlockIds"])
+            if len(text) > 12000:
+                raise ValueError("PARSE_FAILED: draft item text limit")
             confidence = min(assignments[block_id]["confidence"] for block_id in entry["sourceBlockIds"])
             index = len(items)
             items.append({"itemId": f"{kind}-{index}", "order": index,
-                          "title": text.splitlines()[0][:300], "details": text[:12000],
+                          "title": text.splitlines()[0][:300], "details": text,
                           "facts": _facts(kind, text), "sourceBlockIds": entry["sourceBlockIds"],
                           "confidence": confidence, "segmentationConfidence": entry["confidence"],
                           "needsReview": entry["needsReview"] or confidence < .8,
