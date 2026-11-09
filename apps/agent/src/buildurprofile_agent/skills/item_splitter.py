@@ -86,9 +86,16 @@ def _facts(kind: str, text: str) -> list[dict]:
     for key, label, match in (("email", "邮箱", email), ("phone", "电话", phone)):
         if match:
             facts.append({"key": key, "label": label, "value": match.group(), "included": False})
+    first_line = text.splitlines()[0].strip() if text.splitlines() else ""
+    first_name = re.sub(r"^姓名\s*[:：]\s*", "", first_line)
+    if first_name in {"基本信息", "个人信息"} or not re.fullmatch(
+            r"[\u3400-\u9fff]{2,4}|[A-Za-z]+(?:[ '-][A-Za-z]+){1,3}", first_name):
+        first_name = ""
     before_email = text[:email.start()].strip() if email else text.strip()
-    if before_email and len(before_email) <= 100 and not re.search(r"\d{4}", before_email):
-        facts.insert(0, {"key": "name", "label": "姓名", "value": before_email,
+    name = first_name or (before_email if before_email and len(before_email) <= 100
+                          and not re.search(r"\d{4}", before_email) else "")
+    if name:
+        facts.insert(0, {"key": "name", "label": "姓名", "value": name,
                          "included": False})
     return facts
 

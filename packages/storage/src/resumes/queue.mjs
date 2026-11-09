@@ -3,7 +3,7 @@ import { transaction } from '../database.mjs';
 import { resumeError } from './files.mjs';
 import { validateResumeSource } from '../../../contracts/src/resume-source.ts';
 import { validateResumeDraft } from '../../../contracts/src/resume-draft.ts';
-const STAGES = ['queued', 'validate_source', 'extract_layout', 'classify_sections', 'map_design_modules', 'split_items', 'verify_evidence', 'complete_draft'];
+const STAGES = ['queued', 'validate_source', 'extract_layout', 'classify_sections', 'map_design_modules', 'split_items', 'format_items', 'verify_evidence', 'complete_draft'];
 const ERRORS = new Set(['PARSE_TIMEOUT', 'PARSE_FAILED', 'FILE_TYPE_INVALID', 'PDF_PAGE_LIMIT', 'PDF_ENCRYPTED', 'PDF_NO_TEXT']);
 const iso = value => new Date(value).toISOString().replace('.000Z', 'Z');
 
@@ -103,7 +103,7 @@ export function createResumeParseQueue({
           // Fence all historical leases before making a new task for this resume.
           db.prepare('UPDATE resume_parse_tasks SET lease_token=NULL,lease_until=NULL WHERE resume_id=?').run(row.id);
           const id = randomUUID();
-          db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,idempotency_key,status,created_at,updated_at) VALUES(?,?,?,?,?,'QUEUED',?,?)").run(id, row.id, owner, fileId, idempotencyKey, now(), now());
+          db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,workflow_version,idempotency_key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'QUEUED',?,?)").run(id, row.id, owner, fileId, 'resume-parse-v2', idempotencyKey, now(), now());
           state(row.id, 'QUEUED');
           task = latest(row.id);
         }
@@ -177,13 +177,14 @@ export function createResumeParseQueue({
         const row = db.prepare("SELECT * FROM resume_parse_tasks WHERE status='QUEUED' AND next_attempt_at<=? ORDER BY created_at,rowid LIMIT 1").get(now());
         if (!row) return null;
         const token = randomUUID();
-        db.prepare("UPDATE resume_parse_tasks SET status='RUNNING',stage='validate_source',error_code=NULL,lease_token=?,lease_until=?,worker_id=?,attempt_count=attempt_count+1,updated_at=? WHERE id=?").run(token, now() + leaseMs, workerId, now(), row.id);
+        const workflowVersion = row.workflow_version === 'resume-parse-v1' ? 'resume-parse-v2' : row.workflow_version;
+        db.prepare("UPDATE resume_parse_tasks SET status='RUNNING',workflow_version=?,stage='validate_source',error_code=NULL,lease_token=?,lease_until=?,worker_id=?,attempt_count=attempt_count+1,updated_at=? WHERE id=?").run(workflowVersion, token, now() + leaseMs, workerId, now(), row.id);
         state(row.resume_id, 'RUNNING');
         const file = liveFile(row.owner_session_id, row.file_id);
         return {
           id: row.id,
           leaseToken: token,
-          workflowVersion: 'resume-parse-v1',
+          workflowVersion,
           resumeId: row.resume_id,
           fileId: row.file_id,
           pageCount: file.page_count,

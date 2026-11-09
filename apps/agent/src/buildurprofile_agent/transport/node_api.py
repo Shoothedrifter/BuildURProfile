@@ -56,7 +56,7 @@ class ResumeParseTask:
         keys = ("id", "leaseToken", "resumeId", "fileId", "uploadedAt", "expiresAt")
         if any(not isinstance(value.get(key), str) or not value[key] for key in keys):
             raise ValueError("Invalid resume lease response")
-        if value.get("workflowVersion") != "resume-parse-v1" or type(value.get("pageCount")) is not int or not 1 <= value["pageCount"] <= 20:
+        if value.get("workflowVersion") != "resume-parse-v2" or type(value.get("pageCount")) is not int or not 1 <= value["pageCount"] <= 20:
             raise ValueError("Invalid resume lease response")
         return cls(value["id"], value["leaseToken"], value["workflowVersion"],
                    value["resumeId"], value["fileId"], value["pageCount"],
@@ -162,6 +162,14 @@ class NodeAgentClient:
         response = await self._request("GET", f"/_internal/agent/resume-tasks/{task.id}/source",
                                        lease=task.lease_token)
         return response.content
+
+    async def resume_plan(self, task: ResumeParseTask) -> dict:
+        response = await self._request("GET", f"/_internal/agent/resume-tasks/{task.id}/plan",
+                                       lease=task.lease_token)
+        result = response.json()
+        if not isinstance(result, dict):
+            raise ValueError("PARSE_FAILED: invalid parse plan")
+        return result
 
     async def heartbeat_resume(self, task: ResumeParseTask, *, stage: str | None = None,
                                progress: int | None = None) -> dict:

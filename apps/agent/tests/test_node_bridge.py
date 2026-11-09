@@ -60,13 +60,15 @@ async def test_real_node_bridge_text_only():
             resume_task = await client.lease_resume("python_resume_integration")
             assert resume_task and resume_task.resume_id == endpoint["resumeId"]
             assert (await client.resume_source(resume_task)).startswith(b"%PDF-")
+            assert (await client.resume_plan(resume_task))["version"] == "resume-parse-plan-v1"
 
             class MockTextModel:
                 async def generate_json(self, name, schema, prompt):
-                    assert name == "resume_sections_v1"
+                    assert name == "resume_format_v1"
                     assert "Synthetic fixture" in prompt
-                    return {"assignments": [{"blockId": "p1_b0", "kind": "other",
-                                            "confidence": .95}]}
+                    return {"items": [{"anchorId": "a0", "kind": "other",
+                                       "title": "Synthetic fixture", "details": "Synthetic fixture",
+                                       "confidence": .95}]}
 
             await process_resume_task(resume_task, client, MockTextModel(), default_registry(),
                                       MemorySaver(), "python_resume_integration")
@@ -97,11 +99,15 @@ async def test_resume_transport_keeps_private_protocol_separate_and_fences_old_l
         assert request.url.path.startswith('/_internal/agent/resume-tasks/')
         if request.url.path.endswith('/lease'):
             return httpx.Response(200, json={"id": "parse-task", "leaseToken": "current-lease",
-                "workflowVersion": "resume-parse-v1", "resumeId": "resume-one", "fileId": "file-one",
+                "workflowVersion": "resume-parse-v2", "resumeId": "resume-one", "fileId": "file-one",
                 "pageCount": 1, "uploadedAt": "2026-11-09T00:00:00Z", "expiresAt": "2026-12-09T00:00:00Z"})
         if request.url.path.endswith('/source'):
             assert request.headers['x-agent-lease'] == 'current-lease'
             return httpx.Response(200, content=b'%PDF-synthetic', headers={'content-type': 'application/pdf'})
+        if request.url.path.endswith('/plan'):
+            assert request.headers['x-agent-lease'] == 'current-lease'
+            return httpx.Response(200, json={"version": "resume-parse-plan-v1", "anchors": [
+                {"anchorId": "a0", "kind": "other", "page": 1, "text": "Synthetic fixture"}]})
         body = json.loads(request.content)
         if body['leaseToken'] == 'stale':
             return httpx.Response(409, json={'errorCode': 'LEASE_LOST'})
@@ -111,9 +117,10 @@ async def test_resume_transport_keeps_private_protocol_separate_and_fences_old_l
     async with httpx.AsyncClient(base_url='http://node.test', transport=httpx.MockTransport(handle)) as http:
         client = NodeAgentClient('http://node.test', 's' * 64, http=http)
         task = await client.lease_resume('parse_worker')
-        assert task.workflow_version == 'resume-parse-v1'
+        assert task.workflow_version == 'resume-parse-v2'
         assert task.resume_id == 'resume-one' and task.file_id == 'file-one'
         assert (await client.resume_source(task)) == b'%PDF-synthetic'
+        assert (await client.resume_plan(task))["anchors"][0]["anchorId"] == "a0"
         assert not (await client.heartbeat_resume(task, stage='extract_layout', progress=10))['cancelRequested']
         source, draft = {'version': 'resume-source-v1'}, {'version': 'resume-draft-v1'}
         assert await client.complete_resume(task, source, draft)

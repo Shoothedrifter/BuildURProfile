@@ -110,11 +110,12 @@ test('private resume lease authenticates, reclaims, fences cancelled workers and
  const internal=async(path,method='POST',body={},lease,auth=token)=>dispatchWebRequest(new Request('http://test/_internal/agent/resume-tasks/'+path,{method,headers:{authorization:'Bearer '+auth,'content-type':'application/json',...(lease?{'x-agent-lease':lease}:{})},...(method==='POST'?{body:JSON.stringify(body)}:{})}),handler);
  const file=await(await s.request('upload','POST',pdf())).json(),r=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'lease'}))).json();
  assert.equal((await internal('lease','POST',{workerId:'worker'},null,'bad')).status,403);
- const response=await internal('lease','POST',{workerId:'worker'});assert.equal(response.status,200);const task=await response.json();assert.equal(task.workflowVersion,'resume-parse-v1');assert.equal(task.fileId,file.fileId);assert.equal(task.resumeId,r.resumeId);assert.equal('blocks' in task,false);
+ const response=await internal('lease','POST',{workerId:'worker'});assert.equal(response.status,200);const task=await response.json();assert.equal(task.workflowVersion,'resume-parse-v2');assert.equal(task.fileId,file.fileId);assert.equal(task.resumeId,r.resumeId);assert.equal('blocks' in task,false);
  assert.deepEqual(Buffer.from(await(await internal(task.id+'/source','GET',{},task.leaseToken)).arrayBuffer()),pdf());
  s.advance(20_000);assert.equal((await internal(task.id+'/heartbeat','POST',{leaseToken:task.leaseToken,stage:'extract_layout',progress:20})).status,200);
  s.advance(20_000);assert.equal((await internal(task.id+'/source','GET',{},task.leaseToken)).status,200);
  assert.equal((await(await s.request(r.resumeId+'/status')).json()).progress,20);
+ assert.equal((await internal(task.id+'/heartbeat','POST',{leaseToken:task.leaseToken,stage:'format_items',progress:75})).status,200);
  assert.equal((await s.request(r.resumeId+'/cancel','POST','{}')).status,200);
  assert.equal((await internal(task.id+'/source','GET',{},task.leaseToken)).status,409);
  assert.equal((await internal(task.id+'/complete','POST',{leaseToken:task.leaseToken,source:{},draft:{}})).status,409);
@@ -167,6 +168,32 @@ test('parse session rate limit and bounded retries do not affect other queues',a
  const limited=await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'limited'}));assert.equal(limited.status,429);assert.equal((await limited.json()).errorCode,'RATE_LIMITED');
  for(let i=0;i<3;i++){const task=s.repo.queue.lease('worker');assert.ok(task);s.repo.queue.fail(task.id,task.leaseToken,'PARSE_FAILED',true);s.db.prepare('UPDATE resume_parse_tasks SET next_attempt_at=0').run();}
  assert.equal(s.repo.queue.status(s.db.prepare('SELECT owner_session_id FROM resume_files').get().owner_session_id,id).status,'FAILED');assert.equal(s.repo.queue.lease('worker'),null);assert.equal(s.db.prepare('SELECT COUNT(*) n FROM generations').get().n,0);
+});
+
+test('a queued v1 parse task adopts the anchored v2 workflow when leased',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'upgrade'}))).json();
+ s.db.prepare("UPDATE resume_parse_tasks SET workflow_version='resume-parse-v1' WHERE resume_id=?").run(parsed.resumeId);
+ const task=s.repo.queue.lease('worker');
+ assert.equal(task.workflowVersion,'resume-parse-v2');
+ assert.equal(s.db.prepare('SELECT workflow_version FROM resume_parse_tasks WHERE id=?').get(task.id).workflow_version,'resume-parse-v2');
+});
+
+test('reparse creates a separate private draft and preserves the original resume',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const original=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'original'}))).json();
+ const response=await s.request(original.resumeId+'/reparse','POST',JSON.stringify({idempotencyKey:'reparse'}));
+ assert.equal(response.status,202);
+ const next=await response.json();
+ assert.notEqual(next.resumeId,original.resumeId);
+ assert.notEqual(next.fileId,file.fileId);
+ assert.equal((await s.request(original.resumeId+'/status')).status,200);
+ assert.equal((await s.request(original.resumeId+'/source')).status,200);
+ assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_files').get().n,2);
+ const other=await dispatchWebRequest(new Request('http://test/api/session'),s.handler);
+ const cookie=other.headers.get('set-cookie').split(';')[0],csrf=(await other.json()).csrfToken;
+ assert.equal((await s.request(original.resumeId+'/reparse','POST',JSON.stringify({idempotencyKey:'stolen'}),
+   {cookie,'x-csrf-token':csrf})).status,404);
 });
 
 

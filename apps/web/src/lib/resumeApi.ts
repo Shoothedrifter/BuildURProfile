@@ -52,6 +52,10 @@ export const resumeApi = {
   parse(fileId: string): Promise<ResumeStatus> {
     return request("/api/resumes/parse", "POST", { fileId, idempotencyKey: crypto.randomUUID() });
   },
+  reparse(resumeId: string): Promise<ResumeStatus> {
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse`, "POST",
+      { idempotencyKey: crypto.randomUUID() });
+  },
   status(resumeId: string): Promise<ResumeStatus> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/status`);
   },

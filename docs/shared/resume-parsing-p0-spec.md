@@ -1,6 +1,6 @@
 # P0 Agent 简历解析：跨端规格
 
-**状态：** 实施规格；基于 `docs/PRD/11.7-前三页prd制作.docx` 的页面一至三、`docs/agent/agent-resume-parsing-plan.md` 与 2026-11-09 的双人分工讨论。此文件定义目标行为；`docs/shared/architecture.md` 中的浏览器规则解析描述仍是现状，完成 P0 时同步更新。
+**状态：** P0 初版实施规格；基于 `docs/PRD/11.7-前三页prd制作.docx` 的页面一至三、`docs/agent/agent-resume-parsing-plan.md` 与 2026-11-09 的双人分工讨论。下文记录初版 `resume-parse-v1` 的目标与合同；当前解析路径已升级为 `resume-parse-v2`，条目边界和格式化规则以[解析流程 v2](../agent/resume-anchored-formatting.md)及[架构与协议](architecture.md)为准。
 
 ## 1. 目标、边界和责任
 

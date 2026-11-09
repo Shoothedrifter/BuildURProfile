@@ -4,6 +4,15 @@ export async function handleResumeRoutes({req,res,parts,sessionId,repository,sen
  repository.cleanup();
  const queue=repository.queue;
  if(parts.length===3&&parts[2]==='parse'&&req.method==='POST'){sendJson(res,202,queue.parse(sessionId,await bodyJson(req,4096)));return true;}
+ if(parts.length===4&&parts[3]==='reparse'&&req.method==='POST'){
+  const input=await bodyJson(req,4096);
+  const clone=await repository.cloneForReparse(sessionId,parts[2]);
+  let queued;
+  try{queued=queue.parse(sessionId,{fileId:clone.fileId,idempotencyKey:input?.idempotencyKey});}
+  catch(error){repository.deleteFile(sessionId,clone.fileId);throw error;}
+  sendJson(res,202,queued);
+  return true;
+ }
  if(parts.length===4&&parts[3]==='status'&&req.method==='GET'){sendJson(res,200,queue.status(sessionId,parts[2]));return true;}
  if(parts.length===4&&parts[3]==='cancel'&&req.method==='POST'){sendJson(res,200,queue.cancel(sessionId,parts[2]));return true;}
  if(parts.length===3&&req.method==='GET'){sendJson(res,200,queue.draft(sessionId,parts[2]));return true;}

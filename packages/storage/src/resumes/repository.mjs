@@ -28,6 +28,9 @@ export function createResumeRepository({db,root,now=Date.now}) {
   const pageCount=await validatePdf(bytes),id=randomUUID(),uploadedAt=Math.floor(now()/1000)*1000;
   try{store.write(id,bytes);db.prepare('INSERT INTO resume_files(id,owner_session_id,file_name,size,page_count,uploaded_at,expires_at) VALUES(?,?,?,?,?,?,?)').run(id,owner,fileName,bytes.length,pageCount,uploadedAt,uploadedAt+30*86400000);}catch{store.remove(id);throw resumeError(500,'UPLOAD_FAILED');}
   return {fileId:id,fileName,size:bytes.length,pageCount};
+ },async cloneForReparse(owner,resumeId){
+  const original=getResume(owner,resumeId);
+  return repository.upload(owner,store.read(original.id),original.file_name,'application/pdf');
  },readFile(owner,id){getFile(owner,id);return store.read(id);},
  readSource(owner,id){const row=getResume(owner,id);return store.read(row.id);},
  delete(owner,id){const tomb=db.prepare('SELECT 1 FROM resume_tombstones WHERE resume_id=? AND owner_session_id=?').get(id,owner);if(tomb)return {ok:true};const row=getResume(owner,id);purge(row,'deleted');return {ok:true};}

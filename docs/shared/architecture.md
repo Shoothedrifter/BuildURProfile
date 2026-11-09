@@ -30,7 +30,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 图顺序为：校验输入 → 选择 Skill 计划 → 评分 → 设计映射 → 注入确认内容 → 可选肖像 → 最终 QA → 提交配置。Skill 声明稳定 ID、版本、能力、输入输出和超时，执行器只授予当前节点所需能力。
 
-新上传路径由 `resume-parse-v1` 独立队列和七节点 LangGraph 图解析；`resume.sections.v1` 与 `resume.items.v1` 调用 OpenAI 文本模型，固定映射和来源校验由代码执行。私有 `resume-source-v1` 块与 `resume-draft-v1` 十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存并确认，投影剥离来源及隐藏字段后复用 `resume-v1`。原件、块与草稿从上传起 30 天自动删除，可提前删除。旧 `resume.parse.v3` 浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
+新上传路径由 `resume-parse-v2` 独立队列和七节点 LangGraph 图解析。Web 在私有原件上复用旧浏览器解析算法，生成仅供 Agent 使用的 `resume-parse-plan-v1` 模块和条目锚点；Python 将 PDF 来源块对齐锚点，再由 `resume.format.v1` 文本模型逐条整理标题与正文，不能自由拆分或合并条目。固定映射和来源校验由代码执行，详见[解析流程 v2](../agent/resume-anchored-formatting.md)。私有 `resume-source-v1` 块与 `resume-draft-v1` 十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存并确认，投影剥离来源及隐藏字段后复用 `resume-v1`。原件、块与草稿从上传起 30 天自动删除，可提前删除。旧 `resume.parse.v3` 浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
 
 图状态与 checkpoint 可保存任务 ID、清洗后的 brief、评分、配置、Skill 版本、风格与资产 ID、QA 结果。不得保存 PDF 原文、`sourceRefs`、照片字节、密钥和支付数据。照片及风格参考图仅在外部图像请求期间读取。
 

@@ -13,6 +13,7 @@
 | Next.js 服务端接口、任务、资产与 Launcher 入口 | [API 与 Launcher](api/README.md) |
 | 支付配置、沙箱与上线验收 | [支付与交付](api/payment.md) |
 | Python 图、Skills 与图像服务 | [Agent](agent/README.md) |
+| 简历条目锚点与 Agent 排版 | [解析流程 v2](agent/resume-anchored-formatting.md) |
 | TS 注册表与固定风格资源 | [Skills 包](../packages/skills/README.md) |
 
 [历史归档](archive/README.md)只用于追溯决定和当时状态，不作为当前运行与部署依据。原始开发过程可通过 Git 历史查阅。

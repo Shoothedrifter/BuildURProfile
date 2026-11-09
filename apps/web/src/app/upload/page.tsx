@@ -110,7 +110,7 @@ export default function UploadPage() {
   return <main className="resume-flow">
     <a href="/">← 返回首页</a>
     <h1>上传简历，交给 Agent 解析</h1>
-    <p>选择文本型 PDF。上传后，原件和可编辑草稿在私有服务器保留 30 天；Agent 会将必要的文字块发送给当前配置的文本模型供应商（OpenAI 或智谱 GLM），用于分类和拆分经历。你可以随时提前删除。</p>
+    <p>选择文本型 PDF。上传后，原件和可编辑草稿在私有服务器保留 30 天；系统先按原浏览器解析器确定模块和条目，再将必要文字发送给当前配置的文本模型供应商（OpenAI 或智谱 GLM）整理标题与正文。你可以随时提前删除。</p>
     <label className="resume-upload-box" onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}>选择或拖入 PDF 简历
       <input type="file" accept=".pdf,application/pdf" onChange={(event) => choose(event.currentTarget.files?.[0])} />

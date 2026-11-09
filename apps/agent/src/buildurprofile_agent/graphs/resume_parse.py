@@ -11,15 +11,15 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from buildurprofile_agent.contracts import RESUME_MODULE_MAPPING, validate_resume_draft
-from buildurprofile_agent.skills.item_splitter import make_draft
+from buildurprofile_agent.skills.anchored_formatter import align_anchors, make_anchored_draft
 from buildurprofile_agent.skills.pdf_layout import extract_pdf_source
 from buildurprofile_agent.skills.registry import SkillRegistry, default_registry
 from buildurprofile_agent.transport.node_api import CancelRequested, ResumeParseTask
 
 
-WORKFLOW_VERSION = "resume-parse-v1"
+WORKFLOW_VERSION = "resume-parse-v2"
 NODES = ("validate_source", "extract_layout", "classify_sections", "map_design_modules",
-         "split_items", "verify_evidence", "complete_draft")
+         "format_items", "verify_evidence", "complete_draft")
 
 
 class ResumeParseState(TypedDict):
@@ -66,12 +66,11 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
             uploaded_at=task.uploaded_at, expires_at=task.expires_at)
         if run.source.pageCount != task.page_count:
             raise ValueError("PARSE_FAILED: PDF page count mismatch")
+        private["plan"] = await client.resume_plan(task)
         return await progress("extract_layout", 20)
 
     async def classify_sections(_: ResumeParseState) -> dict:
-        descriptor = registry.describe("resume.sections.v1")
-        private["classified"] = await registry.run("resume.sections.v1", {"source": run.source},
-            grants={"text_model": model}, expected_version=descriptor["version"])
+        private["anchors"] = align_anchors(run.source, private.pop("plan"))
         return await progress("classify_sections", 45)
 
     async def map_design_modules(_: ResumeParseState) -> dict:
@@ -79,16 +78,16 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
             raise ValueError("SKILL_VERSION_MISMATCH")
         return await progress("map_design_modules", 50)
 
-    async def split_items(_: ResumeParseState) -> dict:
-        descriptor = registry.describe("resume.items.v1")
-        private["grouped"] = await registry.run("resume.items.v1", {"source": run.source,
-            "classified": private["classified"]}, grants={"text_model": model},
+    async def format_items(_: ResumeParseState) -> dict:
+        descriptor = registry.describe("resume.format.v1")
+        private["formatted"] = await registry.run("resume.format.v1", {"source": run.source,
+            "anchors": private["anchors"]}, grants={"text_model": model},
             expected_version=descriptor["version"])
-        return await progress("split_items", 75)
+        return await progress("format_items", 75)
 
     async def verify_evidence(_: ResumeParseState) -> dict:
-        run.draft = make_draft(run.source, task.resume_id, private.pop("classified"),
-                               private.pop("grouped"))
+        run.draft = make_anchored_draft(run.source, task.resume_id, private.pop("anchors"),
+                                        private.pop("formatted"))
         validate_resume_draft(run.draft, run.source)
         return await progress("verify_evidence", 90)
 
@@ -99,7 +98,7 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
 
     nodes = {"validate_source": validate_source, "extract_layout": extract_layout,
              "classify_sections": classify_sections, "map_design_modules": map_design_modules,
-             "split_items": split_items, "verify_evidence": verify_evidence,
+             "format_items": format_items, "verify_evidence": verify_evidence,
              "complete_draft": complete_draft}
     graph = StateGraph(ResumeParseState)
     for name, handler in nodes.items():

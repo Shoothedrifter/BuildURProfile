@@ -20,7 +20,7 @@ const sectionNames: Record<string, Section> = {
   教育背景: "education", 教育经历: "education",
   获奖经历: "awards", 荣誉奖项: "awards",
   项目实践: "projects", 项目经历: "projects", 项目经验: "projects",
-  专业技能: "skills", 相关技能: "skills",
+  专业技能: "skills", 相关技能: "skills", 个人技能: "skills",
   工作经历: "work", 实习经历: "work", 实习工作经历: "work", 职业经历: "work",
   校园经历: "campus", 校园工作: "campus", 校园活动: "campus", 校园实践: "campus", 校内经历: "campus",
   校内实践: "campus", 学生工作: "campus", 学生工作经历: "campus", 学生干部经历: "campus", 社团经历: "campus",
@@ -109,7 +109,7 @@ function looksLikeCampusEntry(entry: DraftField): boolean {
     !/(?:项目描述|项目内容|技术栈|课题|科研项目)/u.test(entry.value);
 }
 
-function splitExperience(lines: string[], page: number): DraftField[] {
+function splitExperience(lines: string[], page: number, campus = false): DraftField[] {
   if (!lines.length) return [];
   const starts = [0];
   let seenDate = dateAnywhere.test(lines[0]);
@@ -118,7 +118,8 @@ function splitExperience(lines: string[], page: number): DraftField[] {
     const titleBeforeDate = seenDate && index + 1 < lines.length && dateAtStart.test(lines[index + 1]) &&
       !/[：:。；]$/u.test(line) && line.length <= 100;
     const newDate = seenDate && (dateAtStart.test(line) || dateAtEnd.test(line));
-    if (bulletStart.test(line) || titleBeforeDate || newDate) {
+    const separateCampusRole = campus && bulletStart.test(line) && looksLikeCampusEntry(field([line], page));
+    if (separateCampusRole || titleBeforeDate || newDate) {
       starts.push(index);
       seenDate = false;
     }
@@ -164,18 +165,23 @@ function parseNamedSections(pages: string[][], firstHeading: number): Pick<Resum
     if (section.kind === "basic") {
       basicInfo.push(...basicCandidates(lines, section.page));
     } else if (section.kind === "education") {
-      education.push(...splitAt(lines, section.page, (line) => dateAtStart.test(line)));
+      const awardLines = lines.filter((line) => /^(?:[•●·\uF000-\uF8FF]\s*)?荣誉奖项\s*[:：]/u.test(line));
+      awards.push(...awardLines.map((line) => field([line], section.page)));
+      const schoolLines = lines.filter((line) => !awardLines.includes(line));
+      const schoolStart = (line: string) => /(?:大学|学院|学校)/u.test(line) && /(?:本科|硕士|博士)/u.test(line);
+      education.push(...splitAt(schoolLines, section.page, schoolLines.some(schoolStart)
+        ? schoolStart : (line) => dateAtStart.test(line)));
     } else if (section.kind === "skills") {
       skills.push(...splitAt(lines, section.page, (line) => bulletStart.test(line) || skillHeading.test(line)));
     } else if (section.kind === "work" || section.kind === "campus") {
-      (section.kind === "campus" ? campusExperience : workExperience).push(...splitExperience(lines, section.page));
+      (section.kind === "campus" ? campusExperience : workExperience).push(...splitExperience(lines, section.page, section.kind === "campus"));
     } else if (section.kind === "projects") {
       const entries = splitAt(lines, section.page, (line) =>
         // Undated title rows in the supplied Word PDF end with a parenthesized project role.
         dateAtEnd.test(line) && !dateOnly.test(line) || campusRoleLine.test(line) && !/[：:。；，,]$/.test(line) ||
         (!bulletStart.test(line) && !/[：:。；，,]$/.test(line) && /[（(][^）)]{2,}[）)]$/.test(line)));
       for (const entry of entries) {
-        if (looksLikeCampusEntry(entry)) campusExperience.push(...splitExperience(entry.source.split("\n"), section.page));
+        if (looksLikeCampusEntry(entry)) campusExperience.push(...splitExperience(entry.source.split("\n"), section.page, true));
         else projects.push(entry);
       }
     } else if (section.kind === "awards") {
@@ -217,9 +223,13 @@ export function parseResumePages(pages: string[]): ResumeDraft {
   const header = firstHeading >= 0 ? first.slice(0, firstHeading) : first;
   const basicInfo = basicCandidates(header);
   const explicitName = first.find((line) => /^姓名\s*[:：]\s*\S+/.test(line));
+  const linkedNameLine = header.find((line) => /^[\p{Script=Han}]{2,4}(?=\s*https?:\/\/)/iu.test(line));
+  const linkedName = linkedNameLine?.match(/^[\p{Script=Han}]{2,4}/u)?.[0];
   const nameLine = explicitName?.replace(/^姓名\s*[:：]\s*/, "") ?? header.find((line) => /^[\p{Script=Han}]{2,3}$/u.test(line)) ??
-    header.find((line) => /^[A-Za-z]+(?:[ -][A-Za-z]+){1,3}$/.test(line) && line.toUpperCase() !== "RESUME") ?? "";
-  const name = explicitName ? { value: nameLine, source: explicitName, page: 1, included: true } : field(nameLine ? [nameLine] : [], 1);
+    linkedName ?? header.find((line) => /^[A-Za-z]+(?:[ -][A-Za-z]+){1,3}$/.test(line) && line.toUpperCase() !== "RESUME") ?? "";
+  const name = explicitName ? { value: nameLine, source: explicitName, page: 1, included: true }
+    : linkedName && nameLine === linkedName ? { value: linkedName, source: linkedNameLine!, page: 1, included: true }
+      : field(nameLine ? [nameLine] : [], 1);
   if (firstHeading >= 0) {
     const parsed = parseNamedSections(pages.map(linesOf), firstHeading);
     return { version: "resume-candidate-v2", name, email, ...parsed, basicInfo: [...basicInfo, ...parsed.basicInfo] };

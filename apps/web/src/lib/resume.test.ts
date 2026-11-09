@@ -235,6 +235,57 @@ describe("resume parser", () => {
     expect(draft.campusExperience).toHaveLength(0);
   });
 
+  it("keeps work responsibility bullets inside their dated job item", () => {
+    const draft = parseResumePages([`林青
+工作经历
+2024.01 - 2024.06 示例公司
+后端工程师
+• 负责服务开发与维护。
+• 优化查询性能。
+2024.07 - 2025.01 另一家公司
+软件工程师
+• 实现数据接口。`]);
+    expect(draft.workExperience).toHaveLength(2);
+    expect(draft.workExperience[0].value).toContain('优化查询性能');
+    expect(draft.workExperience[1].value).toContain('实现数据接口');
+  });
+
+  it("recognizes personal skills as the skills module", () => {
+    const draft = parseResumePages(["林青\n个人技能\n编程与数据：熟悉 Python\n工程化开发：熟悉 SQL"]);
+    expect(draft.skills).toHaveLength(2);
+    expect(draft.other).toHaveLength(0);
+  });
+
+  it("finds a short Chinese name merged with a URL on the PDF header line", () => {
+    const draft = parseResumePages(["林青https://github.com/example\n基本信息\n邮箱：lin@example.com"]);
+    expect(draft.name.value).toBe("林青");
+    expect(draft.name.source).toContain("github.com/example");
+  });
+
+  it("keeps two school records separate when their dates sit on following lines", () => {
+    const draft = parseResumePages([`林青
+教育背景
+示例甲大学 硕士 · 计算机科学
+2026.09-2027.12
+主修课程：机器学习
+示例乙大学 本科 · 软件工程
+2022.09-2026.06
+主修课程：数据结构`]);
+    expect(draft.education).toHaveLength(2);
+    expect(draft.education[0].value).not.toContain("示例乙大学");
+  });
+
+  it("extracts award lines embedded inside education", () => {
+    const draft = parseResumePages([`林青
+教育背景
+示例大学 本科 · 计算机科学
+2022.09-2026.06
+ 荣誉奖项：校级创新奖`]);
+    expect(draft.awards).toHaveLength(1);
+    expect(draft.awards[0].value).toContain("校级创新奖");
+    expect(draft.education[0].value).not.toContain("荣誉奖项");
+  });
+
   it("recognizes skill rows with the bullet glyph and spacing emitted by PDF.js", () => {
     const pdfJsPage = `黄琬斐
 huangwanfei_05@163.com 18296246182 21岁

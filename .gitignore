@@ -4,6 +4,7 @@ dist/
 apps/web/.next/
 apps/web/dist/
 apps/web/next-env.d.ts
+apps/web/AGENTS.md
 *.tsbuildinfo
 coverage/
 .playwright-cli/

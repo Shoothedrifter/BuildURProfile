@@ -16,6 +16,7 @@ from .avatar import generate_avatar
 from .artifact import verify_artifact
 from .section_classifier import classify_sections
 from .item_splitter import split_items
+from .anchored_formatter import format_anchors
 
 
 KNOWN_CAPABILITIES = frozenset({
@@ -86,4 +87,7 @@ def default_registry() -> SkillRegistry:
     registry.register(Skill("resume.items.v1", "1.0.0", frozenset({"text_model"}), True, 120.0,
                             lambda inputs, grants: split_items(inputs["source"], inputs["classified"],
                                                                 grants["text_model"])))
+    registry.register(Skill("resume.format.v1", "1.0.0", frozenset({"text_model"}), True, 120.0,
+                            lambda inputs, grants: format_anchors(inputs["source"], inputs["anchors"],
+                                                                    grants["text_model"])))
     return registry

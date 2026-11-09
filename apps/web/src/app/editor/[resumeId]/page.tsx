@@ -96,6 +96,21 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     } catch (cause) { setError(cause instanceof Error ? cause.message : "删除失败。"); setBusy(false); }
   };
 
+  const reparse = async () => {
+    if (!resumeId || !draft) return;
+    if (!window.confirm("将从原 PDF 创建一份新草稿，当前草稿会保留。新副本从现在起保留 30 天。继续吗？")) return;
+    setBusy(true); setError("");
+    try {
+      const task = await resumeApi.reparse(resumeId);
+      sessionStorage.setItem("burp-agent-resume-id", task.resumeId);
+      if (task.fileId) sessionStorage.setItem("burp-agent-file-id", task.fileId);
+      window.location.assign("/upload");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "重新解析失败。");
+      setBusy(false);
+    }
+  };
+
   return <main className="resume-flow">
     <a href="/upload">← 返回上传</a>
     <h1>核对简历资料</h1>
@@ -160,6 +175,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     <div className="resume-actions">
       <button type="button" disabled={busy || !draft} onClick={() => void save()}>保存草稿</button>
       <button type="button" disabled={busy || !draft} onClick={() => void save(true)}>确认并选择风格 →</button>
+      <button type="button" disabled={busy || !draft} onClick={() => void reparse()}>重新解析为新草稿</button>
       <button type="button" disabled={busy} onClick={() => void remove()}>删除简历与原 PDF</button>
     </div>
   </main>;

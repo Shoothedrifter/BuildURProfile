@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { resumeError } from '../../../../../packages/storage/src/resumes/files.mjs';
+import { planFromPdf } from '../resume-plan.mjs';
 export async function handleInternalResumeAgentRoutes({
   req,
   res,
@@ -38,6 +39,11 @@ export async function handleInternalResumeAgentRoutes({
       'x-content-type-options': 'nosniff'
     });
     res.end(bytes);
+    return true;
+  }
+  if (req.method === 'GET' && action === 'plan') {
+    const bytes = queue.source(id, req.headers['x-agent-lease']);
+    sendJson(res, 200, await planFromPdf(bytes));
     return true;
   }
   if (req.method !== 'POST' || !['heartbeat', 'complete', 'fail', 'ack-cancel'].includes(action)) return false;
