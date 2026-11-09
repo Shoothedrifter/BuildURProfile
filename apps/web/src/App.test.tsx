@@ -4,9 +4,11 @@ import type { DesignConfig } from "../../../packages/contracts/src/config";
 import App from "./App";
 import { ShowcasePage } from "./ShowcasePage";
 import rawConfig from "./demo/config.json";
+import resumeDraftFixture from "../../../packages/contracts/fixtures/resume-draft.v1.json";
 import { extractPdfText } from "./lib/pdf";
 import { paymentApi } from "./lib/paymentApi";
 import { generationApi } from "./lib/generationApi";
+import { resumeApi } from "./lib/resumeApi";
 import { preparePortrait } from "./lib/portrait";
 import { scoreAnswers } from "./lib/assessment";
 import { styleToConfig } from "./lib/mapping";
@@ -16,6 +18,7 @@ vi.mock("./lib/pdf", () => ({ extractPdfText: vi.fn() }));
 vi.mock("./lib/generationApi", () => ({ generationApi: { generatePortfolio: vi.fn(), generateAvatar: vi.fn(),
   resumeGeneration: vi.fn().mockResolvedValue(null), clearSavedGeneration: vi.fn(),
   cancelSavedGeneration: vi.fn().mockResolvedValue(null) } }));
+vi.mock("./lib/resumeApi", () => ({ resumeApi: { read: vi.fn() } }));
 vi.mock("./lib/portrait", () => ({ preparePortrait: vi.fn().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=") }));
 vi.mock("./lib/paymentApi", () => ({
   paymentApi: {
@@ -85,6 +88,7 @@ beforeEach(() => {
   });
   vi.mocked(generationApi.generateAvatar).mockReset();
   vi.mocked(generationApi.resumeGeneration).mockReset().mockResolvedValue(null);
+  vi.mocked(resumeApi.read).mockReset();
   vi.mocked(generationApi.clearSavedGeneration).mockClear();
   vi.mocked(generationApi.cancelSavedGeneration).mockClear();
   vi.mocked(preparePortrait).mockReset().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=");
@@ -98,6 +102,21 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("opens a confirmed Agent resume in style instead of restoring an older showcase", async () => {
+    window.history.replaceState(null, "", "/style/resume_synthetic");
+    vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft: resumeDraftFixture as never,
+      revision: 1, expiresAt: "2026-12-09T00:00:00Z" });
+    vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig });
+    try {
+      render(<App />);
+      expect(await screen.findByRole("heading", { name: "让你的风格，先开口介绍你" })).toBeInTheDocument();
+      expect(generationApi.resumeGeneration).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("design-config-json")).not.toBeInTheDocument();
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
   it("confirms deletion in My Projects and clears an open deleted project", async () => {
     const saved = { id: "saved-project", config: rawConfig as DesignConfig, revision: 1,
       paid: false, pendingAction: null, pendingAmountFen: null };

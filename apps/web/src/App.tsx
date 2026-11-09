@@ -89,7 +89,7 @@ export default function App() {
   const photoDataRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (window.location.pathname === "/payment/return") return;
+    if (window.location.pathname === "/payment/return" || window.location.pathname.startsWith("/style/")) return;
     let active = true;
     const version = generationVersion.current;
     void generationApi.resumeGeneration((status) => {
@@ -207,7 +207,7 @@ export default function App() {
       if (!active) return;
       setAgentDraft(nextDraft);
       setProgress("");
-      setPhase((current) => current === "landing" ? "quiz" : current);
+      setPhase("quiz");
     }).catch((cause) => {
       if (!active) return;
       setProgress("");
