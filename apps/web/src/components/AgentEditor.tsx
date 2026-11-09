@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { ProofButton, ProofCard } from "./BuilderChrome";
-import type { ResumeDraftItem, ResumeDraftSection, ResumeModuleKind } from "../../../../packages/contracts/src/resume-draft";
+import type { ItemSupplements, ResumeDraftItem, ResumeDraftSection, ResumeModuleKind } from "../../../../packages/contracts/src/resume-draft";
 
 // 左栏模块核对清单：「确认进度 n / 10」+ 每个模块的 ✓/○ 状态，点击展开对应模块
 export function ModuleChecklist({ entries, activeKind, onSelect }: {
@@ -65,10 +65,10 @@ export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onV
   </section>;
 }
 
-// 单条经历条目：勾选展示、低置信度警示、原文对照、标题/内容编辑、事实字段、上下移动与删除
+// 单条经历条目：勾选展示、低置信度警示、原文对照、标题/内容编辑、事实字段、补充内容、上下移动与删除
 export function EntryCard({ kind, label, item, index, total, canAddFacts, moduleOptions, sourceExcerpt,
   onPatchItem, onPatchFactValue, onIncludeFact, onAddFact, onPatchFactLabel,
-  onMoveUp, onMoveDown, onRequestRemove, onMoveTo }: {
+  onUploadImage, imageUrl, onMoveUp, onMoveDown, onRequestRemove, onMoveTo }: {
   kind: ResumeModuleKind;
   label: string;
   item: ResumeDraftItem;
@@ -82,6 +82,8 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
   onIncludeFact: (factKey: string, included: boolean) => void;
   onAddFact: () => void;
   onPatchFactLabel: (factKey: string, label: string) => void;
+  onUploadImage: (file: File) => void;
+  imageUrl: (imageId: string) => string;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRequestRemove: () => void;
@@ -89,6 +91,9 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
 }) {
   const lowConfidence = item.needsReview || item.confidence < 0.7 || item.segmentationConfidence < 0.7;
   const customFacts = item.facts.filter((fact) => fact.key.startsWith("custom-"));
+  const supplements = item.supplements ?? { text: "", links: [], images: [] };
+  const patchSupplements = (patch: Partial<ItemSupplements>) =>
+    onPatchItem({ supplements: { ...supplements, ...patch } });
   return <article className="proof-confirm-entry" aria-label={`${label}条目 ${index + 1}`}>
     <div className="proof-entry-top">
       <label><input type="checkbox" checked={item.included}
@@ -122,6 +127,49 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     {canAddFacts && <ProofButton variant="quiet" onClick={onAddFact}>添加字段</ProofButton>}
     {customFacts.map((fact) => <label key={`${fact.key}-label`} className="proof-field"><span>字段名称</span>
       <input value={fact.label} onChange={(event) => onPatchFactLabel(fact.key, event.target.value)} /></label>)}
+    <div className="proof-supplement">
+      <p className="proof-supplement-head">补充内容</p>
+      <label className="proof-field"><span>补充说明</span>
+        <textarea rows={3} maxLength={500} value={supplements.text}
+          placeholder="可补充说明该经历的细节、成果或背景…"
+          onChange={(event) => patchSupplements({ text: event.target.value })} /></label>
+      <p className="proof-supplement-count">{supplements.text.length}/500</p>
+      <div className="proof-supplement-row">
+        <span>相关链接 {supplements.links.length}/5</span>
+        <ProofButton variant="quiet" disabled={supplements.links.length >= 5}
+          onClick={() => patchSupplements({ links: [...supplements.links, { url: "" }] })}>添加链接</ProofButton>
+      </div>
+      {supplements.links.map((link, linkIndex) => <div key={linkIndex} className="proof-supplement-link">
+        <label className="proof-field"><span>相关链接 {linkIndex + 1}</span>
+          <input placeholder="粘贴相关链接（作品、GitHub、文章等）" value={link.url}
+            onChange={(event) => patchSupplements({ links:
+              supplements.links.map((entry, i) => i === linkIndex ? { url: event.target.value } : entry) })} /></label>
+        <ProofButton variant="quiet" onClick={() => patchSupplements({ links:
+          supplements.links.filter((_, i) => i !== linkIndex) })}>移除链接</ProofButton>
+      </div>)}
+      <div className="proof-supplement-row">
+        <span>图片 {supplements.images.length}/6</span>
+        <label className="proof-supplement-upload">
+          <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传图片"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) onUploadImage(file);
+            }} />
+          + 上传图片
+        </label>
+      </div>
+      <p className="proof-supplement-note">最多 6 张，每张不超过 5MB，说明不超过 80 字</p>
+      {supplements.images.map((image, imageIndex) => <div key={image.imageId} className="proof-supplement-image">
+        <img src={imageUrl(image.imageId)} alt={`补充图片 ${imageIndex + 1}`} />
+        <label className="proof-field"><span>图片说明</span>
+          <input maxLength={80} value={image.caption}
+            onChange={(event) => patchSupplements({ images:
+              supplements.images.map((entry, i) => i === imageIndex ? { ...entry, caption: event.target.value } : entry) })} /></label>
+        <ProofButton variant="quiet" onClick={() => patchSupplements({ images:
+          supplements.images.filter((_, i) => i !== imageIndex) })}>移除图片</ProofButton>
+      </div>)}
+    </div>
     <label className="proof-field proof-entry-move"><span>移动到</span>
       <select value={kind} aria-label={`移动${label}条目 ${index + 1} 到其他模块`}
         onChange={(event) => onMoveTo(event.target.value as ResumeModuleKind)}>

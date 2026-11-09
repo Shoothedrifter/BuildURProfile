@@ -680,6 +680,22 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-entry-source-head { margin: 0 0 6px; font-size: 12px; color: var(--proof-muted); }
 .proof-entry-source-text { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
 .proof-entry-source-page { display: inline-block; margin-right: 8px; font-size: 12px; color: var(--proof-muted); }
+/* 条目补充内容：用户手写的文字/链接/图片，浅色分区与 AI 解析内容区分 */
+.proof-supplement { margin: 0; padding: 12px 14px; border: 1px dashed #e0d2c8;
+  border-radius: var(--proof-radius); display: grid; gap: 10px; }
+.proof-supplement-head { margin: 0; font-size: 13px; font-weight: 600; color: var(--proof-ink); }
+.proof-supplement-count { margin: -6px 0 0; font-size: 12px; color: var(--proof-muted); text-align: right; }
+.proof-supplement-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 13px; color: var(--proof-muted); }
+.proof-supplement-link, .proof-supplement-image { display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px; align-items: end; }
+.proof-supplement-upload { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px;
+  border: 1.5px dashed var(--proof-accent); border-radius: 999px; color: var(--proof-accent);
+  font-size: 13px; cursor: pointer; }
+.proof-supplement-upload input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.proof-supplement-note { margin: 0; font-size: 12px; color: var(--proof-muted); }
+.proof-supplement-image img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px;
+  border: 1px solid #e0d2c8; justify-self: start; align-self: end; }
 .proof-fact-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
 .proof-fact-check { display: inline-flex; align-items: center; gap: 8px; padding-bottom: 14px; font-size: 14px; }
 .proof-entry-move { max-width: 320px; }

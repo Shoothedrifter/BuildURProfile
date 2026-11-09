@@ -63,3 +63,24 @@ it("fetches trimmed source blocks for original-text cross-check", async () => {
   expect(result.blocks[0]).toEqual({ blockId: "block_1", page: 1, readingOrder: 0, text: "source text" });
   expect(calls.find((call) => call.url === "/api/resumes/resume-1/blocks")?.method).toBe("GET");
 });
+
+it("uploads a supplement image with its declared type and builds private image URLs", async () => {
+  const calls: Array<{ url: string; method?: string; headers?: Record<string, string> }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, method: init?.method, headers: init?.headers as Record<string, string> });
+    if (url === "/api/session") return new Response(JSON.stringify({ csrfToken: "test-csrf" }));
+    if (url === "/api/resumes/resume-1/images") {
+      expect(init?.body).toBeInstanceOf(Blob);
+      return new Response(JSON.stringify({ imageId: "img_1" }), { status: 201 });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }));
+  const file = new File([new Uint8Array([1, 2, 3])], "work.png", { type: "image/png" });
+  const result = await resumeApi.uploadImage("resume-1", file);
+  expect(result.imageId).toBe("img_1");
+  const upload = calls.find((call) => call.url === "/api/resumes/resume-1/images");
+  expect(upload?.method).toBe("POST");
+  expect(upload?.headers?.["content-type"]).toBe("image/png");
+  expect(resumeApi.imageUrl("resume-1", "img_1")).toBe("/api/resumes/resume-1/images/img_1");
+});
+

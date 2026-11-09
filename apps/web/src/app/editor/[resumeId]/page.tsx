@@ -15,7 +15,8 @@ const labels: Record<ResumeModuleKind, string> = {
 };
 
 type DialogState = null | { kind: "reparse" } | { kind: "removeResume" }
-  | { kind: "removeItem"; sectionKind: ResumeModuleKind; itemId: string };
+  | { kind: "removeItem"; sectionKind: ResumeModuleKind; itemId: string }
+  | { kind: "saveFailed"; detail: string; retryStyle: boolean };
 
 export default function ResumeEditorPage({ params }: { params: Promise<{ resumeId: string }> }) {
   const [resumeId, setResumeId] = useState("");
@@ -125,12 +126,34 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       const saved = await resumeApi.save(resumeId, draft);
       setDraft(saved.draft);
       setSavedAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
+      setDialog(null);
       if (continueToStyle) window.location.assign(`/style/${encodeURIComponent(resumeId)}`);
     } catch (cause) {
+      // 保存失败走挽留弹窗：改动仍在页面上，可一键重试或继续编辑
       const detail = cause instanceof Error ? cause.message : "保存失败。";
-      setError(detail === "REVISION_CONFLICT" ? "草稿已在别处更新，请刷新页面后重试。"
-        : detail === "Name and email or phone required" ? "请在基本信息中勾选姓名，以及邮箱或电话，再继续。" : detail);
+      setDialog({ kind: "saveFailed",
+        detail: detail === "REVISION_CONFLICT" ? "草稿已在别处更新，请刷新页面后重试。"
+          : detail === "Name and email or phone required" ? "请在基本信息中勾选姓名，以及邮箱或电话，再继续。" : detail,
+        retryStyle: continueToStyle });
     } finally { setBusy(false); }
+  };
+
+  // 上传条目补充图片：先做类型与体积前置校验，成功后把引用写入草稿
+  const uploadSupplementImage = async (kind: ResumeModuleKind, itemId: string, file: File) => {
+    if (!resumeId) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setError("仅支持 PNG、JPG 或 WebP 图片。"); return;
+    }
+    if (file.size > 5 * 1024 * 1024) { setError("每张图片不超过 5MB。"); return; }
+    try {
+      const { imageId } = await resumeApi.uploadImage(resumeId, file);
+      updateItem(kind, itemId, (current) => ({ ...current,
+        supplements: { ...(current.supplements ?? { text: "", links: [], images: [] }),
+          images: [...(current.supplements?.images ?? []), { imageId, caption: "" }] } }));
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "图片上传失败。");
+    }
   };
 
   // 删除简历：确认弹窗后执行，成功即回上传页
@@ -212,6 +235,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
                 key: `custom-${crypto.randomUUID()}`, label: "新字段", value: "", included: false }] }))}
               onPatchFactLabel={(factKey, nextLabel) => updateItem(section.kind, item.itemId, (current) => ({ ...current,
                 facts: current.facts.map((fact) => fact.key === factKey ? { ...fact, label: nextLabel } : fact) }))}
+              onUploadImage={(file) => { void uploadSupplementImage(section.kind, item.itemId, file); }}
+              imageUrl={(imageId) => resumeApi.imageUrl(resumeId, imageId)}
               onMoveUp={() => moveItemWithin(section.kind, item.itemId, -1)}
               onMoveDown={() => moveItemWithin(section.kind, item.itemId, 1)}
               onRequestRemove={() => setDialog({ kind: "removeItem", sectionKind: section.kind, itemId: item.itemId })}
@@ -245,5 +270,13 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     <ConfirmDialog open={dialog?.kind === "removeResume"} title="删除简历与原 PDF"
       description="确定删除这份简历、原 PDF 和解析草稿吗？此操作无法撤销。" confirmLabel="确认删除"
       busy={busy} onConfirm={() => void confirmRemove()} onClose={() => setDialog(null)} />
+    <ConfirmDialog open={dialog?.kind === "saveFailed"} title="保存失败"
+      description={dialog?.kind === "saveFailed" ? <>
+        <p>{dialog.detail}</p>
+        <p>本次修改尚未保存，改动会保留在页面上。你可以重试保存，或先继续编辑。</p>
+      </> : null}
+      confirmLabel="重试保存" busy={busy}
+      onConfirm={() => { if (dialog?.kind === "saveFailed") void save(dialog.retryStyle); }}
+      onClose={() => setDialog(null)} />
   </AgentChrome>;
 }

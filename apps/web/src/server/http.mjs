@@ -204,10 +204,15 @@ export async function dispatchWebRequest(request, handler) {
   request.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
   });
-  const isResumeUpload = request.method === "POST" && parseRoute(url.pathname).join("/") === "api/resumes/upload";
-  if (isResumeUpload && headers["content-length"] && (!/^\d+$/.test(headers["content-length"]) || Number(headers["content-length"]) > PDF_MAX_BYTES)) {
+  // 大体积上传（原 PDF 与条目补充图片）保持流式转发，不预读进内存；声明的体积超限直接拒绝
+  const route = parseRoute(url.pathname).join("/");
+  const isPdfUpload = request.method === "POST" && route === "api/resumes/upload";
+  const isImageUpload = request.method === "POST" && /^api\/resumes\/[^/]+\/images$/.test(route);
+  const isResumeUpload = isPdfUpload || isImageUpload;
+  const uploadLimit = isPdfUpload ? PDF_MAX_BYTES : 5 * 1024 * 1024;
+  if (isResumeUpload && headers["content-length"] && (!/^\d+$/.test(headers["content-length"]) || Number(headers["content-length"]) > uploadLimit)) {
     await request.body?.cancel();
-    return Response.json({errorCode:"FILE_TOO_LARGE",error:"FILE_TOO_LARGE"},{status:413,headers:{"cache-control":"no-store","x-content-type-options":"nosniff"}});
+    return Response.json({errorCode:isPdfUpload?"FILE_TOO_LARGE":"IMAGE_TOO_LARGE",error:isPdfUpload?"FILE_TOO_LARGE":"IMAGE_TOO_LARGE"},{status:413,headers:{"cache-control":"no-store","x-content-type-options":"nosniff"}});
   }
   let binaryBuffer = Buffer.alloc(0);
   if (!isResumeUpload && !["GET", "HEAD"].includes(request.method)) {

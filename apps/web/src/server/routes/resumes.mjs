@@ -30,6 +30,17 @@ export async function handleResumeRoutes({req,res,parts,sessionId,repository,sen
  if(parts.length===4&&parts[3]==='source'&&req.method==='GET'){
   const bytes=repository.readSource(sessionId,parts[2]);res.writeHead(200,{'content-type':'application/pdf','content-length':bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});res.end(bytes);return true;
  }
+ // 条目补充图片：上传走流式读取并预检体积，读取响应头与 /source 对齐
+ if(parts.length===4&&parts[3]==='images'&&req.method==='POST'){
+  if(req.headers['content-length']&&(!/^\d+$/.test(req.headers['content-length'])||Number(req.headers['content-length'])>5*1024*1024))throw resumeError(413,'IMAGE_TOO_LARGE');
+  const chunks=[];let total=0;
+  for await(const chunk of req){total+=chunk.length;if(total>5*1024*1024)throw resumeError(413,'IMAGE_TOO_LARGE');chunks.push(chunk);}
+  sendJson(res,201,queue.saveImage(sessionId,parts[2],req.headers['content-type'],Buffer.concat(chunks,total)));return true;
+ }
+ if(parts.length===5&&parts[3]==='images'&&req.method==='GET'){
+  const image=queue.readImage(sessionId,parts[2],parts[4]);
+  res.writeHead(200,{'content-type':image.contentType,'content-length':image.bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});res.end(image.bytes);return true;
+ }
  if(parts.length===3&&req.method==='DELETE'){sendJson(res,200,repository.delete(sessionId,parts[2]));return true;}
  return false;
 }

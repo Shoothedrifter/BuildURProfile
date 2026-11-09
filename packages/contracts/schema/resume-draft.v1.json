@@ -1,5 +1,77 @@
 {
   "$defs": {
+    "SupplementLink": {
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "SupplementLink",
+      "type": "object"
+    },
+    "SupplementImage": {
+      "additionalProperties": false,
+      "properties": {
+        "imageId": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Imageid",
+          "type": "string"
+        },
+        "caption": {
+          "maxLength": 80,
+          "title": "Caption",
+          "type": "string"
+        }
+      },
+      "required": [
+        "imageId",
+        "caption"
+      ],
+      "title": "SupplementImage",
+      "type": "object"
+    },
+    "ItemSupplements": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "maxLength": 500,
+          "title": "Text",
+          "type": "string"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/SupplementLink"
+          },
+          "maxItems": 5,
+          "title": "Links",
+          "type": "array"
+        },
+        "images": {
+          "items": {
+            "$ref": "#/$defs/SupplementImage"
+          },
+          "maxItems": 6,
+          "title": "Images",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "links",
+        "images"
+      ],
+      "title": "ItemSupplements",
+      "type": "object"
+    },
     "DraftFact": {
       "additionalProperties": false,
       "properties": {
@@ -106,6 +178,10 @@
           ],
           "title": "Origin",
           "type": "string"
+        },
+        "supplements": {
+          "$ref": "#/$defs/ItemSupplements",
+          "title": "Supplements"
         }
       },
       "required": [

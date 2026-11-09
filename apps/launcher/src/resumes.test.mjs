@@ -182,6 +182,40 @@ test('owner can read trimmed source blocks for original-text cross-check after c
  assert.equal((await s.request(parsed.resumeId+'/blocks','GET',null,{cookie:other.headers.get('set-cookie').split(';')[0]})).status,404);
 });
 
+const png1x1=Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c626001000000ffff03000006000557bfabd40000000049454e44ae426082','hex');
+test('owner can attach supplement images to a completed resume draft',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'images'}))).json();
+ const task=s.repo.queue.lease('worker');
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(file.fileId);
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ Object.assign(source,{fileId:file.fileId,uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:file.fileId,resumeId:parsed.resumeId,revision:1});for(const section of draft.sections)for(const item of section.items)item.included=false;
+ s.repo.queue.complete(task.id,task.leaseToken,source,draft);
+ // 上传补充图片：属主 + 受限类型 + 5MB 上限
+ const up=await s.request(parsed.resumeId+'/images','POST',png1x1,{'content-type':'image/png'});
+ assert.equal(up.status,201);const {imageId}=await up.json();assert.match(imageId,/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+ const img=await s.request(parsed.resumeId+'/images/'+imageId);
+ assert.equal(img.status,200);assert.equal(img.headers.get('content-type'),'image/png');
+ assert.equal(img.headers.get('x-content-type-options'),'nosniff');
+ assert.deepEqual(Buffer.from(await img.arrayBuffer()),png1x1);
+ const other=await dispatchWebRequest(new Request('http://test/api/session'),s.handler);
+ const stranger={cookie:other.headers.get('set-cookie').split(';')[0]};
+ assert.equal((await s.request(parsed.resumeId+'/images/'+imageId,'GET',null,stranger)).status,404);
+ assert.equal((await(await s.request(parsed.resumeId+'/images','POST',png1x1,{'content-type':'text/plain'})).json()).errorCode,'IMAGE_TYPE_INVALID');
+ assert.equal((await s.request(parsed.resumeId+'/images','POST',Buffer.alloc(5*1024*1024+1),{'content-type':'image/png'})).status,413);
+ // 草稿可引用已上传图片；悬空引用被整体拒绝
+ draft.sections[0].items[0].supplements={text:'补充',links:[{url:'https://example.com/work'}],images:[{imageId,caption:'作品截图'}]};
+ const update=await s.request(parsed.resumeId,'PATCH',JSON.stringify({revision:1,draft}));
+ assert.equal(update.status,200);assert.equal((await update.json()).revision,2);
+ draft.sections[0].items[0].supplements.images=[{imageId:'ghost_image',caption:''}];draft.revision=2;
+ assert.equal((await s.request(parsed.resumeId,'PATCH',JSON.stringify({revision:2,draft}))).status,400);
+ // 简历删除后图片字节随级联清理
+ await s.request(parsed.resumeId,'DELETE');
+ assert.equal(s.db.prepare('SELECT COUNT(*) AS n FROM resume_images').get().n,0);
+});
+
 test('parse session rate limit and bounded retries do not affect other queues',async t=>{
  const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();let id;
  for(let i=0;i<10;i++){const r=await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'rate'+i}));assert.equal(r.status,202);id=(await r.json()).resumeId;}

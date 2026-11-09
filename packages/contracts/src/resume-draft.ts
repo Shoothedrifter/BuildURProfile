@@ -5,7 +5,9 @@ import { validateResumeSource, validateSchema } from './resume-source.ts';
 export const RESUME_MODULE_MAPPING = { basicInfo: 'hero-profile', jobIntent: 'job-intent-strip', selfEvaluation: 'intro-card', education: 'education-timeline', workExperience: 'work-timeline', projects: 'project-stacked-cards', awards: 'award-badges', campusExperience: 'campus-timeline', skills: 'skill-tags', other: 'free-content-card' } as const;
 export type ResumeModuleKind = keyof typeof RESUME_MODULE_MAPPING;
 export type DraftFact = { key: string; label: string; value: string; included: boolean };
-export type ResumeDraftItem = { itemId: string; order: number; title: string; details: string; facts: DraftFact[]; sourceBlockIds: string[]; confidence: number; segmentationConfidence: number; needsReview: boolean; included: boolean; origin: 'agent' | 'user' };
+// 条目补充内容：用户手写的补充文字、相关链接与上传图片（可选字段，历史草稿没有）
+export type ItemSupplements = { text: string; links: { url: string }[]; images: { imageId: string; caption: string }[] };
+export type ResumeDraftItem = { itemId: string; order: number; title: string; details: string; facts: DraftFact[]; sourceBlockIds: string[]; confidence: number; segmentationConfidence: number; needsReview: boolean; included: boolean; origin: 'agent' | 'user'; supplements?: ItemSupplements };
 export type ResumeDraftSection = { id: ResumeModuleKind; kind: ResumeModuleKind; mappedDesignModule: string; order: number; visible: boolean; items: ResumeDraftItem[] };
 export type ResumeDraftV1 = { version: 'resume-draft-v1'; resumeId: string; fileId: string; revision: number; sections: ResumeDraftSection[] };
 function validateShape(raw: unknown): ResumeDraftV1 {

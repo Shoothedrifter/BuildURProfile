@@ -36,6 +36,30 @@ describe('private resume contracts', () => {
     draft.sections[0].items[0].facts = [];
     expect(() => contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source))).toThrow();
   });
+  it('accepts item supplements within limits and enforces their caps', () => {
+    const draft = structuredClone(fixture) as contracts.ResumeDraftV1;
+    const item = draft.sections[0].items[0];
+    item.supplements = { text: '补充说明', links: [{ url: 'https://example.com/work' }],
+      images: [{ imageId: 'img_1', caption: '作品截图' }] };
+    expect(contracts.validateResumeDraft(draft, source).sections[0].items[0].supplements)
+      .toEqual(item.supplements);
+    // 历史草稿没有 supplements 字段，必须继续通过校验
+    delete item.supplements;
+    expect(contracts.validateResumeDraft(draft, source).sections[0].items[0].supplements).toBeUndefined();
+    // 补充文字 ≤500、链接 ≤5 条且不可为空串、图片 ≤6 张、说明 ≤80 字
+    item.supplements = { text: 'x'.repeat(501), links: [], images: [] };
+    expect(() => contracts.validateResumeDraft(draft, source)).toThrow();
+    item.supplements = { text: '', links: Array.from({ length: 6 }, () => ({ url: 'https://a.b' })), images: [] };
+    expect(() => contracts.validateResumeDraft(draft, source)).toThrow();
+    item.supplements = { text: '', links: [{ url: '' }], images: [] };
+    expect(() => contracts.validateResumeDraft(draft, source)).toThrow();
+    item.supplements = { text: '', links: [], images: Array.from({ length: 7 }, (_, i) => ({ imageId: `img_${i}`, caption: '' })) };
+    expect(() => contracts.validateResumeDraft(draft, source)).toThrow();
+    item.supplements = { text: '', links: [], images: [{ imageId: 'img_1', caption: 'x'.repeat(81) }] };
+    expect(() => contracts.validateResumeDraft(draft, source)).toThrow();
+    item.supplements = { text: '', links: [], images: [{ imageId: '../escape', caption: '' }] };
+    expect(() => contracts.validateResumeDraft(draft, source)).toThrow();
+  });
 });
 
 it('blocks oversized arrays and private text copied into display prose', () => {

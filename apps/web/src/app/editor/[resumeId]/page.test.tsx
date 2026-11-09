@@ -6,7 +6,9 @@ import { resumeApi } from "../../../lib/resumeApi";
 
 vi.mock("../../../lib/resumeApi", () => ({ resumeApi: {
   read: vi.fn(), save: vi.fn(), remove: vi.fn(), reparse: vi.fn(), blocks: vi.fn(),
-  sourceUrl: (id: string) => `/api/resumes/${id}/source`
+  uploadImage: vi.fn(),
+  sourceUrl: (id: string) => `/api/resumes/${id}/source`,
+  imageUrl: (id: string, imageId: string) => `/api/resumes/${id}/images/${imageId}`
 } }));
 
 // 在 fixture 基础上注入若干项目条目，便于验证模块折叠、待确认与条目操作
@@ -28,6 +30,7 @@ beforeEach(() => {
   // 原文摘录是辅助信息，默认给空列表；需要对照的测试自行覆盖
   vi.mocked(resumeApi.blocks).mockReset();
   vi.mocked(resumeApi.blocks).mockResolvedValue({ blocks: [] });
+  vi.mocked(resumeApi.uploadImage).mockReset();
 });
 
 it("asks before reparsing into a separate draft and reports failure", async () => {
@@ -59,8 +62,11 @@ it("explains missing contact selection beside the confirm action", async () => {
   await waitFor(() => expect(confirm).toBeEnabled());
   expect(screen.getByText(/请在基本信息中勾选姓名，以及邮箱或电话/)).toBeInTheDocument();
   fireEvent.click(confirm);
-  expect(await screen.findByRole("alert")).toHaveTextContent("请在基本信息中勾选姓名，以及邮箱或电话");
+  // 确认失败同样走挽留弹窗：文案就近展示且草稿不被提交
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent("请在基本信息中勾选姓名，以及邮箱或电话");
   expect(vi.mocked(resumeApi.save)).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
   const basicModule = screen.getByRole("heading", { name: "基本信息" }).closest("section")!;
   const factChecks = within(basicModule).getAllByRole("checkbox", { name: "展示" });
   fireEvent.click(factChecks[0]);
@@ -180,4 +186,53 @@ it("keeps editing usable when the source excerpt request fails", async () => {
   await waitFor(() => expect(vi.mocked(resumeApi.blocks)).toHaveBeenCalled());
   expect(screen.queryByText(/原文对照/)).not.toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("edits supplement text, links and images on an entry", async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: fixture as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  vi.mocked(resumeApi.save).mockImplementation(async (_id, draft) => ({ draft: { ...draft, revision: 2 },
+    revision: 2, expiresAt: "2026-12-09T00:00:00Z" }));
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  const basicSection = (await screen.findByRole("heading", { name: "基本信息" })).closest("section")!;
+  // 补充文字显示字数计数
+  const supplementText = within(basicSection).getByLabelText(/补充说明/);
+  fireEvent.change(supplementText, { target: { value: "主导开源项目" } });
+  expect(within(basicSection).getByText("6/500")).toBeInTheDocument();
+  // 相关链接：添加后可移除
+  fireEvent.click(within(basicSection).getByRole("button", { name: "添加链接" }));
+  fireEvent.change(within(basicSection).getByPlaceholderText(/相关链接/), { target: { value: "https://github.com/me" } });
+  fireEvent.click(within(basicSection).getByRole("button", { name: "移除链接" }));
+  expect(within(basicSection).queryByDisplayValue("https://github.com/me")).not.toBeInTheDocument();
+  // 上传图片后显示缩略图与说明输入
+  vi.mocked(resumeApi.uploadImage).mockResolvedValue({ imageId: "img_1" });
+  fireEvent.change(within(basicSection).getByLabelText("上传图片"),
+    { target: { files: [new File([new Uint8Array([1])], "shot.png", { type: "image/png" })] } });
+  const thumbnail = await within(basicSection).findByRole("img", { name: /补充图片/ });
+  expect(thumbnail).toHaveAttribute("src", "/api/resumes/resume-1/images/img_1");
+  // 保存时补充内容进入草稿
+  fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+  await waitFor(() => expect(resumeApi.save).toHaveBeenCalled());
+  const savedItem = vi.mocked(resumeApi.save).mock.calls[0][1].sections[0].items[0];
+  expect(savedItem.supplements).toEqual({ text: "主导开源项目", links: [],
+    images: [{ imageId: "img_1", caption: "" }] });
+});
+
+it("keeps the draft in place and offers retry when saving fails", async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: fixture as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  vi.mocked(resumeApi.save)
+    .mockRejectedValueOnce(new Error("网络异常"))
+    .mockImplementationOnce(async (_id, draft) => ({ draft: { ...draft, revision: 2 },
+      revision: 2, expiresAt: "2026-12-09T00:00:00Z" }));
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  await screen.findByRole("heading", { name: "基本信息" });
+  fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent(/保存失败/);
+  expect(dialog).toHaveTextContent(/改动会保留在页面上/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "重试保存" }));
+  await waitFor(() => expect(vi.mocked(resumeApi.save)).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(screen.getByRole("status")).toHaveTextContent(/已保存/);
 });

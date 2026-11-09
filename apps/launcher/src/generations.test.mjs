@@ -35,14 +35,14 @@ test("existing generation table upgrades through recorded schema migrations", ()
     )`);
     legacy.close();
     const upgraded = openDatabase(path);
-    assert.deepEqual(upgraded.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7]);
+    assert.deepEqual(upgraded.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8]);
     assert.ok(upgraded.prepare("PRAGMA table_info(projects)").all().some((column) => column.name === "deleted_at"));
     for (const name of ["brief_json", "workflow_version", "lease_token", "attempt_count", "next_attempt_at", "cancel_requested_at"]) {
       assert.ok(upgraded.prepare("PRAGMA table_info(generations)").all().some((column) => column.name === name));
     }
     upgraded.close();
     const reopened = openDatabase(path);
-    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 7);
+    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 8);
     reopened.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

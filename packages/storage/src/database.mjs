@@ -155,6 +155,13 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
       PRIMARY KEY(owner_session_id,idempotency_key)
     );`);
   });
+  applyMigration(db, 8, () => {
+    // 条目补充图片：字节随库保存，resume 删除时级联清理，无孤儿文件
+    db.exec(`CREATE TABLE resume_images (
+      id TEXT PRIMARY KEY, resume_id TEXT NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+      content_type TEXT NOT NULL, data BLOB NOT NULL, created_at INTEGER NOT NULL
+    );`);
+  });
   return db;
 }
 

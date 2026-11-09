@@ -139,6 +139,23 @@ export function createResumeParseQueue({
           .map(({ blockId, page, readingOrder, text }) => ({ blockId, page, readingOrder, text }))
       };
     },
+    // 条目补充图片：仅限属主在草稿就绪后上传，类型与大小在入库前收紧
+    saveImage(owner, id, contentType, bytes) {
+      const row = owned(owner, id);
+      if (row.status !== 'SUCCEEDED' || !row.draft_json) throw resumeError(409, 'DRAFT_NOT_READY');
+      const type = String(contentType ?? '').split(';')[0].trim();
+      if (!['image/png', 'image/jpeg', 'image/webp'].includes(type)) throw resumeError(400, 'IMAGE_TYPE_INVALID');
+      if (bytes.length > 5 * 1024 * 1024) throw resumeError(413, 'IMAGE_TOO_LARGE');
+      const imageId = randomUUID();
+      db.prepare('INSERT INTO resume_images(id,resume_id,content_type,data,created_at) VALUES(?,?,?,?,?)').run(imageId, row.id, type, bytes, now());
+      return { imageId };
+    },
+    readImage(owner, id, imageId) {
+      const row = owned(owner, id);
+      const image = db.prepare('SELECT content_type,data FROM resume_images WHERE id=? AND resume_id=?').get(imageId, row.id);
+      if (!image) throw resumeError(404, 'IMAGE_NOT_FOUND');
+      return { contentType: image.content_type, bytes: image.data };
+    },
     patch(owner, id, input) {
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw resumeError(400, 'INVALID_DRAFT');
       const {
@@ -156,6 +173,13 @@ export function createResumeParseQueue({
           throw resumeError(400, 'INVALID_DRAFT');
         }
         if (clean.resumeId !== id || clean.fileId !== row.file_id) throw resumeError(400, 'INVALID_DRAFT');
+        // 补充图片必须真实存在且属于本简历，拒绝悬空引用
+        const imageIds = [...new Set(clean.sections.flatMap(s => s.items.flatMap(i => i.supplements?.images.map(g => g.imageId) ?? [])))];
+        if (imageIds.length) {
+          const placeholders = imageIds.map(() => '?').join(',');
+          const found = db.prepare(`SELECT COUNT(*) AS n FROM resume_images WHERE resume_id=? AND id IN (${placeholders})`).get(id, ...imageIds).n;
+          if (found !== imageIds.length) throw resumeError(400, 'INVALID_DRAFT');
+        }
         clean.revision = revision + 1;
         db.prepare('UPDATE resumes SET draft_json=?,revision=?,updated_at=? WHERE id=?').run(JSON.stringify(clean), clean.revision, now(), id);
         return {
