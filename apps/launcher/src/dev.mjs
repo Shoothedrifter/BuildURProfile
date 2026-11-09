@@ -19,6 +19,7 @@ const webEnv = {
 delete webEnv.OPENAI_API_KEY;
 delete webEnv.OPENAI_IMAGE_MODEL;
 delete webEnv.RESUME_TEXT_MODEL;
+delete webEnv.ZAI_API_KEY;
 delete webEnv.CLOUDFLARE_API_TOKEN;
 delete webEnv.CLOUDFLARE_ACCOUNT_ID;
 
@@ -32,10 +33,11 @@ for (const key of Object.keys(agentEnv)) {
 }
 if (existsSync(".env.agent")) {
   const file = parseEnv(readFileSync(".env.agent", "utf8"));
-  for (const key of ["OPENAI_API_KEY", "OPENAI_IMAGE_MODEL", "RESUME_TEXT_MODEL", "CLOUDFLARE_ACCOUNT_ID",
+  for (const key of ["OPENAI_API_KEY", "ZAI_API_KEY", "OPENAI_IMAGE_MODEL", "RESUME_TEXT_PROVIDER", "RESUME_TEXT_MODEL", "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN", "IMAGE_PROVIDER", "AGENT_CHECKPOINT_PATH", "AGENT_RESUME_WORKER_ID"]) {
     if (file[key] !== undefined) agentEnv[key] = file[key];
   }
+  if (file.RESUME_TEXT_PROVIDER !== undefined) webEnv.RESUME_TEXT_PROVIDER = file.RESUME_TEXT_PROVIDER;
 }
 
 const defaultVenv = existsSync("apps/agent/.venv/bin/python")

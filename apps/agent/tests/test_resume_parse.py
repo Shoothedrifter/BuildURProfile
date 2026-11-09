@@ -148,7 +148,7 @@ async def test_model_without_configuration_fails_closed(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("RESUME_TEXT_MODEL", raising=False)
     with pytest.raises(ValueError, match="PARSE_FAILED"):
-        await OpenAIResumeTextModel().generate_json("test", {"type": "object"}, "data")
+        await OpenAIResumeTextModel(provider="openai").generate_json("test", {"type": "object"}, "data")
 
 
 @pytest.mark.asyncio
@@ -170,6 +170,42 @@ async def test_model_requests_strict_schema_without_storing_response():
     assert client.responses.kwargs["store"] is False
     assert client.responses.kwargs["text"]["format"]["strict"] is True
     assert "tools" not in client.responses.kwargs
+
+
+@pytest.mark.asyncio
+async def test_glm_uses_its_response_endpoint_and_supported_json_object_mode(monkeypatch):
+    created = {}
+
+    class Responses:
+        async def create(self, **kwargs):
+            created["request"] = kwargs
+            return type("Response", (), {"output_text": '{"assignments":[]}'})()
+
+    class Client:
+        responses = Responses()
+
+    def client_factory(**kwargs):
+        created["client"] = kwargs
+        return Client()
+
+    monkeypatch.setattr("buildurprofile_agent.providers.text_model.AsyncOpenAI", client_factory)
+    model = OpenAIResumeTextModel(provider="zai", model="glm-test", api_key="synthetic-key")
+    result = await model.generate_json("resume_sections_v1", {"type": "object"}, "data")
+    assert result == {"assignments": []}
+    assert created["client"]["base_url"] == "https://open.bigmodel.cn/api/v1"
+    assert created["request"]["model"] == "glm-test"
+    assert created["request"]["text"] == {"format": {"type": "json_object"}}
+    assert '"type": "object"' in created["request"]["instructions"]
+    assert created["request"]["store"] is False
+
+
+@pytest.mark.asyncio
+async def test_glm_key_is_read_from_its_own_environment_variable(monkeypatch):
+    monkeypatch.setenv("ZAI_API_KEY", "synthetic-key")
+    monkeypatch.setenv("RESUME_TEXT_MODEL", "glm-test")
+    model = OpenAIResumeTextModel(provider="zai")
+    assert model.api_key == "synthetic-key"
+    assert model.model == "glm-test"
 
 
 def test_pdf_layout_rejects_invalid_or_textless_files():

@@ -21,13 +21,13 @@
 | `python -m buildurprofile_agent.server` | 进程环境，不自动读取环境文件 |
 | `docker compose -f compose.agent.yml up --build` | 根 `.env` 用于变量替换，`.env.api` / `.env.agent` 分别注入两个服务 |
 
-支付宝凭据只给 Next.js 服务端，图像与 OpenAI 文本凭据只给 Python；共享 `AGENT_SERVICE_TOKEN` 只给服务进程，不暴露给客户端。Agent 简历解析需在根 `.env.agent` 配置 `OPENAI_API_KEY` 和 `RESUME_TEXT_MODEL`；缺少时解析任务返回 `PARSE_FAILED`。
+支付宝凭据只给 Next.js 服务端，图像与文本模型凭据只给 Python；共享 `AGENT_SERVICE_TOKEN` 只给服务进程，不暴露给客户端。Agent 简历解析需在根 `.env.agent` 配置 `RESUME_TEXT_PROVIDER`、`RESUME_TEXT_MODEL`，以及对应的 `OPENAI_API_KEY` 或 `ZAI_API_KEY`；缺少时解析任务返回 `PARSE_FAILED`。GLM Key 不能放在 `OPENAI_API_KEY` 下冒充 OpenAI Key。
 
 ## 本机开发
 
 1. 安装 Node.js 22.12+（推荐 24+）、Python 3.11+ 和 uv 0.11.x。
 2. 运行 `npm ci` 和 `uv sync --project apps/agent --frozen --extra test`。
-3. 旧浏览器解析与无照片预览可直接运行 `npm run dev`。新 Agent 简历解析需从 `apps/agent/.env.example` 准备根 `.env.agent`，填入 `OPENAI_API_KEY` 和 `RESUME_TEXT_MODEL`；需要支付时，再从 `apps/launcher/.env.local.example` 准备根 `.env`；需要肖像时运行 `npm run setup:avatar` 并配置图像供应商。
+3. 旧浏览器解析与无照片预览可直接运行 `npm run dev`。新 Agent 简历解析需从 `apps/agent/.env.example` 准备根 `.env.agent`，按所选 OpenAI 或 GLM 供应商填入模型和对应 Key；需要支付时，再从 `apps/launcher/.env.local.example` 准备根 `.env`；需要肖像时运行 `npm run setup:avatar` 并配置图像供应商。修改 `.env.agent` 后重启 `npm run dev`，运行中的 Python Agent 不会自动重新读取它。
 4. 打开 `http://127.0.0.1:5173`；Next.js 开发服务默认监听 5173（前后端同源），Agent 默认 8788。图像服务配置见[Agent](../agent/README.md)，支付字段见[支付文档](../api/payment.md)。
 
 启动脚本会自动检测 `apps/agent/.venv/bin/python`（Unix）与 `apps/agent/.venv/Scripts/python.exe`（Windows），也可通过环境变量 `PYTHON` 显式指定 Python 路径。

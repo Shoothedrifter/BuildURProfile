@@ -157,7 +157,8 @@ async def process_resume_task(task: ResumeParseTask, client: NodeAgentClient, mo
                 else "PARSE_FAILED")
         retryable = (isinstance(error, ResumeTextModelError) and error.retryable
                      or isinstance(error, (httpx.TransportError, httpx.TimeoutException)))
-        log.warning("resume parse failed id=%s code=%s", task.id, code)
+        reason_code = error.reason if isinstance(error, ResumeTextModelError) else "PARSER_ERROR"
+        log.warning("resume parse failed id=%s code=%s reason=%s", task.id, code, reason_code)
         with suppress(LeaseLost):
             await client.fail_resume(task, code, retryable=retryable)
     finally:
