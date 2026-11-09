@@ -18,6 +18,11 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const basicSection = draft?.sections.find((section) => section.kind === "basicInfo");
+  const selectedBasicFacts = basicSection?.visible ? basicSection.items.filter((item) => item.included)
+    .flatMap((item) => item.facts).filter((fact) => fact.included && fact.value.trim()) : [];
+  const hasName = selectedBasicFacts.some((fact) => fact.key === "name");
+  const hasContact = selectedBasicFacts.some((fact) => fact.key === "email" || fact.key === "phone");
 
   useEffect(() => { void params.then(({ resumeId: id }) => setResumeId(id)); }, [params]);
   useEffect(() => {
@@ -33,7 +38,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const updateSection = (kind: ResumeModuleKind, change: (section: ResumeDraftSection) => ResumeDraftSection) => {
     setDraft((previous) => previous ? { ...previous, sections: previous.sections.map((section) =>
       section.kind === kind ? change(section) : section) } : previous);
-    setMessage("");
+    setMessage(""); setError("");
   };
   const updateItem = (kind: ResumeModuleKind, itemId: string, change: (item: ResumeDraftItem) => ResumeDraftItem) =>
     updateSection(kind, (section) => ({ ...section, items: section.items.map((item) =>
@@ -65,7 +70,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         order: section.items.length }] };
       return section;
     }) });
-    setMessage("");
+    setMessage(""); setError("");
   };
 
   const save = async (continueToStyle = false) => {
@@ -80,7 +85,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "保存失败。";
       setError(detail === "REVISION_CONFLICT" ? "草稿已在别处更新，请刷新页面后重试。"
-        : detail === "Name and email or phone required" ? "请先勾选姓名，以及邮箱或电话，再继续。" : detail);
+        : detail === "Name and email or phone required" ? "请在基本信息中勾选姓名，以及邮箱或电话，再继续。" : detail);
     } finally { setBusy(false); }
   };
 
@@ -116,11 +121,11 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     <h1>核对简历资料</h1>
     <p>Agent 已按模块整理内容。你可以增删、修改和移动条目，只有主动勾选的内容会用于作品。原 PDF 与草稿会在上传 30 天后自动删除。</p>
     {expiresAt && <p>保留至：{new Date(expiresAt).toLocaleString("zh-CN")}</p>}
-    {error && <p role="alert">{error}</p>}
+    {!draft && error && <p role="alert">{error}</p>}
     {message && <p role="status">{message}</p>}
     {draft && <div className="resume-editor-layout">
       <div className="resume-editor-sections">
-        {draft.sections.map((section) => <section key={section.kind} className="resume-module">
+        {draft.sections.map((section) => <section key={section.kind} id={`resume-${section.kind}`} className="resume-module">
           <div className="resume-module-heading">
             <h2>{labels[section.kind]}</h2>
             <label><input type="checkbox" checked={section.visible} onChange={(event) => updateSection(section.kind,
@@ -172,9 +177,14 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       </div>
       <aside className="resume-pdf-panel"><h2>原 PDF</h2><iframe title="原 PDF 预览" src={resumeApi.sourceUrl(resumeId)} /></aside>
     </div>}
+    {draft && (!hasName || !hasContact) && <p className="resume-confirm-hint" id="resume-confirm-hint">
+      请在基本信息中勾选姓名，以及邮箱或电话，再继续。<a href="#resume-basicInfo">返回基本信息 ↑</a>
+    </p>}
+    {draft && error && <p role="alert" className="resume-confirm-error">{error}</p>}
     <div className="resume-actions">
       <button type="button" disabled={busy || !draft} onClick={() => void save()}>保存草稿</button>
-      <button type="button" disabled={busy || !draft} onClick={() => void save(true)}>确认并选择风格 →</button>
+      <button type="button" disabled={busy || !draft} aria-describedby={draft && (!hasName || !hasContact) ? "resume-confirm-hint" : undefined}
+        onClick={() => void save(true)}>确认并选择风格 →</button>
       <button type="button" disabled={busy || !draft} onClick={() => void reparse()}>重新解析为新草稿</button>
       <button type="button" disabled={busy} onClick={() => void remove()}>删除简历与原 PDF</button>
     </div>
