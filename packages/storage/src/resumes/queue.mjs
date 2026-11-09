@@ -67,6 +67,7 @@ export function createResumeParseQueue({
     const task = latest(row.id);
     return {
       resumeId: row.id,
+      fileId: row.file_id,
       expiresAt: iso(liveFile(row.owner_session_id, row.file_id).expires_at),
       status: task?.status ?? row.status,
       stage: task?.stage ?? null,

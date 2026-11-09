@@ -93,7 +93,7 @@ test('parse queue is idempotent, session scoped, cancellable and retry keeps res
  const first=await parse('key1');assert.equal(first.status,202);const a=await first.json();assert.equal(a.status,'QUEUED');
  assert.deepEqual(await(await parse('key1')).json(),a);
  assert.equal((await parse('key1','missing')).status,409);
- assert.equal((await s.request(a.resumeId+'/status')).status,200);
+ const restored=await s.request(a.resumeId+'/status');assert.equal(restored.status,200);assert.equal((await restored.json()).fileId,file.fileId);
  assert.equal((await s.request(a.resumeId)).status,409);
  assert.equal((await s.request(a.resumeId+'/cancel','POST','{}')).status,200);
  assert.equal((await(await s.request(a.resumeId+'/status')).json()).status,'CANCELLED');

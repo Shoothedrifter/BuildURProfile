@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { resumeApi } from "../../lib/resumeApi";
 
 const savedResumeKey = "burp-agent-resume-id";
+const savedFileKey = "burp-agent-file-id";
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -16,6 +17,8 @@ export default function UploadPage() {
 
   useEffect(() => {
     const id = sessionStorage.getItem(savedResumeKey);
+    const storedFileId = sessionStorage.getItem(savedFileKey);
+    if (storedFileId) setFileId(storedFileId);
     if (id) setResumeId(id);
   }, []);
 
@@ -28,6 +31,10 @@ export default function UploadPage() {
       try {
         const next = await resumeApi.status(resumeId);
         if (current !== sequence.current) return;
+        if (next.fileId) {
+          setFileId(next.fileId);
+          sessionStorage.setItem(savedFileKey, next.fileId);
+        }
         if (next.status === "SUCCEEDED") {
           window.location.assign(`/editor/${encodeURIComponent(resumeId)}`);
           return;
@@ -65,6 +72,7 @@ export default function UploadPage() {
     if (resumeId) void resumeApi.cancel(resumeId).catch(() => {});
     sequence.current++;
     sessionStorage.removeItem(savedResumeKey);
+    sessionStorage.removeItem(savedFileKey);
     setFile(next); setFileId(null); setResumeId(null); setStatus(""); setError("");
   };
 
@@ -79,6 +87,7 @@ export default function UploadPage() {
         const uploaded = await resumeApi.upload(file!, (percent) => setStatus(`正在上传 PDF：${percent}%`));
         id = uploaded.fileId;
         setFileId(id);
+        sessionStorage.setItem(savedFileKey, id);
       }
       setStatus("已上传，等待 Agent 领取解析任务…");
       const task = await resumeApi.parse(id);

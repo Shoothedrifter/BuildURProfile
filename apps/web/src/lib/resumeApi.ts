@@ -1,6 +1,6 @@
 import type { ResumeDraftV1 } from "../../../../packages/contracts/src/resume-draft";
 
-export type ResumeStatus = { resumeId: string; status: string; stage?: string; progress?: number; errorCode?: string | null };
+export type ResumeStatus = { resumeId: string; fileId?: string; status: string; stage?: string; progress?: number; errorCode?: string | null };
 export type StoredResume = { draft: ResumeDraftV1; revision: number; expiresAt: string };
 
 let csrfPromise: Promise<string> | null = null;

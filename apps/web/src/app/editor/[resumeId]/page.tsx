@@ -91,6 +91,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     try {
       await resumeApi.remove(resumeId);
       sessionStorage.removeItem("burp-agent-resume-id");
+      sessionStorage.removeItem("burp-agent-file-id");
       window.location.assign("/upload");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "删除失败。"); setBusy(false); }
   };

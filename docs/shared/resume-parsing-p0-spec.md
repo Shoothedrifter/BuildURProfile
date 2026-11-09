@@ -89,7 +89,7 @@ type ResumeDraftV1 = {
 | --- | --- | --- |
 | `POST /api/resumes/upload` | 单个 PDF 字节；`201 {fileId,fileName,size,pageCount}` | ≤10,000,000 B、1–20 页、扩展名/MIME/魔数/可解析结构、未加密、有可提取文字；失败清理临时文件 |
 | `POST /api/resumes/parse` | `{fileId,idempotencyKey}`；`202 {resumeId,status:"QUEUED"}` | 同一会话的文件，幂等键冲突 409；按会话限流 |
-| `GET /api/resumes/:id/status` | `{resumeId,status,stage,progress,errorCode}` | 解析中 1.5 秒轮询；前端 60 秒等待超时可取消/重试 |
+| `GET /api/resumes/:id/status` | `{resumeId,fileId,status,stage,progress,errorCode}` | 仅同会话可读；`fileId` 用于刷新后恢复重试；解析中 1.5 秒轮询，前端 60 秒等待超时可取消/重试 |
 | `GET /api/resumes/:id` | `{draft:ResumeDraftV1,revision}` | 草稿仅属主可读；成功前返回状态/冲突错误 |
 | `GET /api/resumes/:id/source` | `application/pdf` 原文预览 | 仅属主；不提供公开静态 URL；解析后仍可用，删除后 404 |
 | `PATCH /api/resumes/:id` | `{revision,draft}` → `{revision,draft}` | 版本不一致 409；服务端校验十模块、来源 ID、大小和敏感字段状态 |
