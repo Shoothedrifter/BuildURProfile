@@ -14,11 +14,13 @@ from .design import style_to_config
 from .resume import compose_resume
 from .avatar import generate_avatar
 from .artifact import verify_artifact
+from .section_classifier import classify_sections
+from .item_splitter import split_items
 
 
 KNOWN_CAPABILITIES = frozenset({
     "read_portrait", "load_recipe", "existing_output", "store_output", "output_exists",
-    "image_provider", "check_cancel",
+    "image_provider", "check_cancel", "text_model",
 })
 
 
@@ -79,4 +81,9 @@ def default_registry() -> SkillRegistry:
     registry.register(Skill("avatar.wibi.v1", "1.0.0", frozenset({"read_portrait", "load_recipe", "existing_output",
         "store_output", "output_exists", "image_provider", "check_cancel"}), False, 30 * 60.0, generate_avatar))
     registry.register(Skill("artifact.qa.v1", "1.0.0", frozenset({"output_exists"}), True, 5.0, verify_artifact))
+    registry.register(Skill("resume.sections.v1", "1.0.0", frozenset({"text_model"}), True, 60.0,
+                            lambda inputs, grants: classify_sections(inputs["source"], grants["text_model"])))
+    registry.register(Skill("resume.items.v1", "1.0.0", frozenset({"text_model"}), True, 60.0,
+                            lambda inputs, grants: split_items(inputs["source"], inputs["classified"],
+                                                                grants["text_model"])))
     return registry

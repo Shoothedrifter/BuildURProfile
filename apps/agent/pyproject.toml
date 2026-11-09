@@ -17,6 +17,7 @@ dependencies = [
   "Pillow>=11,<13",
   "uvicorn>=0.34,<1",
   "cloudflare>=5,<7",
+  "pdfplumber>=0.11,<1",
 ]
 
 [project.optional-dependencies]
