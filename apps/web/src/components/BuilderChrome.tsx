@@ -145,7 +145,7 @@ export function BuilderChrome({ children, projectCount, onHome, onProjects, onSa
     <div className="proof-banner">✦ 让你的经历被看见，让你的能力被体验。</div>
     <header className="proof-nav">
       <button type="button" className="proof-brand" onClick={onHome} aria-label="返回 BuildURProfile 首页">
-        <span aria-hidden="true">◈</span> BuildURProfile
+        <img src="/logo.png" alt="BuildURProfile" width={104} height={54} />
       </button>
       <nav aria-label="主导航">
         <button type="button" onClick={() => onSection("about")}>产品介绍</button>
@@ -156,7 +156,9 @@ export function BuilderChrome({ children, projectCount, onHome, onProjects, onSa
     </header>
     <main className="proof-main">{children}</main>
     <footer className="proof-footer">
-      <button type="button" onClick={onHome}><span aria-hidden="true">◈</span> BuildURProfile</button>
+      <button type="button" onClick={onHome} aria-label="返回 BuildURProfile 首页">
+        <img src="/logo.png" alt="BuildURProfile" width={88} height={46} />
+      </button>
       <span>让简历成为能力证明。</span>
       <span>隐私政策 · 服务条款 · 联系我们</span>
     </footer>

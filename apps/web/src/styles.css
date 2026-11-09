@@ -24,39 +24,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 }
 
 /* Private Agent resume upload and review flow. */
-.resume-flow { max-width: 1380px; margin: 0 auto; padding: 48px 32px 80px; color: #292727; }
-.resume-flow h1 { font-size: clamp(34px, 5vw, 56px); line-height: 1.15; margin: 28px 0 18px; }
-.resume-flow > p { max-width: 900px; line-height: 1.7; }
-.resume-upload-box { display: grid; gap: 18px; max-width: 640px; padding: 48px; margin: 32px 0;
-  border: 2px dashed #292727; border-radius: 18px; background: #fffaf7; font-size: 22px; }
-.resume-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0; }
-.resume-actions button, .resume-module > button { border: 2px solid #292727; border-radius: 10px;
-  padding: 10px 16px; background: #ffc4a3; color: #292727; cursor: pointer; font: inherit; }
-.resume-actions button:disabled { opacity: .5; cursor: wait; }
-.resume-confirm-hint, .resume-confirm-error { max-width: 900px; padding: 12px 16px; margin: 20px 0 8px;
-  border-left: 3px solid #8c5032; background: #fff0e6; line-height: 1.6; }
-.resume-confirm-hint a { margin-left: 12px; color: #59321f; text-decoration: underline; }
-.resume-confirm-error { border-left-color: #ba392c; background: #ffe9e4; }
-.resume-editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 42%); gap: 24px;
-  align-items: start; margin-top: 28px; }
-.resume-editor-sections { display: grid; gap: 18px; }
-.resume-module { padding: 20px; border: 2px solid #292727; border-radius: 14px; background: #fffaf7; }
-.resume-module-heading, .resume-item-top { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
-.resume-module-heading h2 { margin: 0 auto 0 0; font-size: 25px; }
-.resume-item { display: grid; gap: 12px; margin: 18px 0; padding: 18px; border: 1px solid #c8bcb6; border-radius: 10px; }
-.resume-item label { display: grid; gap: 5px; }
-.resume-item input:not([type="checkbox"]), .resume-item textarea, .resume-item select {
-  width: 100%; border: 1px solid #6e6460; border-radius: 6px; padding: 9px; font: inherit; background: white; }
-.resume-item textarea { min-height: 110px; resize: vertical; }
-.resume-item input[type="checkbox"] { width: auto; }
-.resume-item-top label, .resume-fact > label:last-child { display: flex; align-items: center; gap: 8px; }
-.resume-fact { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
-.resume-pdf-panel { position: sticky; top: 20px; padding: 16px; border: 2px solid #292727;
-  border-radius: 14px; background: white; }
-.resume-pdf-panel h2 { margin: 0 0 12px; }
-.resume-pdf-panel iframe { width: 100%; height: 75vh; border: 1px solid #c8bcb6; }
-@media (max-width: 900px) { .resume-editor-layout { grid-template-columns: 1fr; }
-  .resume-pdf-panel { position: static; } .resume-flow { padding: 28px 16px 56px; } }
+/* Agent 流程页（上传 / 编辑器）复用 .proof-page 令牌，旧 .resume-* 样式已随改版移除。 */
 
 /* Warm outlined product experience from the six-screen Figma direction. */
 .proof-page {
@@ -660,6 +628,79 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .proof-button { transition: none; }
   .proof-page { scroll-behavior: auto; }
 }
+
+/* ===== Agent 流程页：上传 / 编辑器（并入 proof 令牌体系） ===== */
+.proof-brand img, .proof-footer button img { display: block; height: 54px; width: auto; }
+.proof-footer button img { height: 40px; }
+
+/* 上传页 */
+.proof-upload-card { align-items: center; text-align: center; cursor: pointer; }
+.proof-upload-title { margin: 0; font-size: 20px; font-weight: 700; }
+.proof-upload-trigger { position: relative; display: inline-flex; }
+.proof-upload-trigger input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.proof-upload-button { display: inline-flex; align-items: center; justify-content: center; pointer-events: none;
+  min-height: 55px; padding: 14px 24px; border: 1.5px solid var(--proof-line); border-radius: var(--proof-radius);
+  background: var(--proof-accent); font-weight: 700; }
+.proof-upload-trigger input:focus-visible + .proof-upload-button { outline: 3px solid #262626; outline-offset: 3px; }
+.proof-file-ready strong { display: block; }
+.proof-file-ready span { color: var(--proof-muted); font-size: 14px; }
+.proof-parse-card { display: grid; gap: 14px; padding: 24px; border: 1.5px solid var(--proof-line);
+  border-radius: var(--proof-radius); background: var(--proof-surface); box-shadow: var(--proof-shadow); }
+.proof-parse-card > p { margin: 0; }
+.proof-parse-steps { display: flex; flex-wrap: wrap; gap: 8px; font-size: 14px; color: var(--proof-muted); }
+.proof-parse-steps span[data-state="done"], .proof-parse-steps span[data-state="active"] {
+  color: var(--proof-ink); font-weight: 700; }
+.proof-parse-steps span[data-state="active"]::after { content: " ●"; }
+.proof-progress-track { height: 10px; border: 1.5px solid var(--proof-line); border-radius: 999px;
+  background: var(--proof-bg); overflow: hidden; }
+.proof-progress-fill { height: 100%; background: var(--proof-accent); transition: width .3s ease; }
+
+/* 编辑器页 */
+.proof-status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 24px; }
+.proof-status-row p { margin: 0 auto 0 0; color: var(--proof-muted); font-size: 14px; }
+.proof-module-list { display: grid; gap: 24px; min-width: 0; }
+.proof-module-card { display: grid; gap: 16px; }
+.proof-module-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.proof-module-head h2 { margin: 0 auto 0 0; font-size: 20px; }
+.proof-module-badge { padding: 4px 12px; border: 1.5px solid var(--proof-line); border-radius: 999px;
+  background: var(--proof-bg); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.proof-module-badge[data-pending] { background: var(--proof-accent-soft); }
+.proof-module-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--proof-muted); }
+.proof-hidden-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border: 1.5px dashed var(--proof-line); border-radius: var(--proof-radius);
+  background: var(--proof-bg); }
+.proof-hidden-note p { margin: 0; color: var(--proof-muted); font-size: 14px; }
+.proof-module-body { display: grid; gap: 16px; }
+.proof-entry-tools { display: flex; gap: 4px; margin-left: auto; }
+.proof-entry-warn { margin: 0; padding: 10px 14px; border: 1.5px solid #b44225; border-radius: var(--proof-radius);
+  color: #b44225; font-size: 14px; line-height: 1.6; background: var(--proof-surface); }
+.proof-fact-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.proof-fact-check { display: inline-flex; align-items: center; gap: 8px; padding-bottom: 14px; font-size: 14px; }
+.proof-entry-move { max-width: 320px; }
+.proof-danger-link { color: #b44225; }
+.proof-confirm-hint { padding: 12px 16px; border-left: 4px solid var(--proof-ink);
+  background: var(--proof-accent-soft); line-height: 1.7; }
+.proof-confirm-hint a { color: inherit; }
+.proof-pdf-panel { position: sticky; top: 20px; display: grid; gap: 12px; padding: 20px;
+  border: 1.5px solid var(--proof-line); border-radius: var(--proof-radius);
+  background: var(--proof-surface); box-shadow: var(--proof-shadow); }
+.proof-pdf-panel h2 { margin: 0; font-size: 16px; }
+.proof-pdf-panel iframe { width: 100%; height: min(74vh, 780px); border: 1px solid var(--proof-line);
+  border-radius: var(--proof-radius); background: #fff; }
+.proof-dialog--confirm { width: min(100%, 480px); }
+.proof-dialog--confirm header { margin-bottom: 12px; }
+.proof-dialog-body { color: var(--proof-muted); line-height: 1.7; }
+.proof-dialog-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+
+/* Agent 流程页补充响应式：PDF 面板在窄屏退出第三栏 */
+@media (max-width: 1100px) {
+  .proof-pdf-panel { position: static; grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .proof-pdf-panel iframe { height: 56vh; }
+  .proof-module-head h2 { font-size: 18px; }
+  .proof-entry-tools { margin-left: 0; }
+}
 .showcase-page[data-skin="light-minimal"] {
   --bg: #f8f8f5; --surface: #fff; --surface-raised: #f1f2f0; --text: #16191d; --muted: #667078;
   --line: #d9dee4; --accent: #2457ff; --accent-rgb: 36,87,255; --accent-ink: #fff;
@@ -1154,4 +1195,10 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .primary-button { min-width: 0; width: 100%; }
   .share-card, .saved-shares { padding: 20px; }
   .builder-footer { flex-wrap: wrap; gap: 7px; padding-block: 20px; }
+}
+
+/* 窄屏下核对清单改为换行堆叠：✓/○ 状态不能藏在横向滚动条外（旧六屏流的横向条样式不适用） */
+@media (max-width: 760px) {
+  .proof-checklist nav { display: flex; flex-wrap: wrap; gap: 8px; overflow-x: visible; }
+  .proof-checklist nav button { width: auto; padding: 8px 12px; grid-template-columns: auto auto; }
 }

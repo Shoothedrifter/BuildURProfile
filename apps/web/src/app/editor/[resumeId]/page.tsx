@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { projectConfirmedResume, RESUME_MODULE_MAPPING } from "../../../../../../packages/contracts/src/resume-draft";
 import type { ResumeDraftItem, ResumeDraftSection, ResumeDraftV1, ResumeModuleKind } from "../../../../../../packages/contracts/src/resume-draft";
 import { resumeApi } from "../../../lib/resumeApi";
+import { AgentChrome } from "../../../components/AgentChrome";
+import { ProofButton, ProofCard, StepHeader } from "../../../components/BuilderChrome";
+import { ConfirmDialog, EntryCard, ModuleCard, ModuleChecklist } from "../../../components/AgentEditor";
 
 const labels: Record<ResumeModuleKind, string> = {
   basicInfo: "基本信息", jobIntent: "求职意向", selfEvaluation: "自我评价", education: "教育背景",
@@ -11,18 +14,26 @@ const labels: Record<ResumeModuleKind, string> = {
   campusExperience: "校园经历", skills: "专业技能", other: "其他内容"
 };
 
+type DialogState = null | { kind: "reparse" } | { kind: "removeResume" }
+  | { kind: "removeItem"; sectionKind: ResumeModuleKind; itemId: string };
+
 export default function ResumeEditorPage({ params }: { params: Promise<{ resumeId: string }> }) {
   const [resumeId, setResumeId] = useState("");
   const [draft, setDraft] = useState<ResumeDraftV1 | null>(null);
   const [expiresAt, setExpiresAt] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [savedAt, setSavedAt] = useState("");
+  const [expandedKind, setExpandedKind] = useState<ResumeModuleKind | null>("basicInfo");
+  const [dialog, setDialog] = useState<DialogState>(null);
   const basicSection = draft?.sections.find((section) => section.kind === "basicInfo");
   const selectedBasicFacts = basicSection?.visible ? basicSection.items.filter((item) => item.included)
     .flatMap((item) => item.facts).filter((fact) => fact.included && fact.value.trim()) : [];
   const hasName = selectedBasicFacts.some((fact) => fact.key === "name");
   const hasContact = selectedBasicFacts.some((fact) => fact.key === "email" || fact.key === "phone");
+  const pendingSections = draft?.sections.filter((section) => section.items.some((item) => item.needsReview)).length ?? 0;
+  const moduleOptions = Object.keys(RESUME_MODULE_MAPPING)
+    .map((kind) => ({ kind: kind as ResumeModuleKind, label: labels[kind as ResumeModuleKind] }));
 
   useEffect(() => { void params.then(({ resumeId: id }) => setResumeId(id)); }, [params]);
   useEffect(() => {
@@ -35,17 +46,32 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     return () => { active = false; };
   }, [resumeId]);
 
-  const updateSection = (kind: ResumeModuleKind, change: (section: ResumeDraftSection) => ResumeDraftSection) => {
+  const updateSection = (kind: ResumeModuleKind, change: (section: ResumeDraftSection) => Partial<ResumeDraftSection>) => {
     setDraft((previous) => previous ? { ...previous, sections: previous.sections.map((section) =>
-      section.kind === kind ? change(section) : section) } : previous);
-    setMessage(""); setError("");
+      section.kind === kind ? { ...section, ...change(section) } : section) } : previous);
+    setError("");
   };
   const updateItem = (kind: ResumeModuleKind, itemId: string, change: (item: ResumeDraftItem) => ResumeDraftItem) =>
-    updateSection(kind, (section) => ({ ...section, items: section.items.map((item) =>
+    updateSection(kind, (section) => ({ items: section.items.map((item) =>
       item.itemId === itemId ? change(item) : item) }));
 
+  const patchItem = (kind: ResumeModuleKind, itemId: string, patch: Partial<ResumeDraftItem>) =>
+    updateSection(kind, (section) => ({
+      visible: patch.included ? true : section.visible,
+      items: section.items.map((entry) => entry.itemId === itemId ? { ...entry, ...patch } : entry)
+    }));
+
+  const includeFact = (kind: ResumeModuleKind, itemId: string, factKey: string, included: boolean) =>
+    updateSection(kind, (section) => ({
+      visible: included || section.visible,
+      items: section.items.map((entry) => entry.itemId === itemId ? {
+        ...entry, included: included || entry.included,
+        facts: entry.facts.map((fact) => fact.key === factKey ? { ...fact, included } : fact)
+      } : entry)
+    }));
+
   const addItem = (kind: ResumeModuleKind) => {
-    updateSection(kind, (section) => ({ ...section, visible: true, items: [...section.items, {
+    updateSection(kind, (section) => ({ visible: true, items: [...section.items, {
       itemId: `manual-${crypto.randomUUID()}`, order: section.items.length, title: "", details: "",
       facts: kind === "basicInfo" ? ["name", "email", "phone"].map((key) => ({ key,
         label: ({ name: "姓名", email: "邮箱", phone: "电话" } as Record<string, string>)[key],
@@ -56,8 +82,19 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   };
 
   const removeItem = (kind: ResumeModuleKind, itemId: string) => updateSection(kind, (section) => ({
-    ...section, items: section.items.filter((item) => item.itemId !== itemId).map((item, order) => ({ ...item, order }))
+    items: section.items.filter((item) => item.itemId !== itemId).map((item, order) => ({ ...item, order }))
   }));
+
+  // 条目在模块内上下移动：交换位置后按新顺序重编 order，保存时由服务端全量校验
+  const moveItemWithin = (kind: ResumeModuleKind, itemId: string, delta: number) =>
+    updateSection(kind, (section) => {
+      const index = section.items.findIndex((item) => item.itemId === itemId);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= section.items.length) return {};
+      const items = [...section.items];
+      [items[index], items[target]] = [items[target], items[index]];
+      return { items: items.map((item, order) => ({ ...item, order })) };
+    });
 
   const moveItem = (from: ResumeModuleKind, itemId: string, to: ResumeModuleKind) => {
     if (!draft || from === to) return;
@@ -70,7 +107,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         order: section.items.length }] };
       return section;
     }) });
-    setMessage(""); setError("");
+    setError("");
   };
 
   const save = async (continueToStyle = false) => {
@@ -80,7 +117,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       if (continueToStyle) projectConfirmedResume(draft);
       const saved = await resumeApi.save(resumeId, draft);
       setDraft(saved.draft);
-      setMessage("已保存草稿。");
+      setSavedAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
       if (continueToStyle) window.location.assign(`/style/${encodeURIComponent(resumeId)}`);
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "保存失败。";
@@ -89,21 +126,24 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     } finally { setBusy(false); }
   };
 
-  const remove = async () => {
+  // 删除简历：确认弹窗后执行，成功即回上传页
+  const confirmRemove = async () => {
     if (!resumeId) return;
-    if (!window.confirm("确定删除这份简历、原 PDF 和解析草稿吗？此操作无法撤销。")) return;
-    setBusy(true);
+    setBusy(true); setError("");
     try {
       await resumeApi.remove(resumeId);
       sessionStorage.removeItem("burp-agent-resume-id");
       sessionStorage.removeItem("burp-agent-file-id");
       window.location.assign("/upload");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "删除失败。"); setBusy(false); }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "删除失败。");
+      setBusy(false); setDialog(null);
+    }
   };
 
-  const reparse = async () => {
-    if (!resumeId || !draft) return;
-    if (!window.confirm("将从原 PDF 创建一份新草稿，当前草稿会保留。新副本从现在起保留 30 天。继续吗？")) return;
+  // 重新解析：从原 PDF 创建新副本，当前草稿保留
+  const confirmReparse = async () => {
+    if (!resumeId) return;
     setBusy(true); setError("");
     try {
       const task = await resumeApi.reparse(resumeId);
@@ -112,81 +152,89 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       window.location.assign("/upload");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "重新解析失败。");
-      setBusy(false);
+      setBusy(false); setDialog(null);
     }
   };
 
-  return <main className="resume-flow">
-    <a href="/upload">← 返回上传</a>
-    <h1>核对简历资料</h1>
-    <p>Agent 已按模块整理内容。你可以增删、修改和移动条目，只有主动勾选的内容会用于作品。原 PDF 与草稿会在上传 30 天后自动删除。</p>
-    {expiresAt && <p>保留至：{new Date(expiresAt).toLocaleString("zh-CN")}</p>}
-    {!draft && error && <p role="alert">{error}</p>}
-    {message && <p role="status">{message}</p>}
-    {draft && <div className="resume-editor-layout">
-      <div className="resume-editor-sections">
-        {draft.sections.map((section) => <section key={section.kind} id={`resume-${section.kind}`} className="resume-module">
-          <div className="resume-module-heading">
-            <h2>{labels[section.kind]}</h2>
-            <label><input type="checkbox" checked={section.visible} onChange={(event) => updateSection(section.kind,
-              (current) => ({ ...current, visible: event.target.checked }))} />用于展示</label>
-            <span>{section.items.length} 条</span>
-          </div>
-          {section.items.map((item) => <article key={item.itemId} className="resume-item">
-            <div className="resume-item-top">
-              <label><input type="checkbox" checked={item.included} onChange={(event) => updateSection(section.kind,
-                (current) => ({ ...current, visible: event.target.checked || current.visible,
-                  items: current.items.map((entry) => entry.itemId === item.itemId
-                    ? { ...entry, included: event.target.checked } : entry) }))} />展示此条</label>
-              {item.needsReview && <strong>请核对拆分与分类</strong>}
-              <span>分类 {Math.round(item.confidence * 100)}% · 拆条 {Math.round(item.segmentationConfidence * 100)}%</span>
-            </div>
-            <label>标题<input value={item.title} onChange={(event) => updateItem(section.kind, item.itemId,
-              (current) => ({ ...current, title: event.target.value }))} /></label>
-            <label>内容<textarea value={item.details} onChange={(event) => updateItem(section.kind, item.itemId,
-              (current) => ({ ...current, details: event.target.value }))} /></label>
-            {item.facts.map((fact) => <div key={fact.key} className="resume-fact">
-              <label>{fact.label}<input value={fact.value} onChange={(event) => updateItem(section.kind, item.itemId,
-                (current) => ({ ...current, facts: current.facts.map((entry) => entry.key === fact.key
-                  ? { ...entry, value: event.target.value } : entry) }))} /></label>
-              <label><input type="checkbox" checked={fact.included} onChange={(event) => updateSection(section.kind,
-                (current) => ({ ...current, visible: event.target.checked || current.visible,
-                  items: current.items.map((entry) => entry.itemId === item.itemId ? {
-                    ...entry, included: event.target.checked || entry.included,
-                    facts: entry.facts.map((value) => value.key === fact.key
-                      ? { ...value, included: event.target.checked } : value)
-                  } : entry) }))} />展示</label>
-            </div>)}
-            {(section.kind === "basicInfo" || section.kind === "jobIntent") && <button type="button"
-              onClick={() => updateItem(section.kind, item.itemId, (current) => ({ ...current, facts: [...current.facts, {
-                key: `custom-${crypto.randomUUID()}`, label: "新字段", value: "", included: false
-              }] }))}>添加字段</button>}
-            {item.facts.some((fact) => fact.key.startsWith("custom-")) && item.facts.filter((fact) => fact.key.startsWith("custom-")).map((fact) =>
-              <label key={`${fact.key}-label`}>字段名称<input value={fact.label} onChange={(event) => updateItem(section.kind,
-                item.itemId, (current) => ({ ...current, facts: current.facts.map((entry) => entry.key === fact.key
-                  ? { ...entry, label: event.target.value } : entry) }))} /></label>)}
-            <div className="resume-actions">
-              <label>移动到<select value={section.kind} onChange={(event) => moveItem(section.kind, item.itemId,
-                event.target.value as ResumeModuleKind)}>{Object.keys(RESUME_MODULE_MAPPING).map((kind) =>
-                  <option key={kind} value={kind}>{labels[kind as ResumeModuleKind]}</option>)}</select></label>
-              <button type="button" onClick={() => removeItem(section.kind, item.itemId)}>删除条目</button>
-            </div>
-          </article>)}
-          <button type="button" onClick={() => addItem(section.kind)}>添加{labels[section.kind]}</button>
-        </section>)}
+  const selectModule = (kind: ResumeModuleKind) => {
+    setExpandedKind(kind);
+    document.getElementById(`resume-${kind}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
+
+  if (!draft && error) return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传">
+    <section className="proof-step-page">
+      <ProofCard className="proof-error-card">
+        <h1>简历不存在或已过期</h1>
+        <p>{error}</p>
+        <ProofButton onClick={() => window.location.assign("/upload")}>返回上传</ProofButton>
+      </ProofCard>
+    </section>
+  </AgentChrome>;
+
+  return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传">
+    <section className="proof-step-page">
+      <StepHeader number={2} title="核对经历，把你的能力补充完整"
+        description={`Agent 已按模块整理内容，只有主动勾选的内容会用于作品。原 PDF 与草稿保留至 ${expiresAt ? new Date(expiresAt).toLocaleString("zh-CN") : "上传 30 天后"} 自动删除。`} />
+      <div className="proof-status-row">
+        <p role="status">{savedAt ? `已保存 ${savedAt}` : "尚未保存"}
+          {pendingSections > 0 ? ` · 待确认 ${pendingSections} 个模块` : ""}</p>
+        <ProofButton disabled={busy || !draft} onClick={() => void save()}>保存草稿</ProofButton>
+        <ProofButton disabled={busy || !draft} onClick={() => setDialog({ kind: "reparse" })}>重新解析为新草稿</ProofButton>
       </div>
-      <aside className="resume-pdf-panel"><h2>原 PDF</h2><iframe title="原 PDF 预览" src={resumeApi.sourceUrl(resumeId)} /></aside>
-    </div>}
-    {draft && (!hasName || !hasContact) && <p className="resume-confirm-hint" id="resume-confirm-hint">
-      请在基本信息中勾选姓名，以及邮箱或电话，再继续。<a href="#resume-basicInfo">返回基本信息 ↑</a>
-    </p>}
-    {draft && error && <p role="alert" className="resume-confirm-error">{error}</p>}
-    <div className="resume-actions">
-      <button type="button" disabled={busy || !draft} onClick={() => void save()}>保存草稿</button>
-      <button type="button" disabled={busy || !draft} aria-describedby={draft && (!hasName || !hasContact) ? "resume-confirm-hint" : undefined}
-        onClick={() => void save(true)}>确认并选择风格 →</button>
-      <button type="button" disabled={busy || !draft} onClick={() => void reparse()}>重新解析为新草稿</button>
-      <button type="button" disabled={busy} onClick={() => void remove()}>删除简历与原 PDF</button>
-    </div>
-  </main>;
+      {draft && <div className="proof-confirm-layout">
+        <ModuleChecklist entries={draft.sections.map((section) => ({ kind: section.kind,
+          label: labels[section.kind], pending: section.items.some((item) => item.needsReview) }))}
+          activeKind={expandedKind} onSelect={selectModule} />
+        <div className="proof-editor-column">
+          {draft.sections.map((section) => <ModuleCard key={section.kind} kind={section.kind}
+            label={labels[section.kind]} section={section} expanded={expandedKind === section.kind}
+            onToggleExpand={() => setExpandedKind(expandedKind === section.kind ? null : section.kind)}
+            onVisibleChange={(visible) => updateSection(section.kind, () => ({ visible }))}
+            onAddItem={() => addItem(section.kind)}>
+            {section.items.map((item, index) => <EntryCard key={item.itemId} kind={section.kind}
+              label={labels[section.kind]} item={item} index={index} total={section.items.length}
+              canAddFacts={section.kind === "basicInfo" || section.kind === "jobIntent"}
+              moduleOptions={moduleOptions}
+              onPatchItem={(patch) => patchItem(section.kind, item.itemId, patch)}
+              onPatchFactValue={(factKey, value) => updateItem(section.kind, item.itemId, (current) => ({ ...current,
+                facts: current.facts.map((fact) => fact.key === factKey ? { ...fact, value } : fact) }))}
+              onIncludeFact={(factKey, included) => includeFact(section.kind, item.itemId, factKey, included)}
+              onAddFact={() => updateItem(section.kind, item.itemId, (current) => ({ ...current, facts: [...current.facts, {
+                key: `custom-${crypto.randomUUID()}`, label: "新字段", value: "", included: false }] }))}
+              onPatchFactLabel={(factKey, nextLabel) => updateItem(section.kind, item.itemId, (current) => ({ ...current,
+                facts: current.facts.map((fact) => fact.key === factKey ? { ...fact, label: nextLabel } : fact) }))}
+              onMoveUp={() => moveItemWithin(section.kind, item.itemId, -1)}
+              onMoveDown={() => moveItemWithin(section.kind, item.itemId, 1)}
+              onRequestRemove={() => setDialog({ kind: "removeItem", sectionKind: section.kind, itemId: item.itemId })}
+              onMoveTo={(to) => moveItem(section.kind, item.itemId, to)} />)}
+          </ModuleCard>)}
+        </div>
+        <aside className="proof-pdf-panel" aria-label="原 PDF 预览">
+          <h2>原 PDF</h2>
+          <iframe title="原 PDF 预览" src={resumeApi.sourceUrl(resumeId)} />
+        </aside>
+      </div>}
+      {draft && (!hasName || !hasContact) && <p className="proof-confirm-hint" id="resume-confirm-hint">
+        请在基本信息中勾选姓名，以及邮箱或电话，再继续。<a href="#resume-basicInfo">返回基本信息 ↑</a>
+      </p>}
+      {error && <p role="alert" className="proof-inline-error">{error}</p>}
+      <div className="proof-actions">
+        <ProofButton variant="primary" disabled={busy || !draft}
+          aria-describedby={draft && (!hasName || !hasContact) ? "resume-confirm-hint" : undefined}
+          onClick={() => void save(true)}>确认并选择风格 →</ProofButton>
+        <ProofButton variant="quiet" className="proof-danger-link" disabled={busy}
+          onClick={() => setDialog({ kind: "removeResume" })}>删除本次简历</ProofButton>
+      </div>
+    </section>
+    <ConfirmDialog open={dialog?.kind === "reparse"} title="重新解析为新草稿"
+      description="将从原 PDF 创建一份新草稿，当前草稿会保留。新副本从现在起保留 30 天。"
+      confirmLabel="继续" busy={busy} onConfirm={() => void confirmReparse()} onClose={() => setDialog(null)} />
+    <ConfirmDialog open={dialog?.kind === "removeItem"} title="删除条目"
+      description="删除该条目及其补充内容？此操作不可撤销。" confirmLabel="确认删除"
+      onConfirm={() => { if (dialog?.kind === "removeItem") removeItem(dialog.sectionKind, dialog.itemId); setDialog(null); }}
+      onClose={() => setDialog(null)} />
+    <ConfirmDialog open={dialog?.kind === "removeResume"} title="删除简历与原 PDF"
+      description="确定删除这份简历、原 PDF 和解析草稿吗？此操作无法撤销。" confirmLabel="确认删除"
+      busy={busy} onConfirm={() => void confirmRemove()} onClose={() => setDialog(null)} />
+  </AgentChrome>;
 }

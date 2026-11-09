@@ -2,16 +2,39 @@
 
 import { useEffect, useRef, useState } from "react";
 import { resumeApi } from "../../lib/resumeApi";
+import { AgentChrome } from "../../components/AgentChrome";
+import { ProofButton, ProofCard, StepHeader } from "../../components/BuilderChrome";
 
 const savedResumeKey = "burp-agent-resume-id";
 const savedFileKey = "burp-agent-file-id";
+
+// 解析阶段 → 三段式步进展示（上传完成 → 解析文字 → 整理模块）
+const STAGE_STEP: Record<string, 1 | 2 | 3> = {
+  queued: 2, validate_source: 2, extract_layout: 2,
+  classify_sections: 3, map_design_modules: 3, split_items: 3,
+  format_items: 3, verify_evidence: 3, complete_draft: 3
+};
+const PARSE_STEPS = ["上传完成 ✓", "解析文字", "整理模块"] as const;
+
+// 服务端错误码 → 用户可读文案（与后端 files.mjs 的上传校验一一对应）
+const REJECT_COPY: Record<string, string> = {
+  FILE_TOO_LARGE: "PDF 不能超过 10MB，请压缩后重试。",
+  PDF_PAGE_LIMIT: "PDF 超过 20 页，请拆分后再上传。",
+  PDF_ENCRYPTED: "不支持加密 PDF，请解除密码后重新上传。",
+  PDF_NO_TEXT: "这份 PDF 无法提取文字，请上传文本型 PDF。",
+  FILE_TYPE_INVALID: "请选择 PDF 文件。",
+  RATE_LIMITED: "操作太频繁，请稍后再试。"
+};
 
 export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [fileId, setFileId] = useState<string | null>(null);
   const [resumeId, setResumeId] = useState<string | null>(null);
+  const [pages, setPages] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [stage, setStage] = useState<string | undefined>();
+  const [progress, setProgress] = useState<number | undefined>();
   const [error, setError] = useState("");
   const sequence = useRef(0);
 
@@ -41,13 +64,19 @@ export default function UploadPage() {
         }
         if (["FAILED", "CANCELLED", "EXPIRED"].includes(next.status)) {
           setBusy(false);
-          setError(next.errorCode === "PDF_NO_TEXT" ? "这份 PDF 无法提取文字，请上传文本型 PDF。"
+          setStage(undefined);
+          setError(next.errorCode && REJECT_COPY[next.errorCode]
+            ? REJECT_COPY[next.errorCode]
+            : next.errorCode === "PDF_NO_TEXT" ? "这份 PDF 无法提取文字，请上传文本型 PDF。"
             : `Agent 解析未完成（${next.errorCode ?? next.status}），可重试。`);
           return;
         }
-        setStatus(`Agent 正在解析：${next.stage ?? next.status} ${next.progress ?? 0}%`);
+        setStatus("");
+        setStage(next.stage ?? "queued");
+        setProgress(next.progress ?? 0);
         if (Date.now() >= deadline) {
           setBusy(false);
+          setStage(undefined);
           setError("解析仍在进行。刷新页面可继续查看，也可取消后重试。");
           return;
         }
@@ -55,6 +84,7 @@ export default function UploadPage() {
       } catch (cause) {
         if (current === sequence.current) {
           setBusy(false);
+          setStage(undefined);
           setError(cause instanceof Error ? cause.message : "查询解析进度失败。");
         }
       }
@@ -66,14 +96,15 @@ export default function UploadPage() {
   const choose = (next: File | undefined) => {
     if (!next) return;
     if (!next.name.toLowerCase().endsWith(".pdf") || next.type && next.type !== "application/pdf") {
-      setError("请选择 PDF 文件。"); return;
+      setError(REJECT_COPY.FILE_TYPE_INVALID); return;
     }
-    if (next.size > 10_000_000) { setError("PDF 不能超过 10 MB。"); return; }
+    if (next.size > 10_000_000) { setError(REJECT_COPY.FILE_TOO_LARGE); return; }
     if (resumeId) void resumeApi.cancel(resumeId).catch(() => {});
     sequence.current++;
     sessionStorage.removeItem(savedResumeKey);
     sessionStorage.removeItem(savedFileKey);
-    setFile(next); setFileId(null); setResumeId(null); setStatus(""); setError("");
+    setFile(next); setFileId(null); setResumeId(null); setPages(null);
+    setStatus(""); setStage(undefined); setProgress(undefined); setError("");
   };
 
   const start = async () => {
@@ -87,6 +118,7 @@ export default function UploadPage() {
         const uploaded = await resumeApi.upload(file!, (percent) => setStatus(`正在上传 PDF：${percent}%`));
         id = uploaded.fileId;
         setFileId(id);
+        setPages(uploaded.pageCount);
         sessionStorage.setItem(savedFileKey, id);
       }
       setStatus("已上传，等待 Agent 领取解析任务…");
@@ -103,24 +135,57 @@ export default function UploadPage() {
     if (!resumeId) return;
     await resumeApi.cancel(resumeId).catch(() => {});
     sequence.current++;
-    setResumeId(null); setBusy(false); setStatus("解析已取消，可重试。");
+    setResumeId(null); setBusy(false); setStage(undefined); setProgress(undefined);
+    setStatus("解析已取消，可重试。");
     sessionStorage.removeItem(savedResumeKey);
   };
 
-  return <main className="resume-flow">
-    <a href="/">← 返回首页</a>
-    <h1>上传简历，交给 Agent 解析</h1>
-    <p>选择文本型 PDF。上传后，原件和可编辑草稿在私有服务器保留 30 天；系统先按原浏览器解析器确定模块和条目，再将必要文字发送给当前配置的文本模型供应商（OpenAI 或智谱 GLM）整理标题与正文。你可以随时提前删除。</p>
-    <label className="resume-upload-box" onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}>选择或拖入 PDF 简历
-      <input type="file" accept=".pdf,application/pdf" onChange={(event) => choose(event.currentTarget.files?.[0])} />
-    </label>
-    {file && <p>已选择：{file.name}</p>}
-    <div className="resume-actions">
-      <button type="button" disabled={busy || (!file && !fileId)} onClick={() => void start()}>{fileId ? "重试 Agent 解析" : "上传并解析简历"}</button>
-      {resumeId && <button type="button" onClick={() => void cancel()}>取消解析</button>}
-    </div>
-    {status && <p role="status">{status}</p>}
-    {error && <p role="alert">{error}</p>}
-  </main>;
+  const parsing = Boolean(resumeId && stage);
+  const activeStep = stage ? (STAGE_STEP[stage] ?? 2) : 2;
+
+  return <AgentChrome phase="upload" backHref="/" backLabel="← 返回首页">
+    <section className="proof-step-page">
+      <StepHeader number={1} title="上传你的简历" description="支持 PDF，让 AI 帮你整理经历与项目。" />
+      <ProofCard className="proof-upload-card" onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => { event.preventDefault(); choose(event.dataTransfer.files[0]); }}>
+        <span className="proof-upload-arrow" aria-hidden="true">↑</span>
+        <p className="proof-upload-title">将 PDF 拖到这里，或点击选择文件</p>
+        <label className="proof-upload-trigger">
+          <input type="file" accept=".pdf,application/pdf" aria-label="选择或拖入 PDF 简历"
+            onChange={(event) => choose(event.currentTarget.files?.[0])} />
+          <span className="proof-upload-button" aria-hidden="true">选择 PDF 文件</span>
+        </label>
+        <p className="proof-microcopy">支持键盘 Enter 选择文件</p>
+      </ProofCard>
+      <p className="proof-note">仅 PDF · 单次 1 个文件 · ≤10MB · 1–20 页</p>
+      <p className="proof-note">需包含可复制文字，不支持加密文件或扫描版 PDF。</p>
+      {file && <div className="proof-file-ready">
+        <div>
+          <strong>{file.name}</strong>
+          <span>{(file.size / 1_048_576).toFixed(1)}MB
+            {pages ? ` · ${pages} 页 · 校验通过` : " · 待上传校验"}</span>
+        </div>
+        <ProofButton variant="quiet" onClick={() => { setFile(null); setPages(null); }}>重新选择</ProofButton>
+      </div>}
+      <div className="proof-actions">
+        <ProofButton variant="primary" disabled={busy || (!file && !fileId)} onClick={() => void start()}>
+          {fileId ? "重试 Agent 解析" : "上传并解析简历"}</ProofButton>
+        {resumeId && <ProofButton onClick={() => void cancel()}>取消解析</ProofButton>}
+      </div>
+      {parsing ? <div className="proof-parse-card" role="status">
+        <p className="proof-parse-steps" aria-hidden="true">
+          {PARSE_STEPS.map((label, index) => <span key={label}
+            data-state={index + 1 < activeStep ? "done" : index + 1 === activeStep ? "active" : ""}>
+            {label}{index < PARSE_STEPS.length - 1 ? " →" : ""}
+          </span>)}
+        </p>
+        <p>AI 正在解析简历… 预计 10–30 秒 · {progress ?? 0}%</p>
+        <div className="proof-progress-track" aria-hidden="true">
+          <div className="proof-progress-fill" style={{ width: `${progress ?? 0}%` }} />
+        </div>
+      </div> : status ? <p role="status">{status}</p> : null}
+      {error && <p className="proof-inline-error" role="alert">{error}</p>}
+      <p className="proof-microcopy">选择文本型 PDF。上传后，原件和可编辑草稿在私有服务器保留 30 天；系统先按原浏览器解析器确定模块和条目，再将必要文字发送给当前配置的文本模型供应商（OpenAI 或智谱 GLM）整理标题与正文。你可以随时提前删除。简历仅用于生成网站。</p>
+    </section>
+  </AgentChrome>;
 }

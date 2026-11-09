@@ -9,25 +9,38 @@ vi.mock("../../../lib/resumeApi", () => ({ resumeApi: {
   sourceUrl: (id: string) => `/api/resumes/${id}/source`
 } }));
 
+// 在 fixture 基础上注入若干项目条目，便于验证模块折叠、待确认与条目操作
+function draftWithProjects(itemCount: number, needsReview = false) {
+  const draft = structuredClone(fixture);
+  const projects = draft.sections.find((section) => section.kind === "projects")!;
+  projects.items = Array.from({ length: itemCount }, (_, index) => ({
+    itemId: `proj-${index + 1}`, order: index, title: `项目 ${index + 1}`, details: "描述",
+    facts: [], sourceBlockIds: [], confidence: needsReview && index === 0 ? 0.42 : 1,
+    segmentationConfidence: 1, needsReview: needsReview && index === 0, included: true, origin: "agent"
+  }));
+  return draft;
+}
+
 beforeEach(() => {
   vi.mocked(resumeApi.read).mockReset();
   vi.mocked(resumeApi.save).mockReset();
   vi.mocked(resumeApi.reparse).mockReset();
 });
 
-it("offers a separate reparse while keeping the current draft", async () => {
+it("asks before reparsing into a separate draft and reports failure", async () => {
   vi.mocked(resumeApi.read).mockResolvedValue({ draft: fixture as never, revision: 1,
     expiresAt: "2026-12-09T00:00:00Z" });
   vi.mocked(resumeApi.reparse).mockRejectedValue(new Error("暂时无法重新解析"));
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
   const reparseButton = await screen.findByRole("button", { name: "重新解析为新草稿" });
   await waitFor(() => expect(reparseButton).toBeEnabled());
   fireEvent.click(reparseButton);
+  const dialog = screen.getByRole("dialog");
+  expect(dialog).toHaveTextContent(/当前草稿会保留/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "继续" }));
   await waitFor(() => expect(resumeApi.reparse).toHaveBeenCalledWith("resume-1"));
   expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法重新解析");
   expect(screen.getByRole("heading", { name: "实习 / 工作经历" })).toBeInTheDocument();
-  vi.restoreAllMocks();
 });
 
 it("explains missing contact selection beside the confirm action", async () => {
@@ -61,12 +74,72 @@ it("shows all ten modules, a private PDF preview, and saves manual additions", a
   render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
   expect(await screen.findByRole("heading", { name: "实习 / 工作经历" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "校园经历" })).toBeInTheDocument();
-  expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(11);
+  expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(12);
+  expect(screen.getByRole("heading", { name: /确认进度/ })).toBeInTheDocument();
+  expect(screen.getAllByRole("img", { name: "BuildURProfile" })).toHaveLength(2);
   expect(screen.getByTitle("原 PDF 预览")).toHaveAttribute("src", "/api/resumes/resume-1/source");
+  // 模块默认折叠，先通过左栏清单展开「其他内容」再添加
+  fireEvent.click(screen.getByRole("button", { name: /其他内容/ }));
   fireEvent.click(screen.getByRole("button", { name: "添加其他内容" }));
   fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
   await waitFor(() => expect(resumeApi.save).toHaveBeenCalled());
   const saved = vi.mocked(resumeApi.save).mock.calls[0][1];
   expect(saved.sections.find((section) => section.kind === "other")?.items.some((item) => item.origin === "user"))
     .toBe(true);
+});
+
+it("tracks pending modules in the checklist and expands them on demand", async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: draftWithProjects(1, true) as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  expect(await screen.findByRole("heading", { name: "实习 / 工作经历" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /确认进度/ })).toHaveTextContent("9 / 10");
+  expect(screen.getByText(/待确认 1 个模块/)).toBeInTheDocument();
+  // 模块默认折叠，只展开基本信息
+  expect(screen.queryByRole("button", { name: "添加项目经历" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /○ 项目经历/ }));
+  expect(screen.getByRole("button", { name: "添加项目经历" })).toBeInTheDocument();
+  expect(screen.getByText(/AI 识别置信度较低/)).toBeInTheDocument();
+});
+
+it("reorders and deletes entries behind a confirmation dialog", async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: draftWithProjects(2) as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  vi.mocked(resumeApi.save).mockImplementation(async (_id, draft) => ({ draft: { ...draft, revision: 2 },
+    revision: 2, expiresAt: "2026-12-09T00:00:00Z" }));
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  expect(await screen.findByRole("heading", { name: "实习 / 工作经历" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /○ 项目经历|✓ 项目经历/ }));
+  const projectsSection = screen.getByRole("heading", { name: "项目经历" }).closest("section")!;
+  const articles = within(projectsSection).getAllByRole("article");
+  expect(articles).toHaveLength(2);
+  fireEvent.click(within(articles[0]).getByRole("button", { name: "↓ 下移" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+  await waitFor(() => expect(resumeApi.save).toHaveBeenCalled());
+  const projects = vi.mocked(resumeApi.save).mock.calls[0][1].sections
+    .find((section) => section.kind === "projects")!;
+  expect(projects.items.map((item) => item.itemId)).toEqual(["proj-2", "proj-1"]);
+  // 删除条目需要二次确认，取消不生效，确认后才移除
+  const projectArticles = () => within(projectsSection).getAllByRole("article");
+  fireEvent.click(within(projectArticles()[1]).getByRole("button", { name: "删除条目" }));
+  const dialog = screen.getByRole("dialog");
+  expect(dialog).toHaveTextContent(/不可撤销/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+  expect(projectArticles()).toHaveLength(2);
+  fireEvent.click(within(projectArticles()[1]).getByRole("button", { name: "删除条目" }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "确认删除" }));
+  expect(projectArticles()).toHaveLength(1);
+});
+
+it("keeps a hidden module's data with a notice", async () => {
+  const draft = structuredClone(fixture);
+  draft.sections.find((section) => section.kind === "awards")!.visible = false;
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: draft as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  expect(await screen.findByRole("heading", { name: "实习 / 工作经历" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /荣誉奖项/ }));
+  expect(screen.getByText(/已隐藏，不进入生成网站/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "显示模块" }));
+  expect(screen.queryByText(/已隐藏，不进入生成网站/)).not.toBeInTheDocument();
 });
