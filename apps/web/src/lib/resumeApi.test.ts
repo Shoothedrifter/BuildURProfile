@@ -46,3 +46,20 @@ it("uploads raw PDF with session CSRF and progress, then queues Agent parsing", 
 it("keeps PDF preview behind the session route", () => {
   expect(resumeApi.sourceUrl("resume-1")).toBe("/api/resumes/resume-1/source");
 });
+
+it("fetches trimmed source blocks for original-text cross-check", async () => {
+  const calls: Array<{ url: string; method?: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, method: init?.method });
+    if (url === "/api/session") return new Response(JSON.stringify({ csrfToken: "test-csrf" }));
+    if (url === "/api/resumes/resume-1/blocks") {
+      return new Response(JSON.stringify({ blocks: [
+        { blockId: "block_1", page: 1, readingOrder: 0, text: "source text" }
+      ] }));
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }));
+  const result = await resumeApi.blocks("resume-1");
+  expect(result.blocks[0]).toEqual({ blockId: "block_1", page: 1, readingOrder: 0, text: "source text" });
+  expect(calls.find((call) => call.url === "/api/resumes/resume-1/blocks")?.method).toBe("GET");
+});

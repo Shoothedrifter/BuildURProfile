@@ -65,8 +65,8 @@ export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onV
   </section>;
 }
 
-// 单条经历条目：勾选展示、低置信度警示、标题/内容编辑、事实字段、上下移动与删除
-export function EntryCard({ kind, label, item, index, total, canAddFacts, moduleOptions,
+// 单条经历条目：勾选展示、低置信度警示、原文对照、标题/内容编辑、事实字段、上下移动与删除
+export function EntryCard({ kind, label, item, index, total, canAddFacts, moduleOptions, sourceExcerpt,
   onPatchItem, onPatchFactValue, onIncludeFact, onAddFact, onPatchFactLabel,
   onMoveUp, onMoveDown, onRequestRemove, onMoveTo }: {
   kind: ResumeModuleKind;
@@ -76,6 +76,7 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
   total: number;
   canAddFacts: boolean;
   moduleOptions: { kind: ResumeModuleKind; label: string }[];
+  sourceExcerpt?: { page: number; text: string }[];
   onPatchItem: (patch: Partial<ResumeDraftItem>) => void;
   onPatchFactValue: (factKey: string, value: string) => void;
   onIncludeFact: (factKey: string, included: boolean) => void;
@@ -100,6 +101,13 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     </div>
     {lowConfidence && <p className="proof-entry-warn">⚠ AI 识别置信度较低，请确认内容与分类
       （分类 {Math.round(item.confidence * 100)}% · 拆条 {Math.round(item.segmentationConfidence * 100)}%）</p>}
+    {!!sourceExcerpt?.length && <div className="proof-entry-source">
+      <p className="proof-entry-source-head">原文对照（PDF 摘录）</p>
+      {sourceExcerpt.map((block, blockIndex) => <p key={blockIndex} className="proof-entry-source-text">
+        {/* 相邻摘录同页时页码只标一次，避免逐行重复 */}
+        {(blockIndex === 0 || sourceExcerpt[blockIndex - 1].page !== block.page) &&
+          <span className="proof-entry-source-page">第 {block.page} 页</span>}{block.text}</p>)}
+    </div>}
     <label className="proof-field"><span>标题</span>
       <input value={item.title} onChange={(event) => onPatchItem({ title: event.target.value })} /></label>
     <label className="proof-field"><span>内容</span>

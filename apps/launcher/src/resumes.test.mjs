@@ -162,6 +162,26 @@ test('complete persists validated source and draft atomically; edits use revisio
  await s.request(parsed.resumeId,'DELETE');assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_parse_tasks').get().n,0);assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_parse_requests').get().n,0);
 });
 
+test('owner can read trimmed source blocks for original-text cross-check after completion',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'blocks'}))).json();
+ assert.equal((await s.request(parsed.resumeId+'/blocks')).status,409);
+ const task=s.repo.queue.lease('worker');
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(file.fileId);
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ Object.assign(source,{fileId:file.fileId,uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:file.fileId,resumeId:parsed.resumeId,revision:1});for(const section of draft.sections)for(const item of section.items)item.included=false;
+ s.repo.queue.complete(task.id,task.leaseToken,source,draft);
+ const response=await s.request(parsed.resumeId+'/blocks');assert.equal(response.status,200);
+ const body=await response.json();
+ // 只暴露对照所需的四个字段，bbox/字号等私有布局细节不下发
+ assert.deepEqual(body.blocks.map(b=>Object.keys(b).sort()),[['blockId','page','readingOrder','text']]);
+ assert.deepEqual(body.blocks,[{blockId:'block_1',page:1,readingOrder:0,text:'source text'}]);
+ const other=await dispatchWebRequest(new Request('http://test/api/session'),s.handler);
+ assert.equal((await s.request(parsed.resumeId+'/blocks','GET',null,{cookie:other.headers.get('set-cookie').split(';')[0]})).status,404);
+});
+
 test('parse session rate limit and bounded retries do not affect other queues',async t=>{
  const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();let id;
  for(let i=0;i<10;i++){const r=await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'rate'+i}));assert.equal(r.status,202);id=(await r.json()).resumeId;}

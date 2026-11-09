@@ -4,7 +4,7 @@ import "../styles.css";
 export const metadata: Metadata = {
   title: "BuildURProfile — PDF to Showcase",
   robots: { index: false, follow: false },
-  icons: { icon: "/favicon.svg" }
+  icons: { icon: "/favicon.png" }
 };
 
 export const viewport: Viewport = {

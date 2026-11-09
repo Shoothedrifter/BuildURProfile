@@ -5,7 +5,7 @@ import ResumeEditorPage from "./page";
 import { resumeApi } from "../../../lib/resumeApi";
 
 vi.mock("../../../lib/resumeApi", () => ({ resumeApi: {
-  read: vi.fn(), save: vi.fn(), remove: vi.fn(), reparse: vi.fn(),
+  read: vi.fn(), save: vi.fn(), remove: vi.fn(), reparse: vi.fn(), blocks: vi.fn(),
   sourceUrl: (id: string) => `/api/resumes/${id}/source`
 } }));
 
@@ -25,6 +25,9 @@ beforeEach(() => {
   vi.mocked(resumeApi.read).mockReset();
   vi.mocked(resumeApi.save).mockReset();
   vi.mocked(resumeApi.reparse).mockReset();
+  // 原文摘录是辅助信息，默认给空列表；需要对照的测试自行覆盖
+  vi.mocked(resumeApi.blocks).mockReset();
+  vi.mocked(resumeApi.blocks).mockResolvedValue({ blocks: [] });
 });
 
 it("asks before reparsing into a separate draft and reports failure", async () => {
@@ -142,4 +145,39 @@ it("keeps a hidden module's data with a notice", async () => {
   expect(screen.getByText(/已隐藏，不进入生成网站/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "显示模块" }));
   expect(screen.queryByText(/已隐藏，不进入生成网站/)).not.toBeInTheDocument();
+});
+
+it("shows the original PDF text beside agent entries, not manual ones", async () => {
+  const draft = structuredClone(fixture);
+  const basicItem = draft.sections.find((section) => section.kind === "basicInfo")!.items[0];
+  basicItem.sourceBlockIds = ["block_1", "block_1b"];
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: draft as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  vi.mocked(resumeApi.blocks).mockResolvedValue({ blocks: [
+    { blockId: "block_1", page: 1, readingOrder: 0, text: "张三 前端工程师" },
+    { blockId: "block_1b", page: 1, readingOrder: 1, text: "zhang@example.com" }
+  ] });
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  const basicSection = (await screen.findByRole("heading", { name: "基本信息" })).closest("section")!;
+  expect(vi.mocked(resumeApi.blocks)).toHaveBeenCalledWith("resume-1");
+  expect(within(basicSection).getByText(/原文对照/)).toBeInTheDocument();
+  expect(within(basicSection).getByText(/张三 前端工程师/)).toBeInTheDocument();
+  expect(within(basicSection).getByText(/zhang@example.com/)).toBeInTheDocument();
+  // 相邻摘录同处一页时页码只标一次，避免逐行重复的视觉噪音
+  expect(within(basicSection).getAllByText(/第 1 页/)).toHaveLength(1);
+  // 手动新增的条目没有 PDF 来源，不显示原文对照
+  fireEvent.click(within(basicSection).getByRole("button", { name: "添加基本信息" }));
+  const articles = within(basicSection).getAllByRole("article");
+  expect(within(articles[articles.length - 1]).queryByText(/原文对照/)).not.toBeInTheDocument();
+});
+
+it("keeps editing usable when the source excerpt request fails", async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: fixture as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  vi.mocked(resumeApi.blocks).mockRejectedValue(new Error("网络异常"));
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  expect(await screen.findByRole("heading", { name: "基本信息" })).toBeInTheDocument();
+  await waitFor(() => expect(vi.mocked(resumeApi.blocks)).toHaveBeenCalled());
+  expect(screen.queryByText(/原文对照/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

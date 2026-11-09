@@ -129,6 +129,16 @@ export function createResumeParseQueue({
         revision: row.revision
       };
     },
+    // 原文对照摘录：仅暴露条目核对所需字段，bbox/字号等私有布局细节不下发
+    blocks(owner, id) {
+      const row = owned(owner, id);
+      if (row.status !== 'SUCCEEDED' || !row.draft_json) throw resumeError(409, 'DRAFT_NOT_READY');
+      return {
+        blocks: db.prepare('SELECT block_json FROM resume_blocks WHERE resume_id=? ORDER BY rowid').all(row.id)
+          .map(b => JSON.parse(b.block_json))
+          .map(({ blockId, page, readingOrder, text }) => ({ blockId, page, readingOrder, text }))
+      };
+    },
     patch(owner, id, input) {
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw resumeError(400, 'INVALID_DRAFT');
       const {

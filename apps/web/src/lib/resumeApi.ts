@@ -2,6 +2,9 @@ import type { ResumeDraftV1 } from "../../../../packages/contracts/src/resume-dr
 
 export type ResumeStatus = { resumeId: string; fileId?: string; status: string; stage?: string; progress?: number; errorCode?: string | null };
 export type StoredResume = { draft: ResumeDraftV1; revision: number; expiresAt: string };
+// 原文对照摘录（服务端已裁剪：仅 blockId/page/readingOrder/text）
+export type SourceBlockExcerpt = { blockId: string; page: number; readingOrder: number; text: string };
+export type SourceBlocks = { blocks: SourceBlockExcerpt[] };
 
 let csrfPromise: Promise<string> | null = null;
 async function csrfToken(): Promise<string> {
@@ -61,6 +64,9 @@ export const resumeApi = {
   },
   read(resumeId: string): Promise<StoredResume> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}`);
+  },
+  blocks(resumeId: string): Promise<SourceBlocks> {
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/blocks`);
   },
   save(resumeId: string, draft: ResumeDraftV1): Promise<StoredResume> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}`, "PATCH", { revision: draft.revision, draft });

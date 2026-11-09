@@ -21,6 +21,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [resumeId, setResumeId] = useState("");
   const [draft, setDraft] = useState<ResumeDraftV1 | null>(null);
   const [expiresAt, setExpiresAt] = useState("");
+  const [blocksById, setBlocksById] = useState<Record<string, { page: number; text: string }>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState("");
@@ -43,6 +44,12 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       if (!active) return;
       setDraft(result.draft); setExpiresAt(result.expiresAt);
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "草稿读取失败。"); });
+    // 原文对照是辅助信息：拉取失败时静默降级为不显示，不阻塞编辑
+    void resumeApi.blocks(resumeId).then((result) => {
+      if (!active) return;
+      setBlocksById(Object.fromEntries(result.blocks.map((block) =>
+        [block.blockId, { page: block.page, text: block.text }])));
+    }).catch(() => { /* 原文对照不可用即隐藏 */ });
     return () => { active = false; };
   }, [resumeId]);
 
@@ -195,6 +202,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
               label={labels[section.kind]} item={item} index={index} total={section.items.length}
               canAddFacts={section.kind === "basicInfo" || section.kind === "jobIntent"}
               moduleOptions={moduleOptions}
+              sourceExcerpt={item.sourceBlockIds.map((id) => blocksById[id])
+                .filter((block): block is { page: number; text: string } => Boolean(block))}
               onPatchItem={(patch) => patchItem(section.kind, item.itemId, patch)}
               onPatchFactValue={(factKey, value) => updateItem(section.kind, item.itemId, (current) => ({ ...current,
                 facts: current.facts.map((fact) => fact.key === factKey ? { ...fact, value } : fact) }))}

@@ -674,6 +674,12 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-entry-tools { display: flex; gap: 4px; margin-left: auto; }
 .proof-entry-warn { margin: 0; padding: 10px 14px; border: 1.5px solid #b44225; border-radius: var(--proof-radius);
   color: #b44225; font-size: 14px; line-height: 1.6; background: var(--proof-surface); }
+/* 条目原文对照：只读摘录，弱化配色以区分可编辑字段 */
+.proof-entry-source { margin: 0; padding: 10px 14px; border-left: 3px solid var(--proof-accent);
+  background: var(--proof-accent-soft); border-radius: 6px; }
+.proof-entry-source-head { margin: 0 0 6px; font-size: 12px; color: var(--proof-muted); }
+.proof-entry-source-text { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.proof-entry-source-page { display: inline-block; margin-right: 8px; font-size: 12px; color: var(--proof-muted); }
 .proof-fact-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
 .proof-fact-check { display: inline-flex; align-items: center; gap: 8px; padding-bottom: 14px; font-size: 14px; }
 .proof-entry-move { max-width: 320px; }
