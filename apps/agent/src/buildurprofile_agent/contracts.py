@@ -201,6 +201,31 @@ class DraftFact(StrictModel):
     included: bool
 
 
+class SupplementLink(StrictModel):
+    url: str = Field(min_length=1, max_length=2000, pattern=r'^https?://')
+    label: str = Field(default='', max_length=80)
+
+    @field_validator('url')
+    @classmethod
+    def valid_url(cls, value):
+        from urllib.parse import urlsplit
+        parsed = urlsplit(value)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError('Invalid HTTP(S) URL')
+        return value
+
+
+class SupplementImage(StrictModel):
+    imageId: ResumeId
+    caption: str = Field(max_length=80)
+
+
+class ItemSupplements(StrictModel):
+    text: str = Field(max_length=500)
+    links: list[SupplementLink] = Field(max_length=5)
+    images: list[SupplementImage] = Field(max_length=6)
+
+
 class ResumeDraftItem(StrictModel):
     itemId: ResumeId
     order: int = Field(ge=0, le=100)
@@ -213,6 +238,7 @@ class ResumeDraftItem(StrictModel):
     needsReview: bool
     included: bool
     origin: Literal['agent', 'user']
+    supplements: ItemSupplements = Field(default_factory=lambda: ItemSupplements(text='', links=[], images=[]))
 
     @model_validator(mode='after')
     def valid_evidence(self):
@@ -261,3 +287,53 @@ def validate_resume_draft(raw: object, source: ResumeSourceV1) -> ResumeDraftV1:
     if draft.fileId != source.fileId or any(set(i.sourceBlockIds) - ids for s in draft.sections for i in s.items):
         raise ValueError('Evidence does not belong to this PDF')
     return draft
+
+
+class DisplayLink(SupplementLink):
+    label: str = Field(max_length=80)
+
+
+class DisplaySupplement(StrictModel):
+    text: str = Field(max_length=500)
+    links: list[DisplayLink] = Field(max_length=5)
+    images: list[SupplementImage] = Field(max_length=6)
+
+
+class ResumeDisplayItem(ResumeEntry):
+    itemId: ResumeId
+    supplement: DisplaySupplement
+
+
+class ResumeDisplaySection(StrictModel):
+    kind: ResumeModuleKind
+    items: list[ResumeDisplayItem] = Field(max_length=100)
+
+
+class StructuredResumeV2(StrictModel):
+    version: Literal['resume-v2']
+    sections: list[ResumeDisplaySection] = Field(max_length=10)
+
+    @model_validator(mode='after')
+    def valid_order_and_ids(self):
+        kinds = list(RESUME_MODULE_MAPPING)
+        orders = [kinds.index(s.kind) for s in self.sections]
+        items = [i for s in self.sections for i in s.items]
+        if orders != sorted(set(orders)) or len({i.itemId for i in items}) != len(items):
+            raise ValueError('Duplicate or unordered modules/items')
+        if any(len({f.key for f in i.facts}) != len(i.facts) for i in items):
+            raise ValueError('Duplicate facts')
+        if len({m.imageId for i in items for m in i.supplement.images}) > 24:
+            raise ValueError('Too many images')
+        return self
+
+
+class ResumeContentV2(ResumeContent):
+    resume: StructuredResumeV2
+
+
+class GenerationBriefV2(GenerationBriefV1):
+    content: ResumeContentV2
+
+
+class DesignConfigV2(DesignConfigV1):
+    content: ResumeContentV2

@@ -110,6 +110,10 @@ export function createRequestHandler({ db, service, generationService = null, re
         res.end("success");
         return;
       }
+      if (req.method === "GET" && parts[0] === "api" && parts[1] === "shares" && parts[3] === "media" && parts.length === 5) {
+        const asset=service.readShareMedia(parts[2],parts[4]);
+        res.writeHead(200,{"content-type":asset.mime,"content-length":asset.bytes.length,"cache-control":"no-store","x-content-type-options":"nosniff"});res.end(asset.bytes);return;
+      }
       if (req.method === "GET" && parts[0] === "api" && parts[1] === "shares" && parts.length === 3) {
         sendJson(res, 200, service.readShare(parts[2])); return;
       }
@@ -174,7 +178,7 @@ export function createRequestHandler({ db, service, generationService = null, re
         if (parts[1] === "downloads" && parts[2] && req.method === "GET") {
           const download = service.getDownload(sessionId, parts[2]);
           let zip;
-          try { zip = zipBuilder(download.config); }
+          try { zip = zipBuilder(download.config, id => service.readProjectMedia(sessionId, id)); }
           catch (error) {
             try { service.markDeliveryFailure(download.projectId, "export"); } catch { /* Keep packaging error. */ }
             throw error;

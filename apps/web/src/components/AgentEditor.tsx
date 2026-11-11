@@ -68,7 +68,7 @@ export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onV
 // 单条经历条目：勾选展示、低置信度警示、原文对照、标题/内容编辑、事实字段、补充内容、上下移动与删除
 export function EntryCard({ kind, label, item, index, total, canAddFacts, moduleOptions, sourceExcerpt,
   onPatchItem, onPatchFactValue, onIncludeFact, onAddFact, onPatchFactLabel,
-  onUploadImage, imageUrl, onMoveUp, onMoveDown, onRequestRemove, onMoveTo }: {
+  onUploadImage, onRemoveImage, imageUrl, onMoveUp, onMoveDown, onRequestRemove, onMoveTo }: {
   kind: ResumeModuleKind;
   label: string;
   item: ResumeDraftItem;
@@ -83,6 +83,7 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
   onAddFact: () => void;
   onPatchFactLabel: (factKey: string, label: string) => void;
   onUploadImage: (file: File) => void;
+  onRemoveImage: (imageId: string) => void;
   imageUrl: (imageId: string) => string;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -106,6 +107,7 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     </div>
     {lowConfidence && <p className="proof-entry-warn">⚠ AI 识别置信度较低，请确认内容与分类
       （分类 {Math.round(item.confidence * 100)}% · 拆条 {Math.round(item.segmentationConfidence * 100)}%）</p>}
+    {item.needsReview && <ProofButton onClick={() => onPatchItem({ needsReview: false })}>已核对</ProofButton>}
     {!!sourceExcerpt?.length && <div className="proof-entry-source">
       <p className="proof-entry-source-head">原文对照（PDF 摘录）</p>
       {sourceExcerpt.map((block, blockIndex) => <p key={blockIndex} className="proof-entry-source-text">
@@ -130,27 +132,29 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     <div className="proof-supplement">
       <p className="proof-supplement-head">补充内容</p>
       <label className="proof-field"><span>补充说明</span>
-        <textarea rows={3} maxLength={500} value={supplements.text}
+        <textarea rows={3}  value={supplements.text}
           placeholder="可补充说明该经历的细节、成果或背景…"
-          onChange={(event) => patchSupplements({ text: event.target.value })} /></label>
-      <p className="proof-supplement-count">{supplements.text.length}/500</p>
+          onChange={(event) => patchSupplements({ text: [...event.target.value].slice(0, 500).join("") })} /></label>
+      <p className="proof-supplement-count">{[...supplements.text].length}/500</p>
       <div className="proof-supplement-row">
         <span>相关链接 {supplements.links.length}/5</span>
         <ProofButton variant="quiet" disabled={supplements.links.length >= 5}
           onClick={() => patchSupplements({ links: [...supplements.links, { url: "" }] })}>添加链接</ProofButton>
       </div>
       {supplements.links.map((link, linkIndex) => <div key={linkIndex} className="proof-supplement-link">
+        <label className="proof-field"><span>链接名称 {linkIndex + 1}</span>
+          <input value={link.label ?? ""} onChange={(event) => patchSupplements({ links: supplements.links.map((entry, i) => i === linkIndex ? { ...entry, label: [...event.target.value].slice(0,80).join("") } : entry) })} /></label>
         <label className="proof-field"><span>相关链接 {linkIndex + 1}</span>
           <input placeholder="粘贴相关链接（作品、GitHub、文章等）" value={link.url}
             onChange={(event) => patchSupplements({ links:
-              supplements.links.map((entry, i) => i === linkIndex ? { url: event.target.value } : entry) })} /></label>
+              supplements.links.map((entry, i) => i === linkIndex ? { ...entry, url: event.target.value } : entry) })} /></label>
         <ProofButton variant="quiet" onClick={() => patchSupplements({ links:
           supplements.links.filter((_, i) => i !== linkIndex) })}>移除链接</ProofButton>
       </div>)}
       <div className="proof-supplement-row">
         <span>图片 {supplements.images.length}/6</span>
         <label className="proof-supplement-upload">
-          <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传图片"
+          <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="上传图片" disabled={supplements.images.length >= 6}
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = "";
@@ -159,15 +163,14 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
           + 上传图片
         </label>
       </div>
-      <p className="proof-supplement-note">最多 6 张，每张不超过 5MB，说明不超过 80 字</p>
+      <p className="proof-supplement-note">每条最多 6 张，整份最多 24 张 / 50 MiB；单张最多 5 MiB、1–8000 像素，说明不超过 80 字</p>
       {supplements.images.map((image, imageIndex) => <div key={image.imageId} className="proof-supplement-image">
         <img src={imageUrl(image.imageId)} alt={`补充图片 ${imageIndex + 1}`} />
         <label className="proof-field"><span>图片说明</span>
-          <input maxLength={80} value={image.caption}
+          <input value={image.caption}
             onChange={(event) => patchSupplements({ images:
-              supplements.images.map((entry, i) => i === imageIndex ? { ...entry, caption: event.target.value } : entry) })} /></label>
-        <ProofButton variant="quiet" onClick={() => patchSupplements({ images:
-          supplements.images.filter((_, i) => i !== imageIndex) })}>移除图片</ProofButton>
+              supplements.images.map((entry, i) => i === imageIndex ? { ...entry, caption: [...event.target.value].slice(0,80).join("") } : entry) })} /></label>
+        <ProofButton variant="quiet" onClick={() => onRemoveImage(image.imageId)}>移除图片</ProofButton>
       </div>)}
     </div>
     <label className="proof-field proof-entry-move"><span>移动到</span>

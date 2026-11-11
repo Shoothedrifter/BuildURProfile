@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import type { CSSProperties, KeyboardEvent, PointerEvent, SyntheticEvent } from "react";
+import type { CSSProperties, ReactNode, KeyboardEvent, PointerEvent, SyntheticEvent } from "react";
 import type { ProjectCard, StackedCardsConfig } from "../../../../packages/contracts/src/config";
 import { projectPresentation, projectPreview } from "../lib/presentation";
 
-export type StackedCardsProps = StackedCardsConfig & { cards: readonly ProjectCard[] };
+export type StackedCardsProps = StackedCardsConfig & { cards: readonly ProjectCard[]; renderSupplement?: (card: ProjectCard) => ReactNode };
 
 type DeckStyle = CSSProperties & {
   "--stack-scale-step": string;
@@ -22,7 +22,7 @@ function reducedMotion(): boolean {
 }
 
 export function StackedCards({
-  scaleStep, offsetStep, stickyTop, layout, cardRadius, enableTilt, autoPlay, cards
+  scaleStep, offsetStep, stickyTop, layout, cardRadius, enableTilt, autoPlay, cards, renderSupplement
 }: StackedCardsProps) {
   const [active, setActive] = useState(0);
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
@@ -117,6 +117,7 @@ export function StackedCards({
               <summary>查看完整图片</summary>
               <img src={card.image} alt={displayTitle + "完整图片"} />
             </details>}
+            {renderSupplement?.(card)}
           </div>
         </div>
         {card.image && <div className="project-art project-art--image"><img className="project-art-image" src={card.image} alt={displayTitle} /></div>}

@@ -1224,3 +1224,9 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .proof-checklist nav { display: flex; flex-wrap: wrap; gap: 8px; overflow-x: visible; }
   .proof-checklist nav button { width: auto; padding: 8px 12px; grid-template-columns: auto auto; }
 }
+
+/* Preserve paragraph boundaries and keep supplemental media within each entry. */
+.resume-entry-body,.resume-supplement dd{white-space:pre-wrap;overflow-wrap:anywhere}
+.resume-supplement dl>div{margin-block:12px}.resume-supplement dt{font-weight:600}.resume-supplement dd{margin:4px 0}
+.resume-image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:16px}
+.resume-image-grid figure{margin:0}.resume-image-grid img{display:block;max-width:100%;height:auto;border-radius:12px}.resume-image-grid figcaption{margin-top:8px;overflow-wrap:anywhere}

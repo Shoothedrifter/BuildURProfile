@@ -99,7 +99,7 @@ function publicContent(content: ResumeContent): ResumeContent {
       category: text(project.category), year: text(project.year), description: text(project.description), tags: list(project.tags),
       visual: project.visual, ...(project.image ? { image: project.image } : {}), ...(project.link ? { link: project.link } : {}) })),
     workExperience: list(content.workExperience), campusExperience: list(content.campusExperience), education: list(content.education),
-    ...(content.resume ? { resume: publicResume(content.resume) } : {})
+    ...(content.resume?.version === "resume-v1" ? { resume: publicResume(content.resume) } : {})
   };
 }
 

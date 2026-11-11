@@ -5,7 +5,7 @@ import { toPublishedConfig } from "./publication";
 export type { AvatarStyleId } from "../../../../packages/skills/src/avatar-catalog";
 export type HeroArtwork = NonNullable<DesignConfig["heroArtwork"]>;
 export type GenerationBrief = { role: JobRole; answers: Record<string, number>; content: Omit<ResumeContent, "sourceRefs"> };
-export type GenerationResult = { config: DesignConfig; heroArtwork?: HeroArtwork };
+export type GenerationResult = { projectId?: string; config: DesignConfig; heroArtwork?: HeroArtwork };
 export type GenerationStatus = "QUEUED" | "RUNNING" | "CANCELLING";
 // Retain the old key so a task started before this migration can still be restored.
 const savedTaskKey = "burp-avatar-task";
@@ -41,7 +41,7 @@ async function retainTaskOrCancel(id: string, epoch: number): Promise<void> {
   sessionStorage.setItem(savedTaskKey, id);
 }
 
-type GenerationTask = { status: string; error?: string; heroArtwork?: HeroArtwork; config?: DesignConfig };
+type GenerationTask = { projectId?: string; status: string; error?: string; heroArtwork?: HeroArtwork; config?: DesignConfig };
 async function waitForTask(id: string, epoch: number, onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
   // Local image generation may legitimately take longer than five minutes on Apple Silicon.
   const deadline = Date.now() + 35 * 60 * 1000;
@@ -51,7 +51,7 @@ async function waitForTask(id: string, epoch: number, onStatus?: (status: Genera
     requireCurrent(epoch);
     if (current.status === "SUCCEEDED") {
       if (!current.config) throw new Error("生成任务缺少作品配置，请重新生成。");
-      return { config: current.config, ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
+      return { config: current.config, ...(current.projectId ? {projectId:current.projectId} : {}), ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
     }
     if (current.status === "FAILED" || current.status === "EXPIRED" || current.status === "CANCELLED") {
       sessionStorage.removeItem(savedTaskKey);
@@ -64,7 +64,7 @@ async function waitForTask(id: string, epoch: number, onStatus?: (status: Genera
 }
 
 export const generationApi = {
-  async generatePortfolio(brief: GenerationBrief, portrait?: { dataUrl: string; styleId: AvatarStyleId },
+  async generatePortfolio(brief: GenerationBrief | {resumeId: string; revision: number; role: JobRole; answers: Record<string,number>}, portrait?: { dataUrl: string; styleId: AvatarStyleId },
     onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
     const epoch = generationEpoch;
     let portraitAssetId: string | null = null;
@@ -74,7 +74,7 @@ export const generationApi = {
       portraitAssetId = uploaded.id;
     }
     const task = await request<{ id: string }>("/api/generations", {
-      brief, portraitAssetId, styleId: portrait?.styleId ?? null, idempotencyKey: crypto.randomUUID()
+      ...("resumeId" in brief ? brief : {brief}), portraitAssetId, styleId: portrait?.styleId ?? null, idempotencyKey: crypto.randomUUID()
     });
     await retainTaskOrCancel(task.id, epoch);
     return waitForTask(task.id, epoch, onStatus);

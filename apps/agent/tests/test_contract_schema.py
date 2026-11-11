@@ -72,3 +72,15 @@ def test_private_contract_rejects_invalid_modules_limits_dates_and_origin():
     for date in ['2026-12-10T00:00:00Z', '2026-02-30T00:00:00Z']:
         with pytest.raises(ValueError):
             ResumeSourceV1.model_validate({**source, 'expiresAt': date})
+
+
+def test_v2_enrichment_boundary_and_legacy_isolation():
+    from buildurprofile_agent.contracts import StructuredResumeV2, GenerationBriefV2, DesignConfigV2
+    import pytest
+    raw = json.loads((ROOT.parent / 'fixtures/resume-enrichment.v2.json').read_text())
+    assert StructuredResumeV2.model_validate(raw).model_dump() == raw
+    for filename, model in [('generation-brief.v2.json', GenerationBriefV2), ('design-config.v2.json', DesignConfigV2)]:
+        assert json.loads((ROOT / filename).read_text()) == model.model_json_schema()
+    raw['sections'][0]['items'][0]['sourceBlockIds'] = ['private']
+    with pytest.raises(ValueError):
+        StructuredResumeV2.model_validate(raw)

@@ -80,11 +80,11 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
       throw new ServiceError(400, "worker ID 无效。");
     }
     let task = service.leaseNext();
-    for (let skipped = 0; task && task.workflow_version !== "python-agent-v2" && skipped < 20; skipped++) {
+    for (let skipped = 0; task && !["python-agent-v2", "python-agent-v3"].includes(task.workflow_version) && skipped < 20; skipped++) {
       service.fail(task.id, "生成规则已更新，请重新提交作品。", { leaseToken: task.lease_token, retryable: false });
       task = service.leaseNext();
     }
-    if (task && task.workflow_version !== "python-agent-v2") {
+    if (task && !["python-agent-v2", "python-agent-v3"].includes(task.workflow_version)) {
       service.fail(task.id, "生成规则已更新，请重新提交作品。", { leaseToken: task.lease_token, retryable: false });
       task = null;
     }

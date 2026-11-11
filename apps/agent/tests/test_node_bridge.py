@@ -131,3 +131,36 @@ async def test_resume_transport_keeps_private_protocol_separate_and_fences_old_l
         from dataclasses import replace
         with pytest.raises(LeaseLost):
             await client.heartbeat_resume(replace(task, lease_token='stale'))
+
+
+@pytest.mark.asyncio
+async def test_real_node_v3_bridge_creates_unpaid_project_with_image_references():
+    token = 'v' * 64
+    proc = subprocess.Popen(['node', 'apps/agent/tests/fixtures/v3-bridge-server.mjs'], cwd=ROOT,
+                            env={**os.environ, 'AGENT_SERVICE_TOKEN': token},
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        line = await asyncio.wait_for(asyncio.to_thread(proc.stdout.readline), timeout=10)
+        assert line, proc.stderr.read()
+        endpoint = json.loads(line)
+        client = NodeAgentClient(endpoint['baseUrl'], token)
+        try:
+            task = await client.lease('v3_integration')
+            assert task and task.workflow_version == 'python-agent-v3'
+            await process_task(task, client, object(), default_registry(), MemorySaver(), 'v3_integration')
+            line = await asyncio.wait_for(asyncio.to_thread(proc.stdout.readline), timeout=10)
+            result = json.loads(line)
+            golden = json.loads((ROOT / 'packages/contracts/fixtures/agent-golden.v2.json').read_text())
+            assert result['config'] == golden['expected']['config']
+            assert result['projectId'] and result['projects'] == 1 and result['paid'] == 0
+            assert result['config']['content']['resume']['sections'][0]['items'][0]['supplement']['images'][0]['imageId'] == 'image_synthetic'
+            assert await client.lease('v3_integration') is None
+        finally:
+            await client.close()
+    finally:
+        proc.terminate()
+        try:
+            await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await asyncio.to_thread(proc.wait)

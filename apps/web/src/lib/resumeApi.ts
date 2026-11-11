@@ -69,10 +69,10 @@ export const resumeApi = {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/blocks`);
   },
   // 条目补充图片：按文件声明类型原样上传，服务端返回 imageId 供草稿引用
-  async uploadImage(resumeId: string, file: File): Promise<{ imageId: string }> {
+  async uploadImage(resumeId: string, file: File, itemId?: string): Promise<{ imageId: string }> {
     const response = await fetch(`/api/resumes/${encodeURIComponent(resumeId)}/images`, {
       method: "POST", credentials: "same-origin",
-      headers: { "content-type": file.type || "application/octet-stream", "x-csrf-token": await csrfToken() },
+      headers: { "content-type": file.type || "application/octet-stream", ...(itemId ? { "x-resume-item": itemId } : {}), "x-csrf-token": await csrfToken() },
       body: file
     });
     if (!response.ok) {
@@ -80,6 +80,9 @@ export const resumeApi = {
       throw new Error(data.error ?? `图片上传失败（${response.status}）。`);
     }
     return response.json() as Promise<{ imageId: string }>;
+  },
+  deleteImage(resumeId: string, imageId: string): Promise<{ok: boolean}> {
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/images/${encodeURIComponent(imageId)}`, "DELETE");
   },
   save(resumeId: string, draft: ResumeDraftV1): Promise<StoredResume> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}`, "PATCH", { revision: draft.revision, draft });

@@ -1,3 +1,4 @@
+import { validateImage } from '../generation/assets.mjs';
 import { randomUUID } from 'node:crypto';
 import { transaction } from '../database.mjs';
 import { resumeError } from './files.mjs';
@@ -140,15 +141,30 @@ export function createResumeParseQueue({
       };
     },
     // 条目补充图片：仅限属主在草稿就绪后上传，类型与大小在入库前收紧
-    saveImage(owner, id, contentType, bytes) {
+    saveImage(owner, id, contentType, bytes, itemId = null) {
+      return transaction(db, () => {
       const row = owned(owner, id);
       if (row.status !== 'SUCCEEDED' || !row.draft_json) throw resumeError(409, 'DRAFT_NOT_READY');
       const type = String(contentType ?? '').split(';')[0].trim();
       if (!['image/png', 'image/jpeg', 'image/webp'].includes(type)) throw resumeError(400, 'IMAGE_TYPE_INVALID');
       if (bytes.length > 5 * 1024 * 1024) throw resumeError(413, 'IMAGE_TOO_LARGE');
+      try { validateImage(Buffer.from(bytes), type, 1); } catch { throw resumeError(400, 'IMAGE_TYPE_INVALID'); }
+      if (itemId !== null && (typeof itemId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(itemId))) throw resumeError(400, 'INVALID_DRAFT');
+      const totals=db.prepare('SELECT count(*) n,COALESCE(sum(length(data)),0) size FROM resume_images WHERE resume_id=?').get(id);
+      if(totals.n>=24 || totals.size+bytes.length>50*1024*1024) throw resumeError(413,'IMAGE_TOTAL_LIMIT');
+      if(itemId && db.prepare('SELECT count(*) n FROM resume_images WHERE resume_id=? AND item_id=?').get(id,itemId).n>=6) throw resumeError(413,'IMAGE_ITEM_LIMIT');
       const imageId = randomUUID();
-      db.prepare('INSERT INTO resume_images(id,resume_id,content_type,data,created_at) VALUES(?,?,?,?,?)').run(imageId, row.id, type, bytes, now());
+      db.prepare('INSERT INTO resume_images(id,resume_id,content_type,data,created_at,item_id) VALUES(?,?,?,?,?,?)').run(imageId, row.id, type, bytes, now(),itemId);
       return { imageId };
+      });
+    },
+    deleteImage(owner, id, imageId) {
+      return transaction(db,()=>{
+        const row=owned(owner,id),draft=JSON.parse(row.draft_json ?? '{}');
+        if(draft.sections?.some(s=>s.items.some(i=>i.supplements?.images.some(m=>m.imageId===imageId)))) throw resumeError(409,'IMAGE_STILL_REFERENCED');
+        db.prepare('DELETE FROM resume_images WHERE id=? AND resume_id=?').run(imageId,id);
+        return {ok:true};
+      });
     },
     readImage(owner, id, imageId) {
       const row = owned(owner, id);
@@ -180,6 +196,9 @@ export function createResumeParseQueue({
           const found = db.prepare(`SELECT COUNT(*) AS n FROM resume_images WHERE resume_id=? AND id IN (${placeholders})`).get(id, ...imageIds).n;
           if (found !== imageIds.length) throw resumeError(400, 'INVALID_DRAFT');
         }
+        const previous=JSON.parse(row.draft_json);
+        const removed=previous.sections.flatMap(s=>s.items.flatMap(i=>i.supplements?.images ?? [])).filter(m=>!imageIds.includes(m.imageId));
+        for(const image of removed) db.prepare('DELETE FROM resume_images WHERE id=? AND resume_id=?').run(image.imageId,id);
         clean.revision = revision + 1;
         db.prepare('UPDATE resumes SET draft_json=?,revision=?,updated_at=? WHERE id=?').run(JSON.stringify(clean), clean.revision, now(), id);
         return {

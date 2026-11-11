@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+import { createResumeMediaStore } from './resume-media.mjs';
 import { randomUUID } from "node:crypto";
 import { ServiceError, cleanConfig } from "../../../contracts/src/validation.mjs";
 import { transaction } from "../database.mjs";
@@ -9,11 +11,13 @@ export const WORKFLOW_VERSION = "python-agent-v2";
 
 export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, maxAttempts, retryBaseMs,
   allowPortraits, requireBrief }) {
+  const media=createResumeMediaStore({db,now});
   function publicTask(row) {
-    const expired = row.status === "SUCCEEDED" && row.output_asset_id && !assets.outputExists(row.output_asset_id);
+    const deleted = row.project_id && db.prepare("SELECT deleted_at FROM projects WHERE id=?").get(row.project_id)?.deleted_at != null;
+    const expired = deleted || row.status === "SUCCEEDED" && row.output_asset_id && !assets.outputExists(row.output_asset_id);
     const cancelling = row.status === "RUNNING" && row.cancel_requested_at != null;
-    return { id: row.id, status: expired ? "EXPIRED" : cancelling ? "CANCELLING" : row.status, styleId: row.style_id,
-      error: expired ? "成图已过期，请重新上传照片生成。" : row.error,
+    return { id: row.id, ...(row.project_id ? {projectId:row.project_id} : {}), status: expired ? "EXPIRED" : cancelling ? "CANCELLING" : row.status, styleId: row.style_id,
+      error: deleted ? "作品已删除，请重新生成。" : expired ? "成图已过期，请重新上传照片生成。" : row.error,
       ...(row.status === "SUCCEEDED" && !expired && row.config_json ? { config: JSON.parse(row.config_json) } : {}),
       ...(row.status === "SUCCEEDED" && row.output_asset_id && !expired ? { heroArtwork: { assetUrl: `/api/hero-assets/${row.output_asset_id}`, styleId: row.style_id,
         alt: "根据本人肖像生成的动画风格虚拟形象" } } : {}) };
@@ -53,12 +57,12 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     const existing = db.prepare("SELECT * FROM generations WHERE owner_session_id=? AND idempotency_key=?").get(sessionId, idempotencyKey);
     if (existing) {
       if (existing.portrait_asset_id !== portraitAssetId || existing.style_id !== styleId ||
-        existing.config_json !== safeConfig || existing.brief_json !== safeBrief) throw new ServiceError(409, "生成请求标识已用于其他内容。");
+        (!safeBrief && existing.config_json !== safeConfig) || existing.brief_json !== safeBrief) throw new ServiceError(409, "生成请求标识已用于其他内容。");
       return publicTask(existing);
     }
     const id = randomUUID(), time = now();
     db.prepare("INSERT INTO generations(id,owner_session_id,portrait_asset_id,style_id,config_json,brief_json,idempotency_key,workflow_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,?)")
-      .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, WORKFLOW_VERSION, time, time);
+      .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, (brief?.content?.resume?.version === "resume-v2" || config?.content?.resume?.version === "resume-v2") ? "python-agent-v3" : WORKFLOW_VERSION, time, time);
     return getTask(sessionId, id);
   }
   function leaseNext() {
@@ -130,15 +134,23 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     return db.prepare("SELECT output_asset_id FROM generations WHERE id=?").get(taskId)?.output_asset_id ?? null;
   }
   function complete(id, { config = null, leaseToken = null } = {}) {
-    const time = now();
-    const safeConfig = config ? cleanConfig(config) : null;
-    if (leaseToken) {
-      return db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=COALESCE(?,config_json),error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND status='RUNNING' AND cancel_requested_at IS NULL AND lease_token=? AND lease_until>?")
-        .run(safeConfig, time, id, leaseToken, time).changes === 1;
-    }
-    // Compatibility for pre-worker tests and manually queued legacy tasks only.
-    return db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=COALESCE(?,config_json),error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND status='QUEUED' AND cancel_requested_at IS NULL")
-      .run(safeConfig, time, id).changes === 1;
+    return transaction(db,()=>{
+      const time=now(),row=db.prepare('SELECT * FROM generations WHERE id=?').get(id);
+      if(!row || row.cancel_requested_at!=null || (leaseToken ? row.status!=='RUNNING' || row.lease_token!==leaseToken || row.lease_until<=time : row.status!=='QUEUED')) return false;
+      const safeConfig=config ? cleanConfig(config) : row.config_json;
+      if(row.workflow_version==='python-agent-v3'){
+        const confirmed=JSON.parse(row.brief_json || row.config_json).content;
+        if(!safeConfig || !isDeepStrictEqual(JSON.parse(safeConfig).content,confirmed)) throw new ServiceError(400,'生成结果与确认内容不一致。');
+      }
+      db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(safeConfig,time,id);
+      if(row.workflow_version==='python-agent-v3' && !row.portrait_asset_id){
+        const projectId=randomUUID();
+        db.prepare('INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at) VALUES(?,?,?,?,?)').run(projectId,row.owner_session_id,safeConfig,time,time);
+        media.attachProject(row.owner_session_id,projectId,JSON.parse(safeConfig));
+        db.prepare('UPDATE generations SET project_id=? WHERE id=?').run(projectId,id);
+      }
+      return true;
+    });
   }
   function fail(id, message, { leaseToken = null, retryable = false } = {}) {
     const time = now();

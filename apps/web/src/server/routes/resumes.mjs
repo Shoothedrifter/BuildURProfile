@@ -35,8 +35,9 @@ export async function handleResumeRoutes({req,res,parts,sessionId,repository,sen
   if(req.headers['content-length']&&(!/^\d+$/.test(req.headers['content-length'])||Number(req.headers['content-length'])>5*1024*1024))throw resumeError(413,'IMAGE_TOO_LARGE');
   const chunks=[];let total=0;
   for await(const chunk of req){total+=chunk.length;if(total>5*1024*1024)throw resumeError(413,'IMAGE_TOO_LARGE');chunks.push(chunk);}
-  sendJson(res,201,queue.saveImage(sessionId,parts[2],req.headers['content-type'],Buffer.concat(chunks,total)));return true;
+  sendJson(res,201,queue.saveImage(sessionId,parts[2],req.headers['content-type'],Buffer.concat(chunks,total),req.headers['x-resume-item'] ?? null));return true;
  }
+ if(parts.length===5&&parts[3]==='images'&&req.method==='DELETE'){sendJson(res,200,queue.deleteImage(sessionId,parts[2],parts[4]));return true;}
  if(parts.length===5&&parts[3]==='images'&&req.method==='GET'){
   const image=queue.readImage(sessionId,parts[2],parts[4]);
   res.writeHead(200,{'content-type':image.contentType,'content-length':image.bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});res.end(image.bytes);return true;

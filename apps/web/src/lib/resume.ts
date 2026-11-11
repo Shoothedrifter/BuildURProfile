@@ -405,7 +405,7 @@ function structuredResume(draft: ResumeDraft): StructuredResumeV1 {
   };
 }
 
-export function toResumeContent(draft: ResumeDraft): ResumeContent {
+export function toResumeContent(draft: ResumeDraft): ResumeContent & { resume: StructuredResumeV1 } {
   const included = (entries: DraftField[]) => entries.filter((entry) => entry.included && entry.value.trim());
   const skills = included(draft.skills);
   const work = included(draft.workExperience);

@@ -1,12 +1,13 @@
+import { resumeV1View, resumeDisplayContent, validHttpUrl } from './resume-v2.mjs';
 import schema from '../schema/resume-draft.v1.json' with { type: 'json' };
 import { cleanStructuredResume } from './validation.mjs';
-import type { ResumeContent, ResumeEntry, ResumeFact, StructuredResumeV1 } from './config';
+import type { ResumeContent, StructuredResumeV1, StructuredResumeV2 } from './config';
 import { validateResumeSource, validateSchema } from './resume-source.ts';
 export const RESUME_MODULE_MAPPING = { basicInfo: 'hero-profile', jobIntent: 'job-intent-strip', selfEvaluation: 'intro-card', education: 'education-timeline', workExperience: 'work-timeline', projects: 'project-stacked-cards', awards: 'award-badges', campusExperience: 'campus-timeline', skills: 'skill-tags', other: 'free-content-card' } as const;
 export type ResumeModuleKind = keyof typeof RESUME_MODULE_MAPPING;
 export type DraftFact = { key: string; label: string; value: string; included: boolean };
 // 条目补充内容：用户手写的补充文字、相关链接与上传图片（可选字段，历史草稿没有）
-export type ItemSupplements = { text: string; links: { url: string }[]; images: { imageId: string; caption: string }[] };
+export type ItemSupplements = { text: string; links: { label?: string; url: string }[]; images: { imageId: string; caption: string }[] };
 export type ResumeDraftItem = { itemId: string; order: number; title: string; details: string; facts: DraftFact[]; sourceBlockIds: string[]; confidence: number; segmentationConfidence: number; needsReview: boolean; included: boolean; origin: 'agent' | 'user'; supplements?: ItemSupplements };
 export type ResumeDraftSection = { id: ResumeModuleKind; kind: ResumeModuleKind; mappedDesignModule: string; order: number; visible: boolean; items: ResumeDraftItem[] };
 export type ResumeDraftV1 = { version: 'resume-draft-v1'; resumeId: string; fileId: string; revision: number; sections: ResumeDraftSection[] };
@@ -19,6 +20,9 @@ function validateShape(raw: unknown): ResumeDraftV1 {
     if (s.id !== s.kind || s.mappedDesignModule !== RESUME_MODULE_MAPPING[s.kind] || !unique(s.items.map(i => i.order))) throw new Error('Invalid module mapping/order');
     for (const i of s.items) if (i.origin === 'agent' && !i.sourceBlockIds.length || !unique(i.sourceBlockIds) || !unique(i.facts.map(f => f.key))) throw new Error('Invalid evidence/facts');
   }
+  const images = draft.sections.flatMap(s => s.items.flatMap(i => i.supplements?.images ?? []));
+  if (images.length > 24) throw new Error('每份简历最多 24 张图片。');
+  for (const s of draft.sections) for (const i of s.items) for (const link of i.supplements?.links ?? []) if (!validHttpUrl(link.url)) throw new Error('链接须为有效 HTTP(S) 地址。');
   return structuredClone(draft);
 }
 /** Cross-reference checks require the actual same-file source, never model-supplied IDs. */
@@ -31,38 +35,31 @@ export function validateResumeDraft(raw: unknown, rawSource: unknown): ResumeDra
 /** Explicit allowlist projection. Private provenance and hidden values never enter generation. */
 export function projectConfirmedResume(raw: ResumeDraftV1): ResumeContent {
   const draft = validateShape(raw);
-  const resume = { version: 'resume-v1' } as Record<string, unknown>;
-  for (const s of draft.sections) {
-    const selected = s.visible ? [...s.items].sort((a,b) => a.order-b.order).filter(i => i.included) : [];
-    const facts = (i: ResumeDraftItem): ResumeFact[] => i.facts.filter(f => f.included).map(({key,label,value}) => ({key,label,value}));
-    // Basic/contact and intent values are projected only from individually selected facts.
-    resume[s.kind] = s.kind === 'basicInfo' || s.kind === 'jobIntent' ? selected.flatMap(facts) : selected.map(i => {
+  if (draft.sections.some(s => s.items.some(i => i.needsReview))) throw new Error('请先完成待核对条目。');
+  const sections = (Object.keys(RESUME_MODULE_MAPPING) as ResumeModuleKind[]).flatMap(kind => {
+    const s = draft.sections.find(s => s.kind === kind)!;
+    if (!s.visible) return [];
+    const items = [...s.items].sort((a,b) => a.order-b.order).filter(i => i.included).map(i => {
       const hidden = i.facts.filter(f => !f.included && f.value).map(f => f.value);
-      const safe = (text: string) => hidden.some(value => text.includes(value)) ? '' : text;
-      return { title: safe(i.title), details: safe(i.details), facts: facts(i) } satisfies ResumeEntry;
+      const safe = (text: string) => hidden.some(v => text.includes(v)) ? '' : text;
+      const supplement = {text:i.supplements?.text ?? '', links:(i.supplements?.links ?? []).map(l=>({label:l.label ?? '',url:l.url})),images:i.supplements?.images ?? []};
+      if (hidden.some(v => [supplement.text,...supplement.links.flatMap(l=>[l.label,l.url,decodeURIComponent(l.url)]),...supplement.images.map(m=>m.caption)].some(t=>t.includes(v)))) throw new Error('补充内容包含未勾选字段，请移除后重试。');
+      return {itemId:i.itemId,title: ['basicInfo','jobIntent'].includes(kind)?'':safe(i.title),details:['basicInfo','jobIntent'].includes(kind)?'':safe(i.details), facts:i.facts.filter(f=>f.included).map(({key,label,value})=>({key,label,value})),supplement};
     });
-  }
-  const structured = cleanStructuredResume(resume) as unknown as StructuredResumeV1;
+    return items.length ? [{kind,items}] : [];
+  });
+  const resume = cleanStructuredResume({version:'resume-v2',sections}) as unknown as StructuredResumeV2;
+  const structured = cleanStructuredResume(resumeV1View(resume)) as unknown as StructuredResumeV1;
   const basic = (key: string) => structured.basicInfo.find(f => f.key === key)?.value.trim() ?? '';
   if (!basic('name') || !(basic('email') || basic('phone'))) throw new Error('Name and email or phone required');
-  const entryText = (entry: ResumeEntry): string => [entry.title, entry.details].filter(Boolean).join('\n');
-  const projectVisuals = ['mint', 'lilac', 'peach'] as const;
-  return {
-    profile: {
-      name: basic('name'), role: structured.jobIntent.find(f => f.key === 'targetRole')?.value ?? '',
-      location: basic('location'), availability: structured.jobIntent.find(f => f.key === 'availability')?.value ?? '',
-      intro: '', summary: structured.selfEvaluation.map(entryText).join('\n'), email: basic('email')
-    },
-    expertise: { eyebrow: '', headline: '技能与专长', summary: '',
-      skills: structured.skills.map(entryText).filter(Boolean), disciplines: [] },
-    projects: structured.projects.map((entry, index) => ({
-      id: `resume-project-${index + 1}`, index: String(index + 1).padStart(2, '0'),
-      title: entry.title, category: '', year: '', description: entry.details,
-      tags: [], visual: projectVisuals[index % projectVisuals.length]
-    })),
-    workExperience: structured.workExperience.map(entryText).filter(Boolean),
-    campusExperience: structured.campusExperience.map(entryText).filter(Boolean),
-    education: structured.education.map(entryText).filter(Boolean),
-    resume: structured
-  };
+  const content = resumeDisplayContent(resume) as ResumeContent;
+  // Reserve the exact fixed assessment envelope using the longest supported role.
+  const envelope = { role: 'frontend-creative-developer', answers: {
+    'e-presence': 3, 'e-type': 3, 'k-pace': 3, 'k-cards': 3,
+    'p-tone': 3, 'p-strength': 3, 's-browse': 3, 's-control': 3
+  }, content };
+  if (new TextEncoder().encode(JSON.stringify(envelope)).byteLength > 256 * 1024) {
+    throw new Error('生成内容超过 256 KiB，请精简展示内容；草稿内容未被截断。');
+  }
+  return content;
 }

@@ -139,3 +139,35 @@ async def test_worker_acknowledges_cancellation_before_side_effect():
     item = task(portrait=True)
     await process_task(item, client, FakeProvider(), default_registry(), MemorySaver())
     assert client.completed is None and client.writes == 0 and client.failed is None
+
+@pytest.mark.asyncio
+async def test_v3_preserves_supplements_and_refuses_version_mix():
+    from dataclasses import replace
+    from copy import deepcopy
+    item = task()
+    brief = deepcopy(item.brief)
+    resume = json.loads((FIXTURE.parent / 'resume-enrichment.v2.json').read_text())
+    brief['content']['resume'] = resume
+    item = replace(item, workflow_version='python-agent-v3', brief=brief)
+    client = FakeClient()
+    graph = build_generation_graph(item, client, FakeProvider(), default_registry())
+    state = await graph.ainvoke(task_input(item))
+    assert state['config']['content']['resume'] == resume
+    assert 'resume.compose.v3' in state['skill_plan']
+    assert 'artifact.qa.v2' in state['skill_plan']
+    old = replace(item, workflow_version='python-agent-v2')
+    with pytest.raises(ValueError):
+        await build_generation_graph(old, client, FakeProvider(), default_registry()).ainvoke(task_input(old))
+
+@pytest.mark.asyncio
+async def test_v3_portrait_regeneration_keeps_existing_confirmed_config():
+    from dataclasses import replace
+    golden = json.loads((FIXTURE.parent / 'agent-golden.v2.json').read_text())
+    item = replace(task(portrait=True), workflow_version='python-agent-v3', brief=None,
+                   config=golden['expected']['config'])
+    client, provider = FakeClient(), FakeProvider()
+    graph = build_generation_graph(item, client, provider, default_registry())
+    state = await graph.ainvoke(task_input(item))
+    assert state['config']['content'] == golden['expected']['config']['content']
+    assert state['skill_plan'] == ['avatar.wibi.v1', 'artifact.qa.v2']
+    assert provider.calls == 1

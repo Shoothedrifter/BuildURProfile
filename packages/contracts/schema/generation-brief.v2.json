@@ -1,0 +1,479 @@
+{
+  "$defs": {
+    "DisplayLink": {
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "pattern": "^https?://",
+          "title": "Url",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "label"
+      ],
+      "title": "DisplayLink",
+      "type": "object"
+    },
+    "DisplaySupplement": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "maxLength": 500,
+          "title": "Text",
+          "type": "string"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/DisplayLink"
+          },
+          "maxItems": 5,
+          "title": "Links",
+          "type": "array"
+        },
+        "images": {
+          "items": {
+            "$ref": "#/$defs/SupplementImage"
+          },
+          "maxItems": 6,
+          "title": "Images",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "links",
+        "images"
+      ],
+      "title": "DisplaySupplement",
+      "type": "object"
+    },
+    "Expertise": {
+      "additionalProperties": false,
+      "properties": {
+        "eyebrow": {
+          "maxLength": 12000,
+          "title": "Eyebrow",
+          "type": "string"
+        },
+        "headline": {
+          "maxLength": 12000,
+          "title": "Headline",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 12000,
+          "title": "Summary",
+          "type": "string"
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Skills",
+          "type": "array"
+        },
+        "disciplines": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Disciplines",
+          "type": "array"
+        }
+      },
+      "required": [
+        "eyebrow",
+        "headline",
+        "summary",
+        "skills",
+        "disciplines"
+      ],
+      "title": "Expertise",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 12000,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 12000,
+          "title": "Role",
+          "type": "string"
+        },
+        "location": {
+          "maxLength": 12000,
+          "title": "Location",
+          "type": "string"
+        },
+        "availability": {
+          "maxLength": 12000,
+          "title": "Availability",
+          "type": "string"
+        },
+        "intro": {
+          "maxLength": 12000,
+          "title": "Intro",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 12000,
+          "title": "Summary",
+          "type": "string"
+        },
+        "email": {
+          "maxLength": 12000,
+          "title": "Email",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "location",
+        "availability",
+        "intro",
+        "summary",
+        "email"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "ProjectCard": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "title": "Id",
+          "type": "string"
+        },
+        "index": {
+          "maxLength": 30,
+          "title": "Index",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 12000,
+          "title": "Title",
+          "type": "string"
+        },
+        "category": {
+          "maxLength": 12000,
+          "title": "Category",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 30,
+          "title": "Year",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 12000,
+          "title": "Description",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Tags",
+          "type": "array"
+        },
+        "visual": {
+          "enum": [
+            "mint",
+            "lilac",
+            "peach"
+          ],
+          "title": "Visual",
+          "type": "string"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link"
+        }
+      },
+      "required": [
+        "id",
+        "index",
+        "title",
+        "category",
+        "year",
+        "description",
+        "tags",
+        "visual"
+      ],
+      "title": "ProjectCard",
+      "type": "object"
+    },
+    "ResumeContentV2": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "expertise": {
+          "$ref": "#/$defs/Expertise"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ProjectCard"
+          },
+          "maxItems": 100,
+          "title": "Projects",
+          "type": "array"
+        },
+        "workExperience": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Workexperience",
+          "type": "array"
+        },
+        "campusExperience": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Campusexperience",
+          "type": "array"
+        },
+        "education": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Education",
+          "type": "array"
+        },
+        "resume": {
+          "$ref": "#/$defs/StructuredResumeV2"
+        }
+      },
+      "required": [
+        "profile",
+        "expertise",
+        "projects",
+        "resume"
+      ],
+      "title": "ResumeContentV2",
+      "type": "object"
+    },
+    "ResumeDisplayItem": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 12000,
+          "title": "Title",
+          "type": "string"
+        },
+        "details": {
+          "maxLength": 12000,
+          "title": "Details",
+          "type": "string"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/ResumeFact"
+          },
+          "maxItems": 100,
+          "title": "Facts",
+          "type": "array"
+        },
+        "itemId": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Itemid",
+          "type": "string"
+        },
+        "supplement": {
+          "$ref": "#/$defs/DisplaySupplement"
+        }
+      },
+      "required": [
+        "title",
+        "details",
+        "facts",
+        "itemId",
+        "supplement"
+      ],
+      "title": "ResumeDisplayItem",
+      "type": "object"
+    },
+    "ResumeDisplaySection": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "basicInfo",
+            "jobIntent",
+            "selfEvaluation",
+            "education",
+            "workExperience",
+            "projects",
+            "awards",
+            "campusExperience",
+            "skills",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ResumeDisplayItem"
+          },
+          "maxItems": 100,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "title": "ResumeDisplaySection",
+      "type": "object"
+    },
+    "ResumeFact": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 12000,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 12000,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 12000,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "value"
+      ],
+      "title": "ResumeFact",
+      "type": "object"
+    },
+    "StructuredResumeV2": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "resume-v2",
+          "title": "Version",
+          "type": "string"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/ResumeDisplaySection"
+          },
+          "maxItems": 10,
+          "title": "Sections",
+          "type": "array"
+        }
+      },
+      "required": [
+        "version",
+        "sections"
+      ],
+      "title": "StructuredResumeV2",
+      "type": "object"
+    },
+    "SupplementImage": {
+      "additionalProperties": false,
+      "properties": {
+        "imageId": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Imageid",
+          "type": "string"
+        },
+        "caption": {
+          "maxLength": 80,
+          "title": "Caption",
+          "type": "string"
+        }
+      },
+      "required": [
+        "imageId",
+        "caption"
+      ],
+      "title": "SupplementImage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "role": {
+      "enum": [
+        "ui-ux-designer",
+        "frontend-creative-developer",
+        "brand-motion-copy"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "answers": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Answers",
+      "type": "object"
+    },
+    "content": {
+      "$ref": "#/$defs/ResumeContentV2"
+    }
+  },
+  "required": [
+    "role",
+    "answers",
+    "content"
+  ],
+  "title": "GenerationBriefV2",
+  "type": "object"
+}

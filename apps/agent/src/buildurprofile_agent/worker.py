@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 
-from .graph import WORKFLOW_VERSION, build_generation_graph, task_input
+from .graph import SUPPORTED_WORKFLOWS, build_generation_graph, task_input
 from .graphs.resume_parse import WORKFLOW_VERSION as RESUME_WORKFLOW_VERSION, build_resume_parse_graph
 from .providers.base import ImageProviderError
 from .providers.text_model import OpenAIResumeTextModel, ResumeTextModelError
@@ -58,7 +58,7 @@ async def process_task(task: AgentTask, client: NodeAgentClient, provider: Any,
 
     heart: asyncio.Task | None = None
     try:
-        if task.workflow_version != WORKFLOW_VERSION:
+        if task.workflow_version not in SUPPORTED_WORKFLOWS:
             raise ValueError("SKILL_VERSION_MISMATCH")
         graph = build_generation_graph(task, client, provider, registry, checkpointer=checkpointer)
         processing = asyncio.create_task(graph.ainvoke(task_input(task), config={"configurable": {

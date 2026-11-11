@@ -162,6 +162,17 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
       content_type TEXT NOT NULL, data BLOB NOT NULL, created_at INTEGER NOT NULL
     );`);
   });
+  applyMigration(db, 9, () => {
+    db.exec(`ALTER TABLE resume_images ADD COLUMN item_id TEXT;
+      ALTER TABLE generations ADD COLUMN project_id TEXT REFERENCES projects(id);
+      ALTER TABLE generations ADD COLUMN resume_request_json TEXT;
+      CREATE TABLE showcase_media(id TEXT PRIMARY KEY,owner_session_id TEXT NOT NULL REFERENCES sessions(id),content_type TEXT NOT NULL,data BLOB NOT NULL,created_at INTEGER NOT NULL);
+      CREATE TABLE generation_media(generation_id TEXT NOT NULL REFERENCES generations(id) ON DELETE CASCADE,media_id TEXT NOT NULL REFERENCES showcase_media(id) ON DELETE CASCADE,PRIMARY KEY(generation_id,media_id));
+      CREATE TABLE project_media(project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,media_id TEXT NOT NULL REFERENCES showcase_media(id) ON DELETE CASCADE,PRIMARY KEY(project_id,media_id));
+      CREATE INDEX resume_images_resume ON resume_images(resume_id,item_id);
+      CREATE INDEX showcase_media_created ON showcase_media(created_at);
+      CREATE UNIQUE INDEX generation_project ON generations(project_id) WHERE project_id IS NOT NULL;`);
+  });
   return db;
 }
 

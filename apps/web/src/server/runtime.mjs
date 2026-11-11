@@ -43,7 +43,7 @@ export function getAppRuntime() {
   const assetRoot = process.env.AVATAR_ASSET_ROOT || join(repoRoot, "data/avatar-assets");
   const generationService = createGenerationService({ db, assetRoot, allowPortraits: avatarDemoEnabled });
   const resumeRepository = createResumeRepository({db, root: process.env.RESUME_FILE_ROOT || join(repoRoot, "data/resume-files")});
-  const cleanupTimer = setInterval(() => { try { resumeRepository.cleanup(); } catch { /* Retry on the next bounded sweep. */ } }, 60_000);
+  const cleanupTimer = setInterval(() => { try { resumeRepository.cleanup(); generationService.cleanupResumeMedia(); } catch { /* Retry on the next bounded sweep. */ } }, 60_000);
   cleanupTimer.unref();
   const handler = createRequestHandler({
     db, service, generationService, resumeRepository, portraitEnabled: avatarDemoEnabled,

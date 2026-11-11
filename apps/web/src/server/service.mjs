@@ -1,3 +1,4 @@
+import { createResumeMediaStore } from '../../../../packages/storage/src/generation/resume-media.mjs';
 import { randomBytes, randomUUID } from "node:crypto";
 import { transaction } from "./database.mjs";
 import { fenToYuan } from "./config.mjs";
@@ -27,6 +28,7 @@ function publicProject(project, db) {
     pendingAmountFen: pending?.amount_fen ?? null };
 }
 export function createPaymentService(db, { gateway, paymentConfig, configurationError = null, now = () => Date.now() }) {
+  const media=createResumeMediaStore({db,now});
   function markDeliveryFailure(projectId, kind) {
     requirePaid(db, projectId);
     db.prepare(`INSERT INTO deliveries(project_id,kind,status,error) VALUES(?,?,'FAILED','DELIVERY_FAILED')
@@ -37,18 +39,25 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   }
   function getProject(sessionId, projectId) { return publicProject(ownedProject(db, sessionId, projectId), db); }
   function createProject(sessionId, config) {
+    return transaction(db,()=>{
     const id = randomUUID(), time = now(), json = cleanConfig(config);
     db.prepare("INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at) VALUES(?,?,?,?,?)")
       .run(id, sessionId, json, time, time);
+    media.attachProject(sessionId,id,JSON.parse(json));
     return getProject(sessionId, id);
+    });
   }
   function updateProject(sessionId, projectId, config) {
+    return transaction(db,()=>{
     const existing = ownedProject(db, sessionId, projectId);
     const json = cleanConfig(config);
     if (existing.config_json === json) return getProject(sessionId, projectId);
     db.prepare("UPDATE projects SET config_json=?,revision=revision+1,updated_at=? WHERE id=?")
       .run(json, now(), projectId);
+    media.attachProject(sessionId,projectId,JSON.parse(json));
+    media.pruneProject(projectId);
     return getProject(sessionId, projectId);
+    });
   }
   function listProjects(sessionId) {
     return db.prepare("SELECT * FROM projects WHERE owner_session_id=? AND deleted_at IS NULL ORDER BY updated_at DESC").all(sessionId)
@@ -66,6 +75,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
         .run(time, projectId);
       db.prepare("UPDATE projects SET deleted_at=?,config_json='{}',pending_action=NULL,updated_at=? WHERE id=?")
         .run(time, time, projectId);
+      media.pruneProject(projectId);
       return { ok: true };
     });
   }
@@ -198,6 +208,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
         .run(value, projectId, project.revision, project.config_json, now(), expiry);
       db.prepare("INSERT INTO deliveries(project_id,kind,status,completed_at) VALUES(?,'share','DELIVERED',?) ON CONFLICT(project_id,kind) DO UPDATE SET status='DELIVERED',completed_at=excluded.completed_at,error=NULL")
         .run(projectId, now());
+      media.pruneProject(projectId);
       return { token: value, expiresAt: expiry };
     }); }
     catch (error) {
@@ -221,6 +232,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   function revokeShare(sessionId, projectId, value) {
     ownedProject(db, sessionId, projectId);
     db.prepare("UPDATE shares SET revoked_at=? WHERE token=? AND project_id=? AND revoked_at IS NULL").run(now(), value, projectId);
+    media.pruneProject(projectId);
   }
   function issueDownload(sessionId, projectId) {
     const project = ownedProject(db, sessionId, projectId);
@@ -250,7 +262,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     ownedProject(db, sessionId, projectId);
     return db.prepare("SELECT out_trade_no,amount_fen,status,payment_env,app_id,seller_id,seller_email,alipay_trade_no,created_at FROM orders WHERE project_id=? ORDER BY created_at DESC").all(projectId);
   }
-  return { createProject, updateProject, deleteProject, getProject, listProjects, checkout, notify, reconcile,
+  return { readShareMedia: media.readShare, readProjectMedia: media.read, createProject, updateProject, deleteProject, getProject, listProjects, checkout, notify, reconcile,
     publish, readShare, listShares, revokeShare, issueDownload, getDownload, markDownload,
     markDeliveryFailure, orderHistory };
 }

@@ -1,0 +1,42 @@
+{
+  "version": "resume-v2",
+  "sections": [
+    {
+      "kind": "basicInfo",
+      "items": [
+        {
+          "itemId": "item_basic",
+          "title": "",
+          "details": "",
+          "facts": [
+            {
+              "key": "name",
+              "label": "name",
+              "value": "合成用户"
+            },
+            {
+              "key": "email",
+              "label": "email",
+              "value": "synthetic@example.test"
+            }
+          ],
+          "supplement": {
+            "text": "补充说明",
+            "links": [
+              {
+                "label": "作品地址",
+                "url": "https://example.test/work"
+              }
+            ],
+            "images": [
+              {
+                "imageId": "image_synthetic",
+                "caption": "合成截图"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

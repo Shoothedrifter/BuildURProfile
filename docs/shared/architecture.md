@@ -4,7 +4,7 @@
 
 ```text
 浏览器客户端（Next.js Client Components）：PDF 上传 → 十模块核对 → 八题答案
-  ↓ 私有 PDF 上传与解析任务；确认后提交 brief + 可选照片资产 ID
+  ↓ 私有 PDF 上传与解析任务；确认后提交 resumeId/revision + 角色/答案 + 可选照片资产 ID
 Next.js Route Handlers（apps/web/src/app/api & src/server）
   ├─ 会话 / CSRF / 解析与生成队列 / 私有 PDF 和资产（SQLite via packages/storage）
   ├─ ↕ 服务令牌 + 有效任务租约（/_internal/agent/*）
@@ -26,15 +26,17 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 ## 合同与图执行
 
-`GenerationBriefV1` 包含已确认的展示字段、角色和答案；展示字段可附带来源已剥离的 `resume-v1` 结构化简历。Next.js 服务端入队前清洗，Python 再校验。`DesignConfigV1` 是预览和交付配置，同样可携带该结构化简历。合同实现与 JSON Schema 位于 `packages/contracts/`，Python 边界模型位于 `apps/agent/src/buildurprofile_agent/contracts.py`。当前工作流版本为 `python-agent-v2`。
+新 Agent 简历使用 `GenerationBriefV2` / `DesignConfigV2`，其 `resume-v2.sections` 保存按固定十模块排序的已确认条目，以及补充文字、命名链接和图片 ID。服务端按会话读取 `resumeId/revision` 对应草稿并重新投影；客户端不能自报 v2 的 content。Python 再做严格校验。兼容字段 `profile/projects/...` 从条目派生，作品渲染不重复展示兼容副本。
+
+当前新 Agent 工作流为 `python-agent-v3`（`resume.compose.v3`、`artifact.qa.v2`），内容组装只验证和复制，不调用 LLM 改写用户补充内容。旧浏览器兼容入口及已有任务继续使用 `python-agent-v2` / v1 展示合同；Worker 按任务版本分流，禁止混读。版本化 Schema 位于 `packages/contracts/schema`，Python 模型位于 `apps/agent/src/buildurprofile_agent/contracts.py`。
 
 图顺序为：校验输入 → 选择 Skill 计划 → 评分 → 设计映射 → 注入确认内容 → 可选肖像 → 最终 QA → 提交配置。Skill 声明稳定 ID、版本、能力、输入输出和超时，执行器只授予当前节点所需能力。
 
-新上传路径由 `resume-parse-v2` 独立队列和七节点 LangGraph 图解析。Web 在私有原件上复用旧浏览器解析算法，生成仅供 Agent 使用的 `resume-parse-plan-v1` 模块和条目锚点；Python 将 PDF 来源块对齐锚点，再由 `resume.format.v1` 文本模型逐条整理标题与正文，不能自由拆分或合并条目。固定映射和来源校验由代码执行，详见[解析流程 v2](../agent/resume-anchored-formatting.md)。私有 `resume-source-v1` 块与 `resume-draft-v1` 十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存并确认，投影剥离来源及隐藏字段后复用 `resume-v1`。原件、块与草稿从上传起 30 天自动删除，可提前删除。旧 `resume.parse.v3` 浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
+新上传路径由 `resume-parse-v2` 独立队列和七节点 LangGraph 图解析。Web 在私有原件上复用旧浏览器解析算法，生成仅供 Agent 使用的 `resume-parse-plan-v1` 模块和条目锚点；Python 将 PDF 来源块对齐锚点，再由 `resume.format.v1` 文本模型逐条整理标题与正文，不能自由拆分或合并条目。固定映射和来源校验由代码执行，详见[解析流程 v2](../agent/resume-anchored-formatting.md)。私有 `resume-source-v1` 块与 `resume-draft-v1` 十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存并确认，显式清除待核对状态后，投影剥离来源及隐藏字段，输出 `resume-v2`。原件、块与草稿从上传起 30 天自动删除，可提前删除。旧 `resume.parse.v3` 浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
 
 图状态与 checkpoint 可保存任务 ID、清洗后的 brief、评分、配置、Skill 版本、风格与资产 ID、QA 结果。不得保存 PDF 原文、`sourceRefs`、照片字节、密钥和支付数据。照片及风格参考图仅在外部图像请求期间读取。
 
-修改 Skill 合同或输出时，同步升级图和队列中的工作流版本及对应 Schema/测试；拒绝版本不匹配的任务。TS 规则和 Python 规则通过 `packages/contracts/fixtures/agent-golden.v1.json` 检查一致性。维护工具 `scripts/export-agent-schemas.py` 从 Python 模型刷新 Schema，执行后需审阅差异。
+修改 Skill 合同或输出时，同步升级图和队列中的工作流版本及对应 Schema/测试；拒绝版本不匹配的任务。TS 规则和 Python 规则通过 `packages/contracts/fixtures/agent-golden.v1.json` 与 `agent-golden.v2.json` 检查一致性。维护工具 `scripts/export-agent-schemas.py` 从 Python 模型刷新 Schema，执行后需审阅差异。
 
 ## 私有任务协议 v1
 
@@ -62,3 +64,11 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 排队任务可立即取消，运行中任务标记取消并尽力终止外部请求。已发出的供应商调用可能计费，取消不承诺退款。限流和暂不可用有限重试，超时不自动重试以降低重复计费风险。
 
 当前为单机 SQLite WAL、私有本地资产和 Python 独立 SQLite checkpoint。多主机部署前需迁移共享任务数据库、对象存储及 checkpoint 适配器，不跨主机共享 SQLite 文件。持久化与健康检查见[部署说明](deployment.md)。
+
+## 简历图片与作品资产
+
+补充图片上传保存在私有 `resume_images`，按真实格式与尺寸校验：PNG/JPEG/WebP、1–8000 像素、单张 5 MiB、每条 6 张、整份 24 张且合计 50 MiB。原 PDF、来源块、草稿与这批图片沿用上传起 30 天期限。取消未保存的图片或保存时移除原引用会释放对应图片；孤立上传最迟随原简历到期清除。
+
+生成入队在同一事务中复制已选图片到 `showcase_media` 并写 `generation_media`；生成 brief/config/checkpoint 仅含 ID。无肖像 v3 生成成功后，以任务为幂等来源创建未付款项目并关联 `project_media`。Wibi 肖像继续仅供本机演示，不自动保存为可付费交付项目。
+
+作品图片按项目生命周期保留，删除原简历不影响作品。属主通过 `/api/showcase-media/:id` 预览；分享通过 `/api/shares/:token/media/:id` 读取，并校验令牌、付款、项目和快照引用。旧分享快照可保留更新前的图片；撤销、过期、删项目后即时拒绝。导出 ZIP 包含 `index.html` 和 `assets/*`，不依赖私有 PDF 路由。未形成项目的复制品最多保留 30 天；清理为有界批次，有效运行租约在到期边界完成前受保护，废弃排队任务到期转失败。项目删除或旧分享失效后，按引用关系释放无主作品图片。

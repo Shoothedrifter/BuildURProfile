@@ -199,3 +199,21 @@ describe("ShowcasePage image content", () => {
     }
   });
 });
+
+it('renders v2 supplements once with context-specific images and separate work/campus', async () => {
+  const {default:resume}=await import('../../../packages/contracts/fixtures/resume-enrichment.v2.json');
+  const {resumeDisplayContent}=await import('../../../packages/contracts/src/resume-v2.mjs');
+  const config={...defaultConfig,content:resumeDisplayContent(resume)} as DesignConfig;
+  render(<ShowcasePage config={config} resolveResumeImage={id=>`/api/shares/synthetic/media/${id}`}/>);
+  expect(screen.getAllByText('补充说明')).toHaveLength(1);
+  expect(screen.getByRole('link',{name:'作品地址'})).toHaveAttribute('rel','noopener noreferrer');
+  expect(screen.getByRole('img',{name:'合成截图'})).toHaveAttribute('src','/api/shares/synthetic/media/image_synthetic');
+});
+
+it('keeps a supplement-only project visible in the fixed card deck', async () => {
+  const {resumeDisplayContent}=await import('../../../packages/contracts/src/resume-v2.mjs');
+  const resume={version:'resume-v2',sections:[{kind:'projects',items:[{itemId:'project_supplement',title:'',details:'',facts:[],supplement:{text:'仅有的补充正文',links:[],images:[]}}]}]};
+  render(<ShowcasePage config={{...defaultConfig,content:resumeDisplayContent(resume)} as DesignConfig}/>);
+  expect(screen.getByTestId('stacked-deck')).toBeInTheDocument();
+  expect(screen.getByText('仅有的补充正文')).toBeInTheDocument();
+});

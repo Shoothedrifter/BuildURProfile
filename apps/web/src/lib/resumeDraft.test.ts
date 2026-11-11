@@ -1,3 +1,4 @@
+import { resumeV1View } from '../../../../packages/contracts/src/resume-v2.mjs';
 import { describe, expect, it } from 'vitest';
 import * as contracts from '../../../../packages/contracts/src/resume-draft';
 import fixture from '../../../../packages/contracts/fixtures/resume-draft.v1.json';
@@ -10,7 +11,7 @@ describe('private resume contracts', () => {
     expect(content.profile.name).toBe('合成用户');
     expect(content.profile.email).toBe('synthetic@example.test');
     expect(JSON.stringify(content)).not.toMatch(/sourceBlockIds|confidence|fileId|秘密电话|source text/);
-    expect(content.resume?.workExperience).toEqual([]);
+    expect(resumeV1View(content.resume)?.workExperience).toEqual([]);
   });
   it.each(['missing', 'duplicate', 'mapping', 'source', 'length', 'confidence', 'extra', 'id'])('rejects invalid %s at the boundary', (mode) => {
     const draft = structuredClone(fixture);
@@ -66,7 +67,7 @@ it('blocks oversized arrays and private text copied into display prose', () => {
   const draft = structuredClone(fixture);
   draft.sections[4].items = [{ ...draft.sections[0].items[0], itemId: 'item_work', title: '秘密电话', details: '秘密电话', sourceBlockIds: ['block_1'] }];
   const content = contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source));
-  expect(content.resume?.workExperience[0]).toEqual({ title: '', details: '', facts: [{key:'name',label:'name',value:'合成用户'},{key:'email',label:'email',value:'synthetic@example.test'}] });
+  expect(resumeV1View(content.resume)?.workExperience[0]).toEqual({ title: '', details: '', facts: [{key:'name',label:'name',value:'合成用户'},{key:'email',label:'email',value:'synthetic@example.test'}] });
   draft.sections[4].items[0].facts = Array.from({length:101}, (_,i) => ({ key: `key_${i}`, label:'',value:'',included:true }));
   expect(() => contracts.validateResumeDraft(draft, source)).toThrow();
 });
@@ -99,7 +100,7 @@ it.each(['\u0000', '😀'.repeat(6001)])('rejects confirmed prose incompatible w
 it('preserves supplementary Unicode within the confirmed display limit', () => {
   const draft = structuredClone(fixture);
   draft.sections[4].items = [{ ...draft.sections[0].items[0], itemId: 'item_work', details: '😀'.repeat(6000) }];
-  expect(contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source)).resume?.workExperience[0].details).toBe('😀'.repeat(6000));
+  expect(resumeV1View(contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source)).resume)?.workExperience[0].details).toBe('😀'.repeat(6000));
 });
 
 it('projects selected Agent experience into the existing showcase fields', () => {

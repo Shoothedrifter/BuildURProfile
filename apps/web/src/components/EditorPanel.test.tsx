@@ -1,3 +1,4 @@
+import { resumeV1View } from '../../../../packages/contracts/src/resume-v2.mjs';
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
@@ -27,8 +28,8 @@ describe("result editor", () => {
     render(<Harness initial={{ ...base, content: { ...base.content, resume } }} />);
     fireEvent.change(screen.getByRole("textbox", { name: "荣誉奖项 1 内容" }), { target: { value: "2024 创新奖" } });
     fireEvent.change(screen.getByRole("textbox", { name: "其他内容 1 内容" }), { target: { value: "技术专栏与播客" } });
-    expect(edited().content.resume?.awards[0].details).toBe("2024 创新奖");
-    expect(edited().content.resume?.other[0].details).toBe("技术专栏与播客");
+    expect(resumeV1View(edited().content.resume)?.awards[0].details).toBe("2024 创新奖");
+    expect(resumeV1View(edited().content.resume)?.other[0].details).toBe("技术专栏与播客");
   });
 
   it("keeps the structured identity aligned with the edited hero name", () => {
@@ -37,7 +38,7 @@ describe("result editor", () => {
       education: [], workExperience: [], projects: [], awards: [], campusExperience: [], skills: [], other: [] };
     render(<Harness initial={{ ...base, content: { ...base.content, resume } }} />);
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "新姓名" } });
-    expect(edited().content.resume?.basicInfo[0].value).toBe("新姓名");
+    expect(resumeV1View(edited().content.resume)?.basicInfo[0].value).toBe("新姓名");
   });
   it("edits profile, expertise, and project copy in the live config", () => {
     render(<Harness />);
@@ -113,4 +114,13 @@ describe("result editor", () => {
     expect(edited().content.projects[0].category).toBe("");
     expect(edited().content.projects[0].link).toBe("");
   });
+});
+
+it('edits v2 source items and keeps supplemental images and compatibility fields', async () => {
+  const {default:resume}=await import('../../../../packages/contracts/fixtures/resume-enrichment.v2.json');
+  const {resumeDisplayContent}=await import('../../../../packages/contracts/src/resume-v2.mjs');
+  render(<Harness initial={{...base,content:resumeDisplayContent(resume)} as DesignConfig}/>);
+  fireEvent.change(screen.getByRole('textbox',{name:'name'}),{target:{value:'修改姓名'}});
+  expect(edited().content.profile.name).toBe('修改姓名');
+  expect(JSON.stringify(edited().content.resume)).toContain('image_synthetic');
 });

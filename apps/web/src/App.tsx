@@ -102,6 +102,7 @@ export default function App() {
         setPhase("quiz");
         return;
       }
+      if (result.projectId) { setProjectId(result.projectId); setProjectPaid(false); }
       setGenerated({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
       setProgress("");
       setPhase("result");
@@ -420,13 +421,15 @@ export default function App() {
     setError("");
     setProgress(photoDataUrl ? "正在上传肖像，准备 Agent 工作流…" : "正在提交 Agent 工作流…");
     try {
-      const result = await generationApi.generatePortfolio({ role, answers, content },
+      const result = await generationApi.generatePortfolio(agentDraft ? {resumeId: agentDraft.resumeId, revision: agentDraft.revision,role,answers} : { role, answers, content },
         avatarDemo && photoDataUrl ? { dataUrl: photoDataUrl, styleId: avatarStyle } : undefined,
         (status) => {
           if (version === generationVersion.current) setProgress(agentStatusText(status));
         });
       if (version !== generationVersion.current || (sourcePhoto && sourcePhoto !== photoDataRef.current)) return;
       if (!isRenderableConfig(result.config)) throw new Error("生成任务返回的作品配置不完整，请重试。");
+      if (result.projectId) { setProjectId(result.projectId); setProjectPaid(false); }
+      void paymentApi.projects().then(setProjects).catch(()=>{});
       showResult({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
     } catch (cause) {
       if (version !== generationVersion.current) return;
@@ -664,7 +667,7 @@ export default function App() {
 
   if (shareView.requested) {
     if (shareView.loading) return <div className="share-unavailable proof-share-unavailable"><p>正在读取分享作品…</p></div>;
-    if (shareView.config) return <ShowcasePage config={shareView.config} preserveShareHash touchDowngraded={isTouch} />;
+    if (shareView.config) return <ShowcasePage config={shareView.config} resolveResumeImage={id=>`/api/shares/${encodeURIComponent(shareToken() ?? "")}/media/${encodeURIComponent(id)}`} preserveShareHash touchDowngraded={isTouch} />;
     return <div className="share-unavailable proof-share-unavailable">
       <div className="builder-brand"><span>b<span>u</span>.</span><strong>BUILD YOUR PROFILE</strong></div>
       <h1>分享链接已失效</h1>

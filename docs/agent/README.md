@@ -20,7 +20,7 @@
 
 ## Skill 扩展
 
-当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2`、`resume.format.v1`、`avatar.wibi.v1` 和 `artifact.qa.v1`。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。`resume.sections.v1` 与 `resume.items.v1` 保留兼容定义，v2 图不调用。细节见[解析流程 v2](resume-anchored-formatting.md)。
+当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2/v3`、`resume.format.v1`、`avatar.wibi.v1` 和 `artifact.qa.v1/v2`。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。`resume.sections.v1` 与 `resume.items.v1` 保留兼容定义，v2 图不调用。细节见[解析流程 v2](resume-anchored-formatting.md)。
 
 简历解析由独立 Worker 领取 `resume-parse-v2` 队列。PDF 版面提取使用 `pdfplumber`，Web 通过 PDF.js 运行与旧浏览器入口相同的条目解析函数。`RESUME_TEXT_PROVIDER=openai` 使用 OpenAI Responses 严格 JSON Schema；`RESUME_TEXT_PROVIDER=zai` 使用智谱 Response API 的 `json_object` 输出，再由 Agent 按同一 Schema 和来源块合同校验。两者复用现有 OpenAI Python SDK，但必须使用各自的 API Key 和地址。原 PDF、提取文本、模型提示与结果只在当前图执行内存中流转，不进入 LangGraph checkpoint。缺少模型或对应 Key 时任务明确失败为 `PARSE_FAILED`，Agent 日志只记录安全的失败类别，不输出密钥、简历或模型响应。配置见 [Agent 样例](../../apps/agent/.env.example)。合成假模型跨端测试覆盖真实 Node HTTP 租约和 Python 图；真实供应商仍须单独联调。
 
@@ -61,3 +61,9 @@ npm run test:agent
 Wibi 风格规则具有个人非商业限制。未获得商业授权或替换为独立权利来源的风格前，只可本机预览；服务端继续拒绝带肖像配置的付费分享和 ZIP。复制或改写提示词不自动解除许可限制；修改和再分发需保留作者、来源、LICENSE、NOTICE 并标注修改。来源见 [Wibi Style](https://github.com/Vieeeeeee/wibi-style)。
 
 生产开放肖像还需完成真实供应商评测、身份一致性与内容 QA、成本和地区配置，以及持久资产快照与离线嵌入设计。现有文件格式校验不能替代视觉验收。
+
+## 确认内容 v3
+
+新 Agent 简历生成使用 `python-agent-v3`、`GenerationBriefV2` 和 `DesignConfigV2`。`resume.compose.v3` 只验证并透传 `resume-v2` 的条目、事实和补充内容；不再调用模型重写，图片只有稳定 ID。`artifact.qa.v2` 验证新合同，图同时检查最终 content 与确认 brief 完全一致。肖像重生成可以复用受校验的 v2 config，仍受本机非商业预览限制。
+
+Worker 同时消费旧 `python-agent-v2`，其 `resume.compose.v2`、v1 合同及旧黄金样例保持原语义。新旧版本混用明确失败；不能直接让 v2 图读取 `resume-v2`。Schema 导出和 `agent-golden.v2.json`、真实 Node HTTP ↔ Python 图的合成测试覆盖新版合同与免费项目创建，不需要真实模型或支付凭据。

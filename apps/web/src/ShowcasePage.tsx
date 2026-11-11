@@ -1,6 +1,8 @@
+import { ResumeDisplay, ResumeSupplement, type ResumeImageResolver } from './components/ResumeDisplay';
+import { resumeV1View, resumeDisplayContent } from '../../../packages/contracts/src/resume-v2.mjs';
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
-import type { DesignConfig, ResumeEntry, SkinId } from "../../../packages/contracts/src/config";
+import type { DesignConfig, ResumeEntry, SkinId, StructuredResumeV1 } from "../../../packages/contracts/src/config";
 import { Marquee } from "./components/Marquee";
 import { StackedCards } from "./components/StackedCards";
 import { shouldAnimateMarquee } from "./lib/presentation";
@@ -43,16 +45,21 @@ function AdditionalModule({ title, entries, id }: { title: string; entries: read
   </section>;
 }
 
-export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean }) {
+export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}` }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; resolveResumeImage?: ResumeImageResolver }) {
   const [skin, setSkin] = useState<SkinId>(config.skin);
   const [touchDetected, setTouchDetected] = useState(touchInput);
   const touchMode = touchDowngraded || touchDetected;
-  const { profile, expertise, projects, workExperience = [], campusExperience = [], education = [] } = config.content;
-  const visibleProjects = projects.filter((project) => project.title.trim() || project.description.trim());
-  const visibleWork = workExperience.filter((entry) => entry.trim());
-  const visibleCampus = campusExperience.filter((entry) => entry.trim());
-  const visibleEducation = education.filter((entry) => entry.trim());
-  const resume = config.content.resume;
+  const enriched = config.content.resume?.version === "resume-v2" ? config.content.resume : undefined;
+  const content = enriched ? resumeDisplayContent(enriched) as DesignConfig["content"] : config.content;
+  const { profile, expertise, projects, workExperience = [], campusExperience = [], education = [] } = content;
+  const visibleProjects = projects.filter((project) => {
+    const item = enriched?.sections.find(s => s.kind === 'projects')?.items.find(i => i.itemId === project.id);
+    return project.title.trim() || project.description.trim() || item && (item.facts.some(f => f.value.trim()) || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length);
+  });
+  const visibleWork = (enriched ? [] : workExperience).filter((entry) => entry.trim());
+  const visibleCampus = (enriched ? [] : campusExperience).filter((entry) => entry.trim());
+  const visibleEducation = (enriched ? [] : education).filter((entry) => entry.trim());
+  const resume = enriched ? undefined : resumeV1View(config.content.resume) as StructuredResumeV1 | undefined;
   const basicDetails = resume?.basicInfo.filter((fact) => !["name", "email"].includes(fact.key) && fact.value.trim()) ?? [];
   const jobIntent = resume?.jobIntent.filter((fact) => fact.value.trim()) ?? [];
   const visibleAwards = resume?.awards.some((entry) => entry.details.trim() || entry.title.trim() && entry.title !== "荣誉奖项") ?? false;
@@ -121,7 +128,7 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
           <Marquee {...config.marquee} bindToScroll={touchMode ? false : config.marquee.bindToScroll} pauseOnHover={touchMode ? false : config.marquee.pauseOnHover} items={marqueeItems} />
         </section>}
 
-        {hasAbout && <section className="about-section page-container" id="about" aria-labelledby="about-title">
+        {!enriched && hasAbout && <section className="about-section page-container" id="about" aria-labelledby="about-title">
           <div className="section-marker"><span>01 / SKILLS</span><span className="marker-line" /></div>
           <div className="about-grid">
             <div className="about-heading">{expertise.eyebrow.trim() && <p className="section-overline">{expertise.eyebrow}</p>}<h2 id="about-title">{headline}</h2><div className="about-symbol" aria-hidden="true">↗</div></div>
@@ -138,9 +145,10 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
         {visibleProjects.length > 0 && <section className="work-section page-container" id="work" aria-labelledby="work-title">
           <div className="section-marker"><span>02 / PROJECTS</span><span className="marker-line" /></div>
           <div className="work-heading"><div><p className="section-overline">{visibleProjects.length} projects</p><h2 id="work-title">Selected<br /><em>work</em><span className="work-period">.</span></h2></div><p>FROM THE CONFIRMED RESUME</p></div>
-          <StackedCards {...config.stackedCards} cards={visibleProjects} />
+          <StackedCards {...config.stackedCards} cards={visibleProjects} renderSupplement={enriched ? card => { const item=enriched.sections.find(s=>s.kind==='projects')?.items.find(i=>i.itemId===card.id); return item ? <ResumeSupplement item={item} resolveImage={resolveResumeImage}/> : null; } : undefined} />
         </section>}
 
+        {enriched && <ResumeDisplay resume={enriched} resolveImage={resolveResumeImage}/>}
         {visibleWork.length > 0 && <section className="resume-section page-container" aria-label="实习/工作经历">
           <div className="section-marker"><span>03 / EXPERIENCE</span><span className="marker-line" /></div>
           <h2>实习/工作经历</h2>

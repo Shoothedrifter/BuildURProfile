@@ -6,7 +6,7 @@ import { resumeApi } from "../../../lib/resumeApi";
 
 vi.mock("../../../lib/resumeApi", () => ({ resumeApi: {
   read: vi.fn(), save: vi.fn(), remove: vi.fn(), reparse: vi.fn(), blocks: vi.fn(),
-  uploadImage: vi.fn(),
+  uploadImage: vi.fn(), deleteImage: vi.fn().mockResolvedValue({ok:true}),
   sourceUrl: (id: string) => `/api/resumes/${id}/source`,
   imageUrl: (id: string, imageId: string) => `/api/resumes/${id}/images/${imageId}`
 } }));
@@ -235,4 +235,48 @@ it("keeps the draft in place and offers retry when saving fails", async () => {
   await waitFor(() => expect(vi.mocked(resumeApi.save)).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   expect(screen.getByRole("status")).toHaveTextContent(/已保存/);
+});
+
+it('requires explicit review, preserves confidence and retains PDF', async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({draft:draftWithProjects(1,true) as never, revision:1,expiresAt:'2026-12-09T00:00:00Z'});
+  vi.mocked(resumeApi.save).mockImplementation(async (_id,draft)=>({draft,revision:1,expiresAt:''}));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  await screen.findByRole('heading',{name:/确认进度/});
+  fireEvent.click(screen.getByRole('button',{name:'确认并选择风格 →'}));
+  expect(resumeApi.save).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole('button',{name:'已核对'}));
+  expect(screen.getByRole('heading',{name:/确认进度/})).toHaveTextContent('10 / 10');
+  expect(screen.getByText(/分类 42%/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
+  await waitFor(()=>expect(resumeApi.save).toHaveBeenCalled());
+  expect(vi.mocked(resumeApi.save).mock.calls[0][1].sections[5].items[0]).toMatchObject({needsReview:false,confidence:0.42});
+  expect(screen.getByTitle('原 PDF 预览')).toBeInTheDocument();
+});
+it('normalizes empty links but blocks a named link with no URL before PATCH', async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({draft:fixture as never, revision:1,expiresAt:''});
+  vi.mocked(resumeApi.save).mockImplementation(async (_id,draft)=>({draft,revision:1,expiresAt:''}));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  fireEvent.click(await screen.findByRole('button',{name:'添加链接'}));
+  fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
+  await waitFor(()=>expect(resumeApi.save).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(resumeApi.save).mock.calls[0][1].sections[0].items[0].supplements?.links).toEqual([]);
+  fireEvent.click(screen.getByRole('button',{name:'添加链接'}));
+  fireEvent.change(screen.getByLabelText('链接名称 1'),{target:{value:'作品'}});
+  fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
+  expect(resumeApi.save).toHaveBeenCalledTimes(1);
+  expect(await screen.findByRole('alert')).toHaveTextContent(/HTTP/);
+});
+
+it('asks before hiding an unreviewed module and persists the explicit decision', async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({draft:draftWithProjects(1,true) as never,revision:1,expiresAt:''});
+  vi.mocked(resumeApi.save).mockImplementation(async (_id,draft)=>({draft,revision:1,expiresAt:''}));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  fireEvent.click(await screen.findByRole('checkbox',{name:'显示项目经历'}));
+  const dialog=screen.getByRole('dialog',{name:'隐藏待核对模块'});
+  expect(screen.getByRole('heading',{name:/确认进度/})).toHaveTextContent('9 / 10');
+  fireEvent.click(within(dialog).getByRole('button',{name:'确认隐藏'}));
+  expect(screen.getByRole('heading',{name:/确认进度/})).toHaveTextContent('10 / 10');
+  fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
+  await waitFor(()=>expect(resumeApi.save).toHaveBeenCalled());
+  expect(vi.mocked(resumeApi.save).mock.calls[0][1].sections[5]).toMatchObject({visible:false,items:[{needsReview:false,confidence:0.42}]});
 });

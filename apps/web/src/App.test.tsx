@@ -82,6 +82,7 @@ beforeEach(() => {
   vi.mocked(extractPdfText).mockClear();
   vi.mocked(extractPdfText).mockResolvedValue({ pages, text: pages.join("\n\n") });
   vi.mocked(generationApi.generatePortfolio).mockReset().mockImplementation(async (brief) => {
+    if (!("content" in brief)) throw new Error("Server draft request must use dedicated fixture");
     const mapped = styleToConfig(scoreAnswers(brief.answers), brief.role);
     return { config: { ...mapped, marquee: { ...mapped.marquee, items: skillShortLabels(brief.content.expertise.skills) },
       content: brief.content } };
@@ -330,7 +331,7 @@ describe("showcase builder", () => {
 
   it("adds generated portrait to hero and hides paid delivery", async () => {
     vi.mocked(generationApi.generatePortfolio).mockImplementationOnce(async (brief) => ({
-      config: { ...styleToConfig(scoreAnswers(brief.answers), brief.role), content: brief.content },
+      config: { ...styleToConfig(scoreAnswers(brief.answers), brief.role), content: "content" in brief ? brief.content : ({} as DesignConfig["content"]) },
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" }
     }));
     render(<App />);

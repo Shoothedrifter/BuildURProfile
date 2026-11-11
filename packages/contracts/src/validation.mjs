@@ -1,3 +1,4 @@
+import { cleanResumeV2 } from './resume-v2.mjs';
 export class ServiceError extends Error {
   constructor(status, message) { super(message); this.name = "ServiceError"; this.status = status; }
 }
@@ -6,6 +7,9 @@ const RESUME_MODULES = ["selfEvaluation", "education", "workExperience", "projec
 
 /** A strict allowlist prevents PDF evidence from entering queued or published content. */
 export function cleanStructuredResume(resume) {
+  if (resume?.version === "resume-v2") {
+    try { return cleanResumeV2(resume); } catch (error) { throw new ServiceError(400, error.message); }
+  }
   const record = (value, keys) => {
     if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((key) => !keys.includes(key))) {
       throw new ServiceError(400, "简历模块字段无效或包含来源原文。");

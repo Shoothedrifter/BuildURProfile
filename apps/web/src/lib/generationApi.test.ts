@@ -87,3 +87,18 @@ it("cancels a task queued after the user changed input during the POST", async (
   await expect(pending).rejects.toThrow(/取消/);
   expect(calls).toContain("/api/generations/task-late/cancel");
 });
+
+it('submits only saved draft identity and restores its server-created project', async () => {
+  let submitted: Record<string,unknown> | undefined;
+  vi.stubGlobal('fetch',vi.fn(async (path:string,options?:RequestInit)=>{
+    if(path==='/api/session')return new Response(JSON.stringify({csrfToken:'csrf'}));
+    if(path==='/api/generations'){submitted=JSON.parse(options?.body as string);return new Response(JSON.stringify({id:'v3-task'}));}
+    if(path==='/api/generations/v3-task')return new Response(JSON.stringify({status:'SUCCEEDED',config:rawConfig,projectId:'server-project'}));
+    throw new Error('Unexpected route');
+  }));
+  const result=await generationApi.generatePortfolio({resumeId:'synthetic-resume',revision:4,role:'ui-ux-designer',answers:{'e-presence':1}});
+  expect(submitted).toMatchObject({resumeId:'synthetic-resume',revision:4});
+  expect(submitted).not.toHaveProperty('brief');expect(submitted).not.toHaveProperty('content');
+  expect(result.projectId).toBe('server-project');
+  expect((await generationApi.resumeGeneration())?.projectId).toBe('server-project');
+});

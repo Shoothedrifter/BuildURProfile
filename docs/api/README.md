@@ -14,7 +14,7 @@
 | `config.mjs`、`gateway.mjs` | 支付配置校验、沙箱凭据读取与官方支付宝 SDK |
 | `routes/generations.mjs` | 浏览器生成任务与资产路由 |
 | `routes/internal-agent.mjs` | 服务令牌与租约保护的 Python Agent 私有协议 |
-| `export.mjs` | 用户作品集（Showcase）单文件 HTML 与 ZIP 打包 |
+| `export.mjs` | 用户作品集（Showcase）HTML 与多文件 ZIP 打包 |
 
 `database.mjs`、`generations.mjs` 是存储模块的导出入口。实际数据库迁移、任务队列、确认内容清洗及资产文件管理位于 `packages/storage/src/`。
 
@@ -37,13 +37,17 @@
 | --- | --- |
 | `GET /api/avatar-styles` | 返回当前可用风格；未启用肖像时为空 |
 | `POST /api/portraits` | 校验并保存所属会话的照片，返回资产 ID |
-| `POST /api/generations` | 提交确认后的 brief 与可选照片资产 ID，成功返回 `201` 任务信息 |
-| `GET /api/generations/:id` | 所属会话查询状态与结果 |
+| `POST /api/generations` | 新 Agent 请求提交 `resumeId/revision/role/answers/idempotencyKey`，服务端校验草稿并投影；兼容入口接收 brief；成功返回 `201` |
+| `GET /api/generations/:id` | 所属会话查询状态、配置及自动保存的 projectId |
 | `POST /api/generations/:id/cancel` | 取消排队任务，或请求终止运行中的任务 |
+| `GET /api/showcase-media/:id` | 属主读取独立作品图片，禁止缓存 |
+| `GET /api/shares/:token/media/:id` | 校验付款、有效分享与快照引用后读取图片，不要求属主会话 |
 | `GET /api/hero-assets/:id` | 读取所属会话的有效图片，使用私有禁止缓存响应 |
 
 服务端根据会话决定所有者，不接受客户端注入所有权。写操作校验 CSRF；入队清洗拒绝 PDF 原文、`sourceRefs` 和多余字段。源照片和成图分别按 1 天、7 天有效期管理。开发期不设应用内肖像生成次数上限，供应商自身的额度和计费仍然生效。
-确认后的 `resume-v1` 模块可随 brief 入队；嵌套条目也使用严格字段白名单，拒绝来源摘录和未确认 PDF 数据。
+新 Agent 路径仅接受服务端投影的 `resume-v2`；客户端通过旧 brief 路径提交 v2 会被拒绝。revision 不匹配返回 409；待核对、无效链接、图片归属或格式错误在入队前拒绝，任务和图片复制事务回滚。已有 v1 合同仍可供浏览器兼容入口使用。
+
+`POST /api/resumes/:id/images` 上传私有补充图片；新客户端携带 `x-resume-item` 以支持条目限额。`DELETE /api/resumes/:id/images/:imageId` 仅删除尚未被已保存草稿引用的图片；移除已保存图片须先保存草稿，服务端删除失去引用的旧图。限制与生命周期见[架构说明](../shared/architecture.md#简历图片与作品资产)。
 
 私有协议、租约、取消与重试见[架构与协议](../shared/architecture.md)。图片文件格式通过不代表人物相似度或视觉质量合格。
 
@@ -51,9 +55,11 @@
 
 项目和订单绑定匿名会话。免费预览不具备交付资格；付费资格与交付状态分开记录，打包失败后资格保留，可以重试。分享快照默认 7 天有效且可撤销，访问者无需登录；分享 token 不授予编辑、查单或下载权限。已经下载的导出包无法撤回。
 
-`DELETE /api/projects/:id` 只允许项目所属会话调用，并要求 CSRF。删除后项目从列表和编辑接口消失，项目配置及分享快照清空，分享和未使用的下载链接失效；订单、支付资格及交付记录保留用于核对。独立的生成任务记录和已经下载的文件不属于项目删除范围。仍有待核实订单的项目暂不能删除，避免付款后失去交付入口。
+`DELETE /api/projects/:id` 只允许项目所属会话调用，并要求 CSRF。删除后项目从列表和编辑接口消失，项目配置及分享快照清空，分享和未使用的下载链接失效；订单、支付资格及交付记录保留用于核对。生成任务记录保留，但关联已删除项目的任务不能恢复作品；独立作品图片按其余有效引用清理，已经下载的文件不属于项目删除范围。仍有待核实订单的项目暂不能删除，避免付款后失去交付入口。
 
 支付配置、沙箱和上线核验见[支付与交付](payment.md)。
+
+v3 无肖像成功结果在同一事务中创建免费项目，重复完成不重复建项目或授予支付资格。ZIP 包含 HTML 和按引用读取的 `assets/*` 图片；任何图片缺失均使打包明确失败，保留付费资格以供重试。
 
 ## 启动与检查
 

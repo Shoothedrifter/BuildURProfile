@@ -14,16 +14,21 @@ export async function handleGenerationRoutes({ req, res, url, parts, sessionId, 
     // Legacy portrait regeneration may contain already embedded editor images.
     // New briefs are independently capped at 256 KiB by cleanGenerationBrief.
     const input = await bodyJson(req, 9 * 1024 * 1024);
-    if (!input?.brief && !(portraitEnabled && input?.portraitAssetId && input?.config)) {
+    if (!input?.resumeId && !input?.brief && !(portraitEnabled && input?.portraitAssetId && input?.config)) {
       throw new ServiceError(400, "请先确认简历内容并完成测评。未上传照片时不能提交旧版配置。");
     }
-    sendJson(res, 201, service.enqueue(sessionId, input)); return true;
+    if (!input.resumeId && input.brief?.content?.resume?.version === "resume-v2") throw new ServiceError(400,"请使用已保存草稿生成作品。");
+    sendJson(res, 201, input.resumeId ? service.enqueueResume(sessionId, input) : service.enqueue(sessionId, input)); return true;
   }
   if (req.method === "GET" && parts[1] === "generations" && parts.length === 3) {
     sendJson(res, 200, service.getTask(sessionId, parts[2])); return true;
   }
   if (req.method === "POST" && parts[1] === "generations" && parts[3] === "cancel" && parts.length === 4) {
     sendJson(res, 200, service.cancel(sessionId, parts[2])); return true;
+  }
+  if (req.method === "GET" && parts[1] === "showcase-media" && parts.length === 3) {
+    const asset=service.readShowcaseMedia(sessionId,parts[2]);
+    res.writeHead(200,{"content-type":asset.mime,"content-length":asset.bytes.length,"cache-control":"no-store","x-content-type-options":"nosniff"}); res.end(asset.bytes); return true;
   }
   if (req.method === "GET" && parts[1] === "hero-assets" && parts.length === 3) {
     const asset = service.readAsset(sessionId, parts[2]);

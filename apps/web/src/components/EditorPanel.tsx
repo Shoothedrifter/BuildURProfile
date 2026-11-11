@@ -1,6 +1,7 @@
+import { resumeDisplayContent, RESUME_KINDS, RESUME_LABELS } from '../../../../packages/contracts/src/resume-v2.mjs';
 import { useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
-import type { DesignConfig, MarqueeItem, ResumeContent } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, MarqueeItem, ResumeContent, ResumeDisplayItem } from "../../../../packages/contracts/src/config";
 import { interactionIntensity, withInteractionIntensity } from "../lib/interaction";
 import { projectPresentation } from "../lib/presentation";
 
@@ -65,13 +66,14 @@ function PanelGroup({ title, children }: { title: string; children: ReactNode })
   return <details className="editor-group" open><summary>{title}<span aria-hidden="true">＋</span></summary><div className="editor-group-body">{children}</div></details>;
 }
 
-export function EditorPanel({ config, onChange, isTouch }: Props) {
+function LegacyEditorPanel({ config, onChange, isTouch }: Props) {
   const [imageError, setImageError] = useState("");
   const items = marqueeItems(config);
+  const legacyResume = config.content.resume?.version === "resume-v1" ? config.content.resume : undefined;
   const editProfile = (key: ProfileKey, value: string) => onChange((current) => {
     const content = withoutSourceRef(current.content, "profile." + key);
     const resume = content.resume;
-    if (!resume) return { ...current, content: { ...content, profile: { ...content.profile, [key]: value } } };
+    if (!resume || resume.version !== "resume-v1") return { ...current, content: { ...content, profile: { ...content.profile, [key]: value } } };
     const updateFacts = (facts: typeof resume.basicInfo, factKey: string, label: string) => {
       const exists = facts.some((fact) => fact.key === factKey);
       return exists ? facts.map((fact) => fact.key === factKey ? { ...fact, value } : fact)
@@ -109,7 +111,7 @@ export function EditorPanel({ config, onChange, isTouch }: Props) {
   });
   const editResumeEntry = (key: "awards" | "other" | "selfEvaluation", index: number, field: "title" | "details", value: string) => onChange((current) => {
     const resume = current.content.resume;
-    if (!resume) return current;
+    if (!resume || resume.version !== "resume-v1") return current;
     const entries = resume[key].map((entry, at) => at === index ? { ...entry, [field]: value } : entry);
     return { ...current, content: { ...current.content,
       ...(key === "selfEvaluation" && field === "details" ? { profile: { ...current.content.profile, summary: entries.map((entry) => entry.details).join("\n") } } : {}),
@@ -117,7 +119,7 @@ export function EditorPanel({ config, onChange, isTouch }: Props) {
   });
   const editResumeFact = (key: "basicInfo" | "jobIntent", index: number, value: string) => onChange((current) => {
     const resume = current.content.resume;
-    if (!resume) return current;
+    if (!resume || resume.version !== "resume-v1") return current;
     const facts = resume[key].map((fact, at) => at === index ? { ...fact, value } : fact);
     const editedFact = resume[key][index];
     const profileKey = editedFact?.key === "location" ? "location" : editedFact?.key === "targetRole" ? "role" : editedFact?.key === "availability" ? "availability" : null;
@@ -199,11 +201,11 @@ export function EditorPanel({ config, onChange, isTouch }: Props) {
     <PanelGroup title="经历与教育">
       {(["workExperience", "campusExperience", "education"] as const).map((key) => (config.content[key] ?? []).map((entry, index) => <TextField key={key + "-" + index} label={(key === "workExperience" ? "工作经历" : key === "campusExperience" ? "校园经历" : "教育") + " " + (index + 1)} value={entry} onChange={(value) => editList(key, index, value)} multiline />))}
     </PanelGroup>
-    {config.content.resume && <PanelGroup title="其他简历模块">
-      {config.content.resume.basicInfo.map((fact, index) => ["name", "email"].includes(fact.key) ? null :
+    {legacyResume && <PanelGroup title="其他简历模块">
+      {legacyResume.basicInfo.map((fact, index) => ["name", "email"].includes(fact.key) ? null :
         <TextField key={`basic-${index}`} label={`个人信息 ${fact.label}`} value={fact.value} onChange={(value) => editResumeFact("basicInfo", index, value)} />)}
-      {config.content.resume.jobIntent.map((fact, index) => <TextField key={`intent-${index}`} label={`求职意向 ${fact.label}`} value={fact.value} onChange={(value) => editResumeFact("jobIntent", index, value)} />)}
-      {(["selfEvaluation", "awards", "other"] as const).map((key) => config.content.resume![key].map((entry, index) => {
+      {legacyResume.jobIntent.map((fact, index) => <TextField key={`intent-${index}`} label={`求职意向 ${fact.label}`} value={fact.value} onChange={(value) => editResumeFact("jobIntent", index, value)} />)}
+      {(["selfEvaluation", "awards", "other"] as const).map((key) => legacyResume[key].map((entry, index) => {
         const title = key === "selfEvaluation" ? "自我评价" : key === "awards" ? "荣誉奖项" : "其他内容";
         return <div className="editor-item" key={`${key}-${index}`}>
           <TextField label={`${title} ${index + 1} 标题`} value={entry.title} onChange={(value) => editResumeEntry(key, index, "title", value)} />
@@ -212,5 +214,29 @@ export function EditorPanel({ config, onChange, isTouch }: Props) {
       }))}
     </PanelGroup>}
     {imageError && <p className="editor-error" role="alert">{imageError}</p>}
+  </aside>;
+}
+
+
+export function EditorPanel(props: Props) {
+  const {config,onChange,isTouch}=props;
+  const resume=config.content.resume;
+  if(resume?.version !== 'resume-v2') return <LegacyEditorPanel {...props}/>;
+  const editItem=(itemId:string,change:(item:ResumeDisplayItem)=>ResumeDisplayItem)=>onChange(current=>{
+    if(current.content.resume?.version!=='resume-v2')return current;
+    const updated={...current.content.resume,sections:current.content.resume.sections.map(s=>({...s,items:s.items.map(i=>i.itemId===itemId?change(i):i)}))};
+    return {...current,content:resumeDisplayContent(updated) as ResumeContent};
+  });
+  return <aside className="editor-panel" aria-label="编辑面板">
+    <div className="editor-heading"><span>LIVE EDITOR / 01</span><h2>编辑你的展示</h2><p>修改确认内容，保留条目及补充图片；交付时保存到同一作品草稿。</p></div>
+    <label className="editor-field">交互强度<input type="range" min="0" max="100" value={interactionIntensity(config)} onChange={e=>{const value=Number(e.target.value)/100;onChange(current=>withInteractionIntensity(current,value,isTouch));}}/></label>
+    {isTouch && <p className="editor-hint">触屏设备使用手动切换。</p>}
+    {resume.sections.map(s=><PanelGroup key={s.kind} title={RESUME_LABELS[RESUME_KINDS.indexOf(s.kind)]}>{s.items.map(i=><div key={i.itemId} className="editor-item">
+      {!['basicInfo','jobIntent'].includes(s.kind) && <><TextField label="标题" value={i.title} onChange={value=>editItem(i.itemId,item=>({...item,title:value}))}/><TextField label="内容" value={i.details} multiline onChange={value=>editItem(i.itemId,item=>({...item,details:value}))}/></>}
+      {i.facts.map(f=><TextField key={f.key} label={f.label} value={f.value} onChange={value=>editItem(i.itemId,item=>({...item,facts:item.facts.map(fact=>fact.key===f.key?{...fact,value}:fact)}))}/>)}
+      <TextField label="补充说明" value={i.supplement.text} multiline onChange={value=>editItem(i.itemId,item=>({...item,supplement:{...item.supplement,text:[...value].slice(0,500).join('')}}))}/>
+      {i.supplement.links.map((l,n)=><div key={n}><TextField label={`链接名称 ${n+1}`} value={l.label} onChange={value=>editItem(i.itemId,item=>({...item,supplement:{...item.supplement,links:item.supplement.links.map((link,k)=>k===n?{...link,label:[...value].slice(0,80).join('')}:link)}}))}/><TextField label={`链接地址 ${n+1}`} value={l.url} onChange={value=>editItem(i.itemId,item=>({...item,supplement:{...item.supplement,links:item.supplement.links.map((link,k)=>k===n?{...link,url:value}:link)}}))}/></div>)}
+      {i.supplement.images.map((m,n)=><div key={m.imageId}><img className="editor-thumb" src={`/api/showcase-media/${encodeURIComponent(m.imageId)}`} alt={m.caption || '补充图片'}/><TextField label={`图片说明 ${n+1}`} value={m.caption} onChange={value=>editItem(i.itemId,item=>({...item,supplement:{...item.supplement,images:item.supplement.images.map(image=>image.imageId===m.imageId?{...image,caption:[...value].slice(0,80).join('')}:image)}}))}/></div>)}
+    </div>)}</PanelGroup>)}
   </aside>;
 }
