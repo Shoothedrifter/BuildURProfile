@@ -94,11 +94,27 @@ it('submits only saved draft identity and restores its server-created project', 
     if(path==='/api/session')return new Response(JSON.stringify({csrfToken:'csrf'}));
     if(path==='/api/generations'){submitted=JSON.parse(options?.body as string);return new Response(JSON.stringify({id:'v3-task'}));}
     if(path==='/api/generations/v3-task')return new Response(JSON.stringify({status:'SUCCEEDED',config:rawConfig,projectId:'server-project'}));
+    if(path==='/api/projects/server-project')return new Response(JSON.stringify({id:'server-project',config:rawConfig,paid:false}));
     throw new Error('Unexpected route');
   }));
   const result=await generationApi.generatePortfolio({resumeId:'synthetic-resume',revision:4,role:'ui-ux-designer',answers:{'e-presence':1}});
   expect(submitted).toMatchObject({resumeId:'synthetic-resume',revision:4});
   expect(submitted).not.toHaveProperty('brief');expect(submitted).not.toHaveProperty('content');
   expect(result.projectId).toBe('server-project');
-  expect((await generationApi.resumeGeneration())?.projectId).toBe('server-project');
+  expect(await generationApi.resumeGeneration()).toBeNull();
+});
+
+it('restores the current saved project and drops the obsolete successful-task pointer', async () => {
+  sessionStorage.setItem('burp-avatar-task','saved-task');
+  const edited={...rawConfig,content:{...rawConfig.content,profile:{...rawConfig.content.profile,name:'已保存的新姓名'}}};
+  vi.stubGlobal('fetch',vi.fn(async (path:string)=>{
+    if(path==='/api/session')return new Response(JSON.stringify({csrfToken:'csrf'}));
+    if(path==='/api/generations/saved-task')return new Response(JSON.stringify({status:'SUCCEEDED',config:rawConfig,projectId:'saved-project'}));
+    if(path==='/api/projects/saved-project')return new Response(JSON.stringify({id:'saved-project',config:edited,paid:true}));
+    throw new Error('Unexpected route');
+  }));
+  const result=await generationApi.resumeGeneration();
+  expect(result?.config.content.profile.name).toBe('已保存的新姓名');
+  expect(result).toMatchObject({projectId:'saved-project',projectPaid:true});
+  expect(sessionStorage.getItem('burp-avatar-task')).toBeNull();
 });

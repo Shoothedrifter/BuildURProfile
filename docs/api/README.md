@@ -47,7 +47,7 @@
 服务端根据会话决定所有者，不接受客户端注入所有权。写操作校验 CSRF；入队清洗拒绝 PDF 原文、`sourceRefs` 和多余字段。源照片和成图分别按 1 天、7 天有效期管理。开发期不设应用内肖像生成次数上限，供应商自身的额度和计费仍然生效。
 新 Agent 路径仅接受服务端投影的 `resume-v2`；客户端通过旧 brief 路径提交 v2 会被拒绝。revision 不匹配返回 409；待核对、无效链接、图片归属或格式错误在入队前拒绝，任务和图片复制事务回滚。已有 v1 合同仍可供浏览器兼容入口使用。
 
-`POST /api/resumes/:id/images` 上传私有补充图片；新客户端携带 `x-resume-item` 以支持条目限额。`DELETE /api/resumes/:id/images/:imageId` 仅删除尚未被已保存草稿引用的图片；移除已保存图片须先保存草稿，服务端删除失去引用的旧图。限制与生命周期见[架构说明](../shared/architecture.md#简历图片与作品资产)。
+`GET /api/resumes/:id/images` 列出尚未被已保存草稿引用的属主图片（稳定 ID、原条目 ID、MIME 和大小），供用户恢复或逐张删除，不执行批量回收。`POST /api/resumes/:id/images` 上传私有补充图片；新客户端携带 `x-resume-item` 以支持条目限额。`DELETE /api/resumes/:id/images/:imageId` 仅删除尚未被已保存草稿引用的图片；移除已保存图片须先保存草稿，服务端删除失去引用的旧图。限制与生命周期见[架构说明](../shared/architecture.md#简历图片与作品资产)。
 
 私有协议、租约、取消与重试见[架构与协议](../shared/architecture.md)。图片文件格式通过不代表人物相似度或视觉质量合格。
 

@@ -31,6 +31,7 @@ export async function handleResumeRoutes({req,res,parts,sessionId,repository,sen
   const bytes=repository.readSource(sessionId,parts[2]);res.writeHead(200,{'content-type':'application/pdf','content-length':bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});res.end(bytes);return true;
  }
  // 条目补充图片：上传走流式读取并预检体积，读取响应头与 /source 对齐
+ if(parts.length===4&&parts[3]==='images'&&req.method==='GET'){sendJson(res,200,queue.pendingImages(sessionId,parts[2]));return true;}
  if(parts.length===4&&parts[3]==='images'&&req.method==='POST'){
   if(req.headers['content-length']&&(!/^\d+$/.test(req.headers['content-length'])||Number(req.headers['content-length'])>5*1024*1024))throw resumeError(413,'IMAGE_TOO_LARGE');
   const chunks=[];let total=0;

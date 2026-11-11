@@ -158,6 +158,16 @@ export function createResumeParseQueue({
       return { imageId };
       });
     },
+    pendingImages(owner, id) {
+      const row = owned(owner, id);
+      if (row.status !== 'SUCCEEDED' || !row.draft_json) throw resumeError(409, 'DRAFT_NOT_READY');
+      const draft = JSON.parse(row.draft_json);
+      const referenced = new Set(draft.sections.flatMap(section => section.items.flatMap(item =>
+        (item.supplements?.images ?? []).map(image => image.imageId))));
+      return { images: db.prepare('SELECT id,item_id,content_type,length(data) size FROM resume_images WHERE resume_id=? ORDER BY created_at,rowid').all(id)
+        .filter(image => !referenced.has(image.id))
+        .map(image => ({ imageId: image.id, itemId: image.item_id, contentType: image.content_type, size: image.size })) };
+    },
     deleteImage(owner, id, imageId) {
       return transaction(db,()=>{
         const row=owned(owner,id),draft=JSON.parse(row.draft_json ?? '{}');

@@ -187,3 +187,21 @@ test('expired abandoned queued copies are collected and malformed generation req
  assert.equal(s.service.getTask('owner',task.id).status,'FAILED');
  assert.equal(s.db.prepare('SELECT count(*) n FROM showcase_media').get().n,0);
 });
+
+test('unsaved uploads can be recovered after reload without deleting another editor uploads',t=>{
+ const s=setup(t),item=s.draft.sections[0].items[0];
+ const ids=Array.from({length:6},()=>s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId);
+ assert.equal(s.queue.pendingImages('owner',s.draft.resumeId).images.length,6);
+ assert.throws(()=>s.queue.pendingImages('other',s.draft.resumeId));
+ const saved=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});
+ // Saving an unchanged draft cannot blindly purge uploads from another active editor.
+ assert.equal(s.queue.pendingImages('owner',s.draft.resumeId).images.length,6);
+ s.queue.deleteImage('owner',s.draft.resumeId,ids[0]);
+ assert.equal(s.queue.pendingImages('owner',s.draft.resumeId).images.length,5);
+ const replacement=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
+ saved.draft.sections[0].items[0].supplements={text:'',links:[],images:[{imageId:replacement,caption:''}]};
+ s.queue.patch('owner',s.draft.resumeId,{revision:saved.revision,draft:saved.draft});
+ assert.equal(s.queue.pendingImages('owner',s.draft.resumeId).images.length,5);
+ assert.throws(()=>s.queue.deleteImage('owner',s.draft.resumeId,replacement));
+ assert.deepEqual(Buffer.from(s.queue.readImage('owner',s.draft.resumeId,ids[1]).bytes),png);
+});

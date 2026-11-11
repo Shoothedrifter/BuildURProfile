@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { projectConfirmedResume, RESUME_MODULE_MAPPING } from "../../../../../../packages/contracts/src/resume-draft";
 import type { ResumeDraftItem, ResumeDraftSection, ResumeDraftV1, ResumeModuleKind } from "../../../../../../packages/contracts/src/resume-draft";
 import { validHttpUrl } from "../../../../../../packages/contracts/src/resume-v2.mjs";
-import { resumeApi } from "../../../lib/resumeApi";
+import { resumeApi, type PendingResumeImage } from "../../../lib/resumeApi";
 import { AgentChrome } from "../../../components/AgentChrome";
 import { ProofButton, ProofCard, StepHeader } from "../../../components/BuilderChrome";
 import { ConfirmDialog, EntryCard, ModuleCard, ModuleChecklist } from "../../../components/AgentEditor";
@@ -23,6 +23,10 @@ type DialogState = null | { kind: "reparse" } | { kind: "removeResume" }
 export default function ResumeEditorPage({ params }: { params: Promise<{ resumeId: string }> }) {
   const [resumeId, setResumeId] = useState("");
   const [draft, setDraft] = useState<ResumeDraftV1 | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const [pendingImages, setPendingImages] = useState<PendingResumeImage[]>([]);
+  const [recoveryTargets, setRecoveryTargets] = useState<Record<string, string>>({});
   const [expiresAt, setExpiresAt] = useState("");
   const [blocksById, setBlocksById] = useState<Record<string, { page: number; text: string }>>({});
   const uploading = useRef(false);
@@ -50,6 +54,9 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       if (!active) return;
       setDraft(result.draft); setExpiresAt(result.expiresAt);
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "草稿读取失败。"); });
+    void resumeApi.pendingImages(resumeId).then(result => {
+      if (active) setPendingImages(result.images);
+    }).catch(() => { /* 可以通过管理入口重试；不影响现有草稿。 */ });
     // 原文对照是辅助信息：拉取失败时静默降级为不显示，不阻塞编辑
     void resumeApi.blocks(resumeId).then((result) => {
       if (!active) return;
@@ -94,7 +101,11 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     }] }));
   };
 
-  const releaseImage = (imageId: string) => { void resumeApi.deleteImage(resumeId,imageId).catch(()=>{}); };
+  const releaseImage = (imageId: string) => {
+    void resumeApi.deleteImage(resumeId, imageId).then(() => {
+      if (mounted.current) setPendingImages(previous => previous.filter(image => image.imageId !== imageId));
+    }).catch(() => { /* 已保存的引用在下一次草稿保存时释放。 */ });
+  };
   const removeItem = (kind: ResumeModuleKind, itemId: string) => {
     for(const m of draft?.sections.find(s=>s.kind===kind)?.items.find(i=>i.itemId===itemId)?.supplements?.images ?? []) releaseImage(m.imageId);
     updateSection(kind, (section) => ({
@@ -171,7 +182,9 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       uploading.current = true;
       const { imageId } = await resumeApi.uploadImage(resumeId, file, itemId);
       if(!mounted.current) { releaseImage(imageId); return; }
-      updateItem(kind, itemId, (current) => ({ ...current,
+      const target = draftRef.current?.sections.find(section => section.items.some(entry => entry.itemId === itemId));
+      if (!target) { await resumeApi.deleteImage(resumeId, imageId); return; }
+      updateItem(target.kind, itemId, current => ({ ...current,
         supplements: { ...(current.supplements ?? { text: "", links: [], images: [] }),
           images: [...(current.supplements?.images ?? []), { imageId, caption: "" }] } }));
       setError("");
@@ -210,6 +223,32 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     }
   };
 
+  const refreshPendingImages = async () => {
+    try { setPendingImages((await resumeApi.pendingImages(resumeId)).images); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "未保存图片读取失败。"); }
+  };
+  const recoverImage = (imageId: string, itemId: string) => {
+    const target = draft?.sections.find(section => section.items.some(item => item.itemId === itemId));
+    const item = target?.items.find(item => item.itemId === itemId);
+    const count = draft?.sections.flatMap(section => section.items.flatMap(item => item.supplements?.images ?? [])).length ?? 0;
+    if (!target || !item) { setError("请先选择要恢复的条目。"); return; }
+    if ((item.supplements?.images.length ?? 0) >= 6 || count >= 24) { setError("每条最多 6 张、整份简历最多 24 张图片。"); return; }
+    updateItem(target.kind, itemId, current => ({...current, supplements: {
+      ...(current.supplements ?? {text:"", links:[], images:[]}),
+      images: [...(current.supplements?.images ?? []), {imageId, caption:""}]
+    }}));
+    selectModule(target.kind);
+  };
+  const discardPendingImage = async (imageId: string) => {
+    try {
+      await resumeApi.deleteImage(resumeId, imageId);
+      setPendingImages(previous => previous.filter(image => image.imageId !== imageId));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "图片删除失败。"); }
+  };
+  const localImageIds = new Set(draft?.sections.flatMap(section => section.items.flatMap(item =>
+    (item.supplements?.images ?? []).map(image => image.imageId))) ?? []);
+  const recoverableImages = pendingImages.filter(image => !localImageIds.has(image.imageId));
+
   const selectModule = (kind: ResumeModuleKind) => {
     setExpandedKind(kind);
     document.getElementById(`resume-${kind}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
@@ -232,9 +271,28 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       <div className="proof-status-row">
         <p role="status">{savedAt ? `已保存 ${savedAt}` : "尚未保存"}
           {pendingSections > 0 ? ` · 待确认 ${pendingSections} 个模块` : ""}</p>
+        <ProofButton disabled={busy || !draft} onClick={() => void refreshPendingImages()}>管理未保存图片</ProofButton>
         <ProofButton disabled={busy || !draft} onClick={() => void save()}>保存草稿</ProofButton>
         <ProofButton disabled={busy || !draft} onClick={() => setDialog({ kind: "reparse" })}>重新解析为新草稿</ProofButton>
       </div>
+      {draft && recoverableImages.length > 0 && <section className="proof-card" aria-label="未保存图片">
+        <h2>未保存图片</h2>
+        <p>这些上传尚未进入已保存草稿，仍会占用图片额度。可恢复到条目或删除；请保留其他编辑页面仍在使用的图片。</p>
+        <div className="resume-image-grid">{recoverableImages.map((image, index) => {
+          const targetId = recoveryTargets[image.imageId] ?? image.itemId ?? "";
+          return <article key={image.imageId}>
+            <img src={resumeApi.imageUrl(resumeId, image.imageId)} alt={`未保存图片 ${index + 1}`} />
+            <label className="proof-field"><span>恢复到条目 {index + 1}</span>
+              <select value={targetId} onChange={event => setRecoveryTargets(previous => ({...previous, [image.imageId]:event.target.value}))}>
+                <option value="">请选择条目</option>
+                {draft.sections.flatMap(section => section.items.map((item, itemIndex) => <option key={item.itemId} value={item.itemId}>{labels[section.kind]} · {item.title || `条目 ${itemIndex + 1}`}</option>))}
+              </select>
+            </label>
+            <ProofButton disabled={!targetId} onClick={() => recoverImage(image.imageId, targetId)}>恢复图片 {index + 1}</ProofButton>
+            <ProofButton onClick={() => void discardPendingImage(image.imageId)}>删除未保存图片 {index + 1}</ProofButton>
+          </article>;
+        })}</div>
+      </section>}
       {draft && <div className="proof-confirm-layout">
         <ModuleChecklist entries={draft.sections.map((section) => ({ kind: section.kind,
           label: labels[section.kind], pending: section.items.some((item) => item.needsReview) }))}

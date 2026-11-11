@@ -1,3 +1,4 @@
+import { skillShortLabels } from "../lib/resume";
 import { resumeDisplayContent, RESUME_KINDS, RESUME_LABELS } from '../../../../packages/contracts/src/resume-v2.mjs';
 import { useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
@@ -225,7 +226,8 @@ export function EditorPanel(props: Props) {
   const editItem=(itemId:string,change:(item:ResumeDisplayItem)=>ResumeDisplayItem)=>onChange(current=>{
     if(current.content.resume?.version!=='resume-v2')return current;
     const updated={...current.content.resume,sections:current.content.resume.sections.map(s=>({...s,items:s.items.map(i=>i.itemId===itemId?change(i):i)}))};
-    return {...current,content:resumeDisplayContent(updated) as ResumeContent};
+    const content = resumeDisplayContent(updated) as ResumeContent;
+    return {...current, content, marquee: {...current.marquee, items: skillShortLabels(content.expertise.skills)}};
   });
   return <aside className="editor-panel" aria-label="编辑面板">
     <div className="editor-heading"><span>LIVE EDITOR / 01</span><h2>编辑你的展示</h2><p>修改确认内容，保留条目及补充图片；交付时保存到同一作品草稿。</p></div>

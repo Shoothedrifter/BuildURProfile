@@ -1,11 +1,12 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import fixture from "../../../../../../packages/contracts/fixtures/resume-draft.v1.json";
 import ResumeEditorPage from "./page";
 import { resumeApi } from "../../../lib/resumeApi";
 
 vi.mock("../../../lib/resumeApi", () => ({ resumeApi: {
   read: vi.fn(), save: vi.fn(), remove: vi.fn(), reparse: vi.fn(), blocks: vi.fn(),
+  pendingImages: vi.fn().mockResolvedValue({images:[]}),
   uploadImage: vi.fn(), deleteImage: vi.fn().mockResolvedValue({ok:true}),
   sourceUrl: (id: string) => `/api/resumes/${id}/source`,
   imageUrl: (id: string, imageId: string) => `/api/resumes/${id}/images/${imageId}`
@@ -31,6 +32,8 @@ beforeEach(() => {
   vi.mocked(resumeApi.blocks).mockReset();
   vi.mocked(resumeApi.blocks).mockResolvedValue({ blocks: [] });
   vi.mocked(resumeApi.uploadImage).mockReset();
+  vi.mocked(resumeApi.deleteImage).mockClear();
+  vi.mocked(resumeApi.pendingImages).mockReset().mockResolvedValue({images:[]});
 });
 
 it("asks before reparsing into a separate draft and reports failure", async () => {
@@ -279,4 +282,48 @@ it('asks before hiding an unreviewed module and persists the explicit decision',
   fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
   await waitFor(()=>expect(resumeApi.save).toHaveBeenCalled());
   expect(vi.mocked(resumeApi.save).mock.calls[0][1].sections[5]).toMatchObject({visible:false,items:[{needsReview:false,confidence:0.42}]});
+});
+
+
+it.each(['delete', 'move'])('handles a delayed upload after its entry is %s', async mode => {
+  vi.mocked(resumeApi.read).mockResolvedValue({draft:draftWithProjects(1) as never,revision:1,expiresAt:''});
+  let finishUpload!: (value:{imageId:string})=>void;
+  vi.mocked(resumeApi.uploadImage).mockImplementation(()=>new Promise(resolve=>{finishUpload=resolve;}));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  fireEvent.click(await screen.findByRole('button',{name:/✓ 项目经历/}));
+  fireEvent.change(screen.getByLabelText('上传图片'),{target:{files:[new File(['synthetic'],'test.png',{type:'image/png'})]}});
+  await waitFor(()=>expect(resumeApi.uploadImage).toHaveBeenCalled());
+  if(mode==='delete') {
+    fireEvent.click(screen.getByRole('button',{name:'删除条目'}));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'确认删除'}));
+  } else fireEvent.change(screen.getByRole('combobox',{name:'移动项目经历条目 1 到其他模块'}),{target:{value:'campusExperience'}});
+  await act(async()=>{finishUpload({imageId:'late_image'});});
+  if(mode==='delete') await waitFor(()=>expect(resumeApi.deleteImage).toHaveBeenCalledWith('resume-1','late_image'));
+  else {
+    fireEvent.click(screen.getByRole('button',{name:/校园经历/}));
+    expect(await screen.findByRole('img',{name:'补充图片 1'})).toHaveAttribute('src','/api/resumes/resume-1/images/late_image');
+    expect(resumeApi.deleteImage).not.toHaveBeenCalled();
+  }
+});
+
+
+it('offers recovery and deletion of images uploaded before an unsaved reload', async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({draft:fixture as never,revision:1,expiresAt:''});
+  vi.mocked(resumeApi.save).mockImplementation(async (_id,draft)=>({draft,revision:1,expiresAt:''}));
+  vi.mocked(resumeApi.pendingImages).mockResolvedValue({images:[
+    {imageId:'recover1',itemId:fixture.sections[0].items[0].itemId,size:100,contentType:'image/png'},
+    {imageId:'recover2',itemId:null,size:100,contentType:'image/png'}
+  ]});
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  const recovery=await screen.findByRole('region',{name:'未保存图片'});
+  fireEvent.click(within(recovery).getByRole('button',{name:'恢复图片 1'}));
+  expect(await screen.findByRole('img',{name:'补充图片 1'})).toHaveAttribute('src','/api/resumes/resume-1/images/recover1');
+  fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
+  await waitFor(()=>expect(resumeApi.save).toHaveBeenCalled());
+  expect(vi.mocked(resumeApi.save).mock.calls[0][1].sections[0].items[0].supplements?.images[0].imageId).toBe('recover1');
+  fireEvent.click(screen.getByRole('button',{name:'移除图片'}));
+  await waitFor(()=>expect(resumeApi.deleteImage).toHaveBeenCalledWith('resume-1','recover1'));
+  await waitFor(()=>expect(document.querySelector('img[src$="recover1"]')).toBeNull());
+  fireEvent.click(within(recovery).getByRole('button',{name:'删除未保存图片 1'}));
+  await waitFor(()=>expect(resumeApi.deleteImage).toHaveBeenCalledWith('resume-1','recover2'));
 });

@@ -102,7 +102,7 @@ export default function App() {
         setPhase("quiz");
         return;
       }
-      if (result.projectId) { setProjectId(result.projectId); setProjectPaid(false); }
+      if (result.projectId) { setProjectId(result.projectId); setProjectPaid(result.projectPaid ?? false); }
       setGenerated({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
       setProgress("");
       setPhase("result");
@@ -428,7 +428,7 @@ export default function App() {
         });
       if (version !== generationVersion.current || (sourcePhoto && sourcePhoto !== photoDataRef.current)) return;
       if (!isRenderableConfig(result.config)) throw new Error("生成任务返回的作品配置不完整，请重试。");
-      if (result.projectId) { setProjectId(result.projectId); setProjectPaid(false); }
+      if (result.projectId) { setProjectId(result.projectId); setProjectPaid(result.projectPaid ?? false); }
       void paymentApi.projects().then(setProjects).catch(()=>{});
       showResult({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
     } catch (cause) {

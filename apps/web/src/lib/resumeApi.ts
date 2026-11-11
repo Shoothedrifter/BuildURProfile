@@ -1,6 +1,7 @@
 import type { ResumeDraftV1 } from "../../../../packages/contracts/src/resume-draft";
 
 export type ResumeStatus = { resumeId: string; fileId?: string; status: string; stage?: string; progress?: number; errorCode?: string | null };
+export type PendingResumeImage = { imageId: string; itemId: string | null; contentType: string; size: number };
 export type StoredResume = { draft: ResumeDraftV1; revision: number; expiresAt: string };
 // 原文对照摘录（服务端已裁剪：仅 blockId/page/readingOrder/text）
 export type SourceBlockExcerpt = { blockId: string; page: number; readingOrder: number; text: string };
@@ -80,6 +81,9 @@ export const resumeApi = {
       throw new Error(data.error ?? `图片上传失败（${response.status}）。`);
     }
     return response.json() as Promise<{ imageId: string }>;
+  },
+  pendingImages(resumeId: string): Promise<{images: PendingResumeImage[]}> {
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/images`);
   },
   deleteImage(resumeId: string, imageId: string): Promise<{ok: boolean}> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/images/${encodeURIComponent(imageId)}`, "DELETE");

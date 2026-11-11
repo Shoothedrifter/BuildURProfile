@@ -5,7 +5,7 @@ import { toPublishedConfig } from "./publication";
 export type { AvatarStyleId } from "../../../../packages/skills/src/avatar-catalog";
 export type HeroArtwork = NonNullable<DesignConfig["heroArtwork"]>;
 export type GenerationBrief = { role: JobRole; answers: Record<string, number>; content: Omit<ResumeContent, "sourceRefs"> };
-export type GenerationResult = { projectId?: string; config: DesignConfig; heroArtwork?: HeroArtwork };
+export type GenerationResult = { projectId?: string; projectPaid?: boolean; config: DesignConfig; heroArtwork?: HeroArtwork };
 export type GenerationStatus = "QUEUED" | "RUNNING" | "CANCELLING";
 // Retain the old key so a task started before this migration can still be restored.
 const savedTaskKey = "burp-avatar-task";
@@ -51,7 +51,13 @@ async function waitForTask(id: string, epoch: number, onStatus?: (status: Genera
     requireCurrent(epoch);
     if (current.status === "SUCCEEDED") {
       if (!current.config) throw new Error("生成任务缺少作品配置，请重新生成。");
-      return { config: current.config, ...(current.projectId ? {projectId:current.projectId} : {}), ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
+      if (current.projectId) {
+        const project = await request<{ id: string; config: DesignConfig; paid: boolean }>(`/api/projects/${encodeURIComponent(current.projectId)}`);
+        requireCurrent(epoch);
+        if (sessionStorage.getItem(savedTaskKey) === id) sessionStorage.removeItem(savedTaskKey);
+        return { config: project.config, projectId: project.id, projectPaid: project.paid };
+      }
+      return { config: current.config, ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
     }
     if (current.status === "FAILED" || current.status === "EXPIRED" || current.status === "CANCELLED") {
       sessionStorage.removeItem(savedTaskKey);

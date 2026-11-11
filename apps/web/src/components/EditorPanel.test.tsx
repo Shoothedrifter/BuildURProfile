@@ -1,3 +1,4 @@
+import { ShowcasePage } from '../ShowcasePage';
 import { resumeV1View } from '../../../../packages/contracts/src/resume-v2.mjs';
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
@@ -8,9 +9,9 @@ import { EditorPanel } from "./EditorPanel";
 
 const base = rawConfig as DesignConfig;
 
-function Harness({ isTouch = false, initial = base }: { isTouch?: boolean; initial?: DesignConfig }) {
+function Harness({ isTouch = false, initial = base, preview = false }: { isTouch?: boolean; initial?: DesignConfig; preview?: boolean }) {
   const [config, setConfig] = useState(initial);
-  return <><EditorPanel config={config} onChange={setConfig} isTouch={isTouch} /><output data-testid="edited-config">{JSON.stringify(config)}</output></>;
+  return <><EditorPanel config={config} onChange={setConfig} isTouch={isTouch} />{preview && <ShowcasePage config={config}/>}<output data-testid="edited-config">{JSON.stringify(config)}</output></>;
 }
 
 function edited(): DesignConfig {
@@ -123,4 +124,23 @@ it('edits v2 source items and keeps supplemental images and compatibility fields
   fireEvent.change(screen.getByRole('textbox',{name:'name'}),{target:{value:'修改姓名'}});
   expect(edited().content.profile.name).toBe('修改姓名');
   expect(JSON.stringify(edited().content.resume)).toContain('image_synthetic');
+});
+
+
+it('updates derived marquee labels in the live preview and portable export after editing v2 skills', async () => {
+  const {default:basic}=await import('../../../../packages/contracts/fixtures/resume-enrichment.v2.json');
+  const {resumeDisplayContent}=await import('../../../../packages/contracts/src/resume-v2.mjs');
+  const {buildStaticHtml}=await import('../server/export.mjs');
+  const supplement={text:'',links:[],images:[]};
+  const resume={version:'resume-v2',sections:[...basic.sections,{kind:'skills',items:[
+    {itemId:'skill1',title:'旧标签：React',details:'完整的技能说明',facts:[],supplement},
+    {itemId:'skill2',title:'保留标签：TypeScript',details:'另一项技能',facts:[],supplement}
+  ]}]};
+  render(<Harness preview initial={{...base,content:resumeDisplayContent(resume),marquee:{...base.marquee,items:['旧标签','保留标签']}} as DesignConfig}/>);
+  fireEvent.change(screen.getAllByRole('textbox',{name:'标题'})[0],{target:{value:'新标签：React'}});
+  expect(edited().marquee.items).toEqual(['新标签','保留标签']);
+  expect(screen.queryByText('旧标签')).not.toBeInTheDocument();
+  expect(screen.getAllByText('新标签').length).toBeGreaterThan(0);
+  const html=buildStaticHtml(edited());
+  expect(html).toContain('新标签');expect(html).not.toContain('旧标签');
 });
