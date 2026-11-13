@@ -217,3 +217,24 @@ it('keeps a supplement-only project visible in the fixed card deck', async () =>
   expect(screen.getByTestId('stacked-deck')).toBeInTheDocument();
   expect(screen.getByText('仅有的补充正文')).toBeInTheDocument();
 });
+
+it('renders ordered v3 modules with the project deck at its selected position', async () => {
+  const {resumeDisplayContent}=await import('../../../packages/contracts/src/resume-v2.mjs');
+  const item=(id:string,details:string)=>({itemId:id,title:id,details,facts:[],supplement:{text:'',links:[],images:[]}});
+  const resume={version:'resume-v3',sections:[
+    {kind:'campusExperience',order:0,items:[{...item('campus','学生组织'),order:0}]},
+    {kind:'projects',order:1,items:[{...item('project','项目正文'),order:0}]},
+    {kind:'workExperience',order:2,items:[{...item('work','公司实习'),order:0}]},
+    {kind:'awards',order:3,items:[]}
+  ]};
+  const {container}=render(<ShowcasePage config={{...defaultConfig,content:resumeDisplayContent(resume)} as DesignConfig}/>);
+  expect([...container.querySelectorAll('main > section[aria-label]')].map(section=>section.getAttribute('aria-label')))
+    .toEqual(expect.arrayContaining(['校园经历','实习/工作经历']));
+  const sections=[...container.querySelectorAll('main > section')];
+  const campus=sections.findIndex(section=>section.getAttribute('aria-label')==='校园经历');
+  const deck=sections.findIndex(section=>section.classList.contains('work-section'));
+  const work=sections.findIndex(section=>section.getAttribute('aria-label')==='实习/工作经历');
+  expect(campus).toBeLessThan(deck);
+  expect(deck).toBeLessThan(work);
+  expect(screen.queryByRole('heading',{name:'荣誉奖项'})).not.toBeInTheDocument();
+});

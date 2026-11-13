@@ -1,4 +1,5 @@
 import { cleanResumeV2 } from './resume-v2.mjs';
+import { cleanResumeV3 } from './resume-v3.mjs';
 export class ServiceError extends Error {
   constructor(status, message) { super(message); this.name = "ServiceError"; this.status = status; }
 }
@@ -7,6 +8,9 @@ const RESUME_MODULES = ["selfEvaluation", "education", "workExperience", "projec
 
 /** A strict allowlist prevents PDF evidence from entering queued or published content. */
 export function cleanStructuredResume(resume) {
+  if (resume?.version === 'resume-v3') {
+    try { return cleanResumeV3(resume); } catch (error) { throw new ServiceError(400, error.message); }
+  }
   if (resume?.version === "resume-v2") {
     try { return cleanResumeV2(resume); } catch (error) { throw new ServiceError(400, error.message); }
   }

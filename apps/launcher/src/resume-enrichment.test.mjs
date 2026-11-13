@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {openDatabase} from '../../../packages/storage/src/database.mjs';
 import {createGenerationService} from '../../../packages/storage/src/generations.mjs';
 import {createResumeParseQueue} from '../../../packages/storage/src/resumes/queue.mjs';
+import {normalizeResumeDraft} from '../../../packages/contracts/src/resume-draft.ts';
 const fixture=JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/resume-draft.v1.json',import.meta.url)));
 const source=JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/resume-source.v1.json',import.meta.url)));
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=','base64');
@@ -23,6 +24,21 @@ function setup(t){
  const input={resumeId:draft.resumeId,revision:1,role:'frontend-creative-developer',answers,idempotencyKey:'request1'};
  return {db,queue,service,draft,input,advance:()=>{time+=31*86400000;}};
 }
+test('new confirmed generation carries user module order in v4 brief',t=>{
+ const s=setup(t),draft=normalizeResumeDraft(s.draft);
+ const projects=draft.sections.find(section=>section.kind==='projects');
+ projects.visible=true;
+ projects.items=[{...draft.sections[0].items[0],itemId:'project-one',order:0,title:'项目甲',details:'正文',facts:[],included:true}];
+ [projects,...draft.sections.filter(section=>section.kind!=='projects')].forEach((section,index)=>{section.order=index;});
+ s.db.prepare('UPDATE resumes SET draft_json=? WHERE id=?').run(JSON.stringify(draft),draft.resumeId);
+ const task=s.service.enqueueResume('owner',s.input);
+ const row=s.db.prepare('SELECT brief_json,workflow_version FROM generations WHERE id=?').get(task.id);
+ assert.equal(row.workflow_version,'python-agent-v4');
+ const resume=JSON.parse(row.brief_json).content.resume;
+ assert.equal(resume.version,'resume-v3');
+ assert.deepEqual(resume.sections.slice(0,2).map(section=>section.kind),['projects','basicInfo']);
+ assert.doesNotMatch(row.brief_json,/sourceBlockIds|editedFields|confidence/);
+});
 test('server projects exact revision, materializes only selected media atomically and isolates owners',t=>{
  const s=setup(t),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,s.draft.sections[0].items[0].itemId).imageId;
  s.draft.sections[0].items[0].supplements={text:'说明',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图'}]};
@@ -31,7 +47,7 @@ test('server projects exact revision, materializes only selected media atomicall
  assert.throws(()=>s.service.enqueueResume('owner',{...s.input,revision:1}));
  const task=s.service.enqueueResume('owner',s.input);assert.equal(s.service.enqueueResume('owner',s.input).id,task.id);
  const row=s.db.prepare('SELECT * FROM generations WHERE id=?').get(task.id);
- assert.equal(row.workflow_version,'python-agent-v3');assert.doesNotMatch(row.brief_json,/sourceBlockIds|confidence|秘密电话/);
+ assert.equal(row.workflow_version,'python-agent-v4');assert.doesNotMatch(row.brief_json,/sourceBlockIds|confidence|秘密电话/);
  assert.equal(s.db.prepare('SELECT count(*) n FROM showcase_media').get().n,1);
  assert.deepEqual(s.service.readShowcaseMedia('owner',id).bytes,png);
  assert.throws(()=>s.service.readShowcaseMedia('other',id));
@@ -143,7 +159,7 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  assert.equal((await request('/api/generations','POST',{resumeId:parsed.resumeId,revision:1,role:'frontend-creative-developer',answers,idempotencyKey:'stale'})).status,409);
  const queued=await(await request('/api/generations','POST',{resumeId:parsed.resumeId,revision:2,role:'frontend-creative-developer',answers,idempotencyKey:'generation'})).json();assert.ok(queued.id);
  const agentHeaders={authorization:`Bearer ${token}`};
- const worker=await(await request('/api/_internal/agent/lease','POST',{workerId:'fake_generator'},agentHeaders,true)).json();assert.equal(worker.workflowVersion,'python-agent-v3');
+ const worker=await(await request('/api/_internal/agent/lease','POST',{workerId:'fake_generator'},agentHeaders,true)).json();assert.equal(worker.workflowVersion,'python-agent-v4');
  const base=JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/agent-golden.v1.json',import.meta.url))).expected.config;
  const completion=await request(`/api/_internal/agent/tasks/${worker.id}/complete`,'POST',{leaseToken:worker.leaseToken,config:{...base,content:worker.brief.content}},agentHeaders,true);assert.equal(completion.status,200);
  const result=await(await request(`/api/generations/${queued.id}`)).json();assert.ok(result.projectId);

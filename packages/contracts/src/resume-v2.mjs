@@ -36,7 +36,11 @@ export function resumeV1View(resume) {
 }
 export function resumeImageIds(config) {
   const resume=config?.content?.resume;
-  return resume?.version==='resume-v2' ? [...new Set(resume.sections.flatMap(s=>s.items.flatMap(i=>i.supplement.images.map(m=>m.imageId))))] : [];
+  return ['resume-v2','resume-v3'].includes(resume?.version) ? [...new Set(resume.sections.flatMap(s=>s.items.flatMap(i=>i.supplement.images.map(m=>m.imageId))))] : [];
+}
+export function resumeItemHasContent(item) {
+  return !!(item.title.trim() || item.details.trim() || item.facts.some(fact=>fact.value.trim())
+    || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length);
 }
 /** Compatibility fields are derived; v2 sections remain the editable source of truth. */
 export function resumeDisplayContent(resume) {

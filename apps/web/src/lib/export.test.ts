@@ -45,3 +45,18 @@ it('exports v2 content in separate modules with a usable project deck and packag
   expect(doc.querySelector('a')?.textContent).toBe('作品链接');
   expect(doc.querySelectorAll('.resume-supplement-text')).toHaveLength(1);
 });
+
+it('exports v3 modules in the confirmed order around the project deck', async () => {
+  const {buildStaticHtml}=await import('../server/export.mjs');
+  const {resumeDisplayContent}=await import('../../../../packages/contracts/src/resume-v2.mjs');
+  const item=(id:string)=>({itemId:id,order:0,title:id,details:id,facts:[],supplement:{text:'',links:[],images:[]}});
+  const resume={version:'resume-v3',sections:[
+    {kind:'campusExperience',order:0,items:[item('campus')]},
+    {kind:'projects',order:1,items:[item('project')]},
+    {kind:'workExperience',order:2,items:[item('work')]}
+  ]};
+  const config={...rawConfig,content:resumeDisplayContent(resume)};
+  const doc=new DOMParser().parseFromString(buildStaticHtml(config),'text/html');
+  expect([...doc.querySelectorAll('.resume-section')].map(element=>element.getAttribute('aria-label')))
+    .toEqual(['校园经历','项目经历','实习/工作经历']);
+});

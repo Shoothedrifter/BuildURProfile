@@ -388,3 +388,44 @@ class GenerationBriefV2(GenerationBriefV1):
 
 class DesignConfigV2(DesignConfigV1):
     content: ResumeContentV2
+
+
+class ResumeDisplayItemV3(ResumeDisplayItem):
+    order: int = Field(ge=0, le=99)
+
+
+class ResumeDisplaySectionV3(ResumeDisplaySection):
+    order: int = Field(ge=0, le=9)
+    items: list[ResumeDisplayItemV3] = Field(max_length=100)
+
+
+class StructuredResumeV3(StrictModel):
+    version: Literal['resume-v3']
+    sections: list[ResumeDisplaySectionV3] = Field(max_length=10)
+
+    @model_validator(mode='after')
+    def valid_order_and_ids(self):
+        if len({s.kind for s in self.sections}) != len(self.sections) or len({s.order for s in self.sections}) != len(self.sections):
+            raise ValueError('Duplicate module or order')
+        if [s.order for s in self.sections] != sorted(s.order for s in self.sections):
+            raise ValueError('Sections out of order')
+        items = [i for s in self.sections for i in s.items]
+        if len({i.itemId for i in items}) != len(items) or any(
+            [i.order for i in s.items] != list(range(len(s.items))) for s in self.sections
+        ):
+            raise ValueError('Duplicate or unordered items')
+        if len({m.imageId for i in items for m in i.supplement.images}) > 24:
+            raise ValueError('Too many images')
+        return self
+
+
+class ResumeContentV3(ResumeContent):
+    resume: StructuredResumeV3
+
+
+class GenerationBriefV3(GenerationBriefV1):
+    content: ResumeContentV3
+
+
+class DesignConfigV3(DesignConfigV1):
+    content: ResumeContentV3

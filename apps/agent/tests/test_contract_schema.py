@@ -115,3 +115,16 @@ def test_private_resume_source_v2_records_ocr_provenance():
     raw['blocks'][0]['ocrConfidence'] = 1.1
     with pytest.raises(ValueError):
         ResumeSourceV2.model_validate(raw)
+
+
+def test_ordered_public_resume_v3_accepts_user_order_and_rejects_private_fields():
+    from buildurprofile_agent.contracts import StructuredResumeV3, GenerationBriefV3, DesignConfigV3
+    import pytest
+    raw = json.loads((ROOT.parent / 'fixtures/resume-enrichment.v3.json').read_text())
+    assert StructuredResumeV3.model_validate(raw).model_dump() == raw
+    assert raw['sections'][0]['kind'] == 'workExperience'
+    for filename, model in [('generation-brief.v3.json', GenerationBriefV3), ('design-config.v3.json', DesignConfigV3)]:
+        assert json.loads((ROOT / filename).read_text()) == model.model_json_schema()
+    raw['sections'][0]['items'][0]['sourceBlockIds'] = ['private']
+    with pytest.raises(ValueError):
+        StructuredResumeV3.model_validate(raw)

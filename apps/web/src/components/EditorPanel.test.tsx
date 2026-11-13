@@ -126,6 +126,19 @@ it('edits v2 source items and keeps supplemental images and compatibility fields
   expect(JSON.stringify(edited().content.resume)).toContain('image_synthetic');
 });
 
+it('edits v3 items without losing module order or supplements', async () => {
+  const {default:resume}=await import('../../../../packages/contracts/fixtures/resume-enrichment.v3.json');
+  const {resumeDisplayContent}=await import('../../../../packages/contracts/src/resume-v2.mjs');
+  render(<Harness initial={{...base,content:resumeDisplayContent(resume)} as DesignConfig}/>);
+  fireEvent.change(screen.getByRole('textbox',{name:'内容'}),{target:{value:'新的工作内容'}});
+  expect(edited().content.resume?.version).toBe('resume-v3');
+  const updatedResume=edited().content.resume;
+  if(updatedResume?.version!=='resume-v3') throw new Error('v3 required');
+  expect(updatedResume.sections.map(section=>section.kind)).toEqual(['workExperience','basicInfo']);
+  expect(updatedResume.sections[0].items[0].details).toBe('新的工作内容');
+  expect(JSON.stringify(edited().content.resume)).toContain('image_synthetic');
+});
+
 
 it('updates derived marquee labels in the live preview and portable export after editing v2 skills', async () => {
   const {default:basic}=await import('../../../../packages/contracts/fixtures/resume-enrichment.v2.json');

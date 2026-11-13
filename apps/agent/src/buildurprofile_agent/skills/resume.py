@@ -28,3 +28,11 @@ def compose_resume_v3(inputs: dict, _: dict) -> dict:
     config['content'] = copy.deepcopy(inputs['content'])
     config['marquee']['items'] = short_labels(config['content']['expertise']['skills'])
     return {'config': DesignConfigV2.model_validate(config).model_dump(exclude_none=True)}
+
+
+def compose_resume_v4(inputs: dict, _: dict) -> dict:
+    from ..contracts import DesignConfigV3
+    config = copy.deepcopy(inputs['config'])
+    config['content'] = copy.deepcopy(inputs['content'])
+    config['marquee']['items'] = short_labels(config['content']['expertise']['skills'])
+    return {'config': DesignConfigV3.model_validate(config).model_dump(exclude_none=True)}

@@ -11,9 +11,9 @@ from typing import Any, Callable
 
 from .assessment import score_answers
 from .design import style_to_config
-from .resume import compose_resume, compose_resume_v3
+from .resume import compose_resume, compose_resume_v3, compose_resume_v4
 from .avatar import generate_avatar
-from .artifact import verify_artifact, verify_artifact_v2
+from .artifact import verify_artifact, verify_artifact_v2, verify_artifact_v3
 from .section_classifier import classify_sections
 from .item_splitter import split_items
 from .anchored_formatter import format_anchors
@@ -80,7 +80,9 @@ def default_registry() -> SkillRegistry:
                             lambda inputs, _: {"config": style_to_config(inputs["vector"], inputs["role"])}))
     registry.register(Skill("resume.compose.v2", "2.0.0", frozenset(), True, 1.0, compose_resume))
     registry.register(Skill("resume.compose.v3", "3.0.0", frozenset(), True, 1.0, compose_resume_v3))
+    registry.register(Skill("resume.compose.v4", "4.0.0", frozenset(), True, 1.0, compose_resume_v4))
     registry.register(Skill("artifact.qa.v2", "2.0.0", frozenset({"output_exists"}), True, 5.0, verify_artifact_v2))
+    registry.register(Skill("artifact.qa.v3", "3.0.0", frozenset({"output_exists"}), True, 5.0, verify_artifact_v3))
     registry.register(Skill("avatar.wibi.v1", "1.0.0", frozenset({"read_portrait", "load_recipe", "existing_output",
         "store_output", "output_exists", "image_provider", "check_cancel"}), False, 30 * 60.0, generate_avatar))
     registry.register(Skill("artifact.qa.v1", "1.0.0", frozenset({"output_exists"}), True, 5.0, verify_artifact))

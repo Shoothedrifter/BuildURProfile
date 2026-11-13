@@ -1,4 +1,5 @@
-import { cleanResumeV2, RESUME_KINDS, RESUME_LABELS, resumeImageIds, resumeDisplayContent } from '../../../../packages/contracts/src/resume-v2.mjs';
+import { cleanResumeV2, RESUME_KINDS, RESUME_LABELS, resumeImageIds, resumeDisplayContent, resumeItemHasContent } from '../../../../packages/contracts/src/resume-v2.mjs';
+import { cleanResumeV3 } from '../../../../packages/contracts/src/resume-v3.mjs';
 function escapeHtml(text) {
   return String(text ?? "")
     .replace(/&/g, "&amp;")
@@ -52,12 +53,12 @@ const V2_JS = `(() => {
 })();`;
 
 function resumeHtml(resume, mediaPath, marquee) {
-  const clean = cleanResumeV2(resume);
+  const clean = resume.version === 'resume-v3' ? cleanResumeV3(resume) : cleanResumeV2(resume);
   const profile = resumeDisplayContent(clean).profile;
   const heading = kind => RESUME_LABELS[RESUME_KINDS.indexOf(kind)];
   const entryHtml = (item, kind) => {
     const facts = item.facts.filter(fact => fact.value.trim() &&
-      !(kind === 'basicInfo' && ['name', 'email', 'location'].includes(fact.key)));
+      !(clean.version === 'resume-v2' && kind === 'basicInfo' && ['name', 'email', 'location'].includes(fact.key)));
     const supplement = item.supplement;
     return `<article class="project-card" ${kind === 'projects' ? 'data-export-project' : ''}>
       ${item.title ? `<h3>${escapeHtml(item.title)}</h3>` : ''}
@@ -70,17 +71,18 @@ function resumeHtml(resume, mediaPath, marquee) {
   };
   const moduleHtml = section => `<section class="resume-section" aria-label="${heading(section.kind)}"><h2>${heading(section.kind)}</h2>
     ${section.kind === 'projects' ? '<div class="stacked-deck" aria-label="Selected work cards">' : ''}
-    ${section.items.map(item => entryHtml(item, section.kind)).join('')}
+    ${section.items.filter(resumeItemHasContent).map(item => entryHtml(item, section.kind)).join('')}
     ${section.kind === 'projects' ? '</div>' : ''}
     ${section.kind === 'projects' && section.items.length > 1 ? '<div class="stacked-controls"><button id="export-project-prev" aria-label="Previous project">←</button><span id="export-project-status" aria-live="polite"></span><button id="export-project-next" aria-label="Next project">→</button></div>' : ''}
   </section>`;
-  // The deck occupies the same fixed showcase position as the Web renderer.
   const projects = clean.sections.find(section => section.kind === 'projects');
   const modules = clean.sections.filter(section => section.kind !== 'projects');
+  const orderedModules = (clean.version === 'resume-v3' ? clean.sections : [projects, ...modules].filter(Boolean))
+    .filter(section => section.items.some(resumeItemHasContent));
   const labels=(marquee.items ?? []).map(item => typeof item === 'string' ? item : item.label).filter(Boolean);
   const ticker=labels.length >= 2 ? `<section class="ticker-section" aria-label="Skills highlights"><div class="marquee-track">${labels.map(label=>`<span>${escapeHtml(label)}</span>`).join('')}</div></section>` : '';
   return `<section class="hero"><h1>${escapeHtml(profile.name)}</h1>${[profile.role, profile.location, profile.availability].filter(Boolean).map(text => `<p>${escapeHtml(text)}</p>`).join('')}</section>
-    ${ticker}${projects ? moduleHtml(projects) : ''}${modules.map(moduleHtml).join('')}
+    ${ticker}${orderedModules.map(moduleHtml).join('')}
     ${profile.email ? `<section><h2>Contact</h2><a href="mailto:${escapeHtml(profile.email)}">${escapeHtml(profile.email)}</a></section>` : ''}`;
 }
 export function buildStaticHtml(config, javascript = DEFAULT_JS, css = DEFAULT_CSS, mediaPath = id => `assets/${id}`) {
@@ -91,7 +93,7 @@ export function buildStaticHtml(config, javascript = DEFAULT_JS, css = DEFAULT_C
   ];
   if (images.some((image) => image && !image.startsWith("data:image/"))) throw new Error("Export images must be embedded.");
   const safeConfig = JSON.stringify(config).replace(/</g, "\\u003c");
-  const enriched=config.content.resume?.version === "resume-v2";
+  const enriched=['resume-v2','resume-v3'].includes(config.content.resume?.version);
   const safeJs = (enriched && javascript === DEFAULT_JS ? V2_JS : javascript).replace(/<\/script/gi, "<\\/script");
   const title = escapeHtml(config.content?.profile?.name ? `${config.content.profile.name} — BuildURProfile Showcase` : "BuildURProfile Showcase");
   return `<!doctype html>

@@ -1,3 +1,3 @@
 """Private BuildURProfile LangGraph service."""
 
-WORKFLOW_VERSION = "python-agent-v3"
+WORKFLOW_VERSION = "python-agent-v4"

@@ -222,9 +222,9 @@ function LegacyEditorPanel({ config, onChange, isTouch }: Props) {
 export function EditorPanel(props: Props) {
   const {config,onChange,isTouch}=props;
   const resume=config.content.resume;
-  if(resume?.version !== 'resume-v2') return <LegacyEditorPanel {...props}/>;
+  if(resume?.version !== 'resume-v2' && resume?.version !== 'resume-v3') return <LegacyEditorPanel {...props}/>;
   const editItem=(itemId:string,change:(item:ResumeDisplayItem)=>ResumeDisplayItem)=>onChange(current=>{
-    if(current.content.resume?.version!=='resume-v2')return current;
+    if(current.content.resume?.version!=='resume-v2' && current.content.resume?.version!=='resume-v3')return current;
     const updated={...current.content.resume,sections:current.content.resume.sections.map(s=>({...s,items:s.items.map(i=>i.itemId===itemId?change(i):i)}))};
     const content = resumeDisplayContent(updated) as ResumeContent;
     return {...current, content, marquee: {...current.marquee, items: skillShortLabels(content.expertise.skills)}};

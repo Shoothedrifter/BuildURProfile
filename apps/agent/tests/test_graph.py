@@ -171,3 +171,14 @@ async def test_v3_portrait_regeneration_keeps_existing_confirmed_config():
     assert state['config']['content'] == golden['expected']['config']['content']
     assert state['skill_plan'] == ['avatar.wibi.v1', 'artifact.qa.v2']
     assert provider.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_v4_preserves_user_order_and_uses_versioned_skills():
+    from dataclasses import replace
+    item = task()
+    golden = json.loads((FIXTURE.parent / 'agent-golden.v3.json').read_text())
+    item = replace(item, workflow_version='python-agent-v4', brief=golden['input'])
+    state = await build_generation_graph(item, FakeClient(), FakeProvider(), default_registry()).ainvoke(task_input(item))
+    assert state['config'] == golden['expected']['config']
+    assert state['skill_plan'] == ['assessment.score.v1', 'design.map.v1', 'resume.compose.v4', 'artifact.qa.v3']

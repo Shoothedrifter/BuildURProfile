@@ -6,13 +6,13 @@ from typing import Any, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from .contracts import clean_brief, clean_config, GenerationBriefV2, DesignConfigV2
+from .contracts import clean_brief, clean_config, GenerationBriefV2, DesignConfigV2, GenerationBriefV3, DesignConfigV3
 from .skills.registry import SkillRegistry
 from .transport.node_api import AgentTask, NodeAgentClient
 
 
-WORKFLOW_VERSION = "python-agent-v3"
-SUPPORTED_WORKFLOWS = ("python-agent-v2", WORKFLOW_VERSION)
+WORKFLOW_VERSION = "python-agent-v4"
+SUPPORTED_WORKFLOWS = ("python-agent-v2", "python-agent-v3", WORKFLOW_VERSION)
 DESIGN_SKILLS = ("assessment.score.v1", "design.map.v1", "resume.compose.v2")
 AVATAR_SKILL = "avatar.wibi.v1"
 QA_SKILL = "artifact.qa.v1"
@@ -42,9 +42,10 @@ def task_input(task: AgentTask) -> GenerationState:
 
 def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: Any,
                            registry: SkillRegistry, *, checkpointer: Any = None) -> Any:
-    enriched = task.workflow_version == WORKFLOW_VERSION
-    design_skills = (*DESIGN_SKILLS[:2], "resume.compose.v3") if enriched else DESIGN_SKILLS
-    qa_skill = "artifact.qa.v2" if enriched else QA_SKILL
+    enriched = task.workflow_version in ("python-agent-v3", WORKFLOW_VERSION)
+    ordered = task.workflow_version == WORKFLOW_VERSION
+    design_skills = (*DESIGN_SKILLS[:2], "resume.compose.v4" if ordered else "resume.compose.v3") if enriched else DESIGN_SKILLS
+    qa_skill = "artifact.qa.v3" if ordered else "artifact.qa.v2" if enriched else QA_SKILL
 
     async def run_skill(skill_id: str, inputs: dict, state: GenerationState,
                         grants: dict | None = None) -> Any:
@@ -63,11 +64,13 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
         if bool(state["brief"]) == bool(state["config"]):
             raise ValueError("INVALID_BRIEF")
         if enriched:
+            brief_model = GenerationBriefV3 if ordered else GenerationBriefV2
+            config_model = DesignConfigV3 if ordered else DesignConfigV2
             if state["brief"]:
-                return {"brief": GenerationBriefV2.model_validate(state["brief"]).model_dump(exclude_none=True), "config": None}
+                return {"brief": brief_model.model_validate(state["brief"]).model_dump(exclude_none=True), "config": None}
             if not state["portrait_asset_id"]:
                 raise ValueError("INVALID_BRIEF")
-            return {"brief": None, "config": DesignConfigV2.model_validate(state["config"]).model_dump(exclude_none=True)}
+            return {"brief": None, "config": config_model.model_validate(state["config"]).model_dump(exclude_none=True)}
         return {"brief": clean_brief(state["brief"]) if state["brief"] else None,
                 "config": clean_config(state["config"]) if state["config"] else None}
 
@@ -119,7 +122,7 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
             status = await client.output(task)
             return status.get("assetId") == asset_id and bool(status.get("exists"))
         if enriched:
-            DesignConfigV2.model_validate(state["config"])
+            (DesignConfigV3 if ordered else DesignConfigV2).model_validate(state["config"])
             if state["brief"] and state["config"]["content"] != state["brief"]["content"]:
                 raise ValueError("Confirmed content was changed")
         result = await run_skill(qa_skill, {"config": state["config"],

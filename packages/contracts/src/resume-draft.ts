@@ -1,8 +1,8 @@
-import { resumeV1View, resumeDisplayContent, validHttpUrl } from './resume-v2.mjs';
+import { resumeV1View, resumeDisplayContent, resumeItemHasContent, validHttpUrl } from './resume-v2.mjs';
 import schema from '../schema/resume-draft.v1.json' with { type: 'json' };
 import schemaV2 from '../schema/resume-draft.v2.json' with { type: 'json' };
 import { cleanStructuredResume } from './validation.mjs';
-import type { ResumeContent, StructuredResumeV1, StructuredResumeV2 } from './config';
+import type { ResumeContent, StructuredResumeV1, StructuredResumeV2, StructuredResumeV3 } from './config';
 import { validateResumeSource, validateSchema } from './resume-source.ts';
 export const RESUME_MODULE_MAPPING = { basicInfo: 'hero-profile', jobIntent: 'job-intent-strip', selfEvaluation: 'intro-card', education: 'education-timeline', workExperience: 'work-timeline', projects: 'project-stacked-cards', awards: 'award-badges', campusExperience: 'campus-timeline', skills: 'skill-tags', other: 'free-content-card' } as const;
 export type ResumeModuleKind = keyof typeof RESUME_MODULE_MAPPING;
@@ -103,5 +103,24 @@ export function projectConfirmedResume(raw: ResumeDraftV1 | ResumeDraftV2): Resu
   if (new TextEncoder().encode(JSON.stringify(envelope)).byteLength > 256 * 1024) {
     throw new Error('生成内容超过 256 KiB，请精简展示内容；草稿内容未被截断。');
   }
+  return content;
+}
+
+export function projectConfirmedResumeV3(raw: ResumeDraftV2): ResumeContent {
+  const draft = normalizeResumeDraft(raw);
+  const previous = projectConfirmedResume(draft);
+  const v2 = previous.resume as StructuredResumeV2;
+  const sections = v2.sections.map(section => {
+    const privateSection = draft.sections.find(entry => entry.kind === section.kind)!;
+    return { kind: section.kind, order: privateSection.order,
+      items: section.items.filter(resumeItemHasContent).map((item,index)=>({...item,order:index})) };
+  }).filter(section=>section.items.length).sort((a,b)=>a.order-b.order);
+  const resume = cleanStructuredResume({version:'resume-v3',sections}) as StructuredResumeV3;
+  const content = resumeDisplayContent(resume) as ResumeContent;
+  const envelope = {role:'frontend-creative-developer',answers:{
+    'e-presence':3,'e-type':3,'k-pace':3,'k-cards':3,'p-tone':3,
+    'p-strength':3,'s-browse':3,'s-control':3},content};
+  if (new TextEncoder().encode(JSON.stringify(envelope)).byteLength > 256 * 1024)
+    throw new Error('生成内容超过 256 KiB，请精简展示内容；草稿内容未被截断。');
   return content;
 }

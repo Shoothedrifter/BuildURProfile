@@ -15,6 +15,22 @@ it('normalizes legacy drafts into editable v2 without changing item text or orde
   expect(contracts.validateResumeDraftV2(normalized, source)).toEqual(normalized);
 });
 
+it('projects a reordered private draft into source-free resume-v3 order', () => {
+  const draft = contracts.normalizeResumeDraft(fixture);
+  const projects = draft.sections.find(section => section.kind === 'projects')!;
+  const basic = draft.sections.find(section => section.kind === 'basicInfo')!;
+  projects.items = [{...basic.items[0],itemId:'project-one',order:0,title:'作品',details:'项目正文',
+    facts:[],included:true}];
+  projects.visible = true;
+  [projects,...draft.sections.filter(section=>section.kind!=='projects')]
+    .forEach((section,index)=>{section.order=index;});
+  const content = contracts.projectConfirmedResumeV3(draft);
+  expect(content.resume?.version).toBe('resume-v3');
+  if(content.resume?.version!=='resume-v3') throw new Error('v3 required');
+  expect(content.resume.sections.map(section=>section.kind).slice(0,2)).toEqual(['projects','basicInfo']);
+  expect(JSON.stringify(content)).not.toMatch(/sourceBlockIds|confidence|editedFields|fileId/);
+});
+
 it('rejects noncontiguous order, duplicate IDs and forged edit fields in v2', () => {
   const draft = contracts.normalizeResumeDraft(fixture);
   draft.sections[0].order = 99;

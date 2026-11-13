@@ -1,0 +1,62 @@
+{
+  "version": "resume-v3",
+  "sections": [
+    {
+      "kind": "workExperience",
+      "order": 0,
+      "items": [
+        {
+          "itemId": "item_work",
+          "order": 0,
+          "title": "合成公司",
+          "details": "参与界面开发",
+          "facts": [],
+          "supplement": {
+            "text": "",
+            "links": [],
+            "images": []
+          }
+        }
+      ]
+    },
+    {
+      "kind": "basicInfo",
+      "items": [
+        {
+          "itemId": "item_basic",
+          "title": "",
+          "details": "",
+          "facts": [
+            {
+              "key": "name",
+              "label": "name",
+              "value": "合成用户"
+            },
+            {
+              "key": "email",
+              "label": "email",
+              "value": "synthetic@example.test"
+            }
+          ],
+          "supplement": {
+            "text": "补充说明",
+            "links": [
+              {
+                "label": "作品地址",
+                "url": "https://example.test/work"
+              }
+            ],
+            "images": [
+              {
+                "imageId": "image_synthetic",
+                "caption": "合成截图"
+              }
+            ]
+          },
+          "order": 0
+        }
+      ],
+      "order": 1
+    }
+  ]
+}

@@ -62,7 +62,7 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     }
     const id = randomUUID(), time = now();
     db.prepare("INSERT INTO generations(id,owner_session_id,portrait_asset_id,style_id,config_json,brief_json,idempotency_key,workflow_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,?)")
-      .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, (brief?.content?.resume?.version === "resume-v2" || config?.content?.resume?.version === "resume-v2") ? "python-agent-v3" : WORKFLOW_VERSION, time, time);
+      .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, (brief?.content?.resume?.version === "resume-v3" || config?.content?.resume?.version === "resume-v3") ? "python-agent-v4" : (brief?.content?.resume?.version === "resume-v2" || config?.content?.resume?.version === "resume-v2") ? "python-agent-v3" : WORKFLOW_VERSION, time, time);
     return getTask(sessionId, id);
   }
   function leaseNext() {
@@ -138,12 +138,12 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       const time=now(),row=db.prepare('SELECT * FROM generations WHERE id=?').get(id);
       if(!row || row.cancel_requested_at!=null || (leaseToken ? row.status!=='RUNNING' || row.lease_token!==leaseToken || row.lease_until<=time : row.status!=='QUEUED')) return false;
       const safeConfig=config ? cleanConfig(config) : row.config_json;
-      if(row.workflow_version==='python-agent-v3'){
+      if(['python-agent-v3','python-agent-v4'].includes(row.workflow_version)){
         const confirmed=JSON.parse(row.brief_json || row.config_json).content;
         if(!safeConfig || !isDeepStrictEqual(JSON.parse(safeConfig).content,confirmed)) throw new ServiceError(400,'生成结果与确认内容不一致。');
       }
       db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(safeConfig,time,id);
-      if(row.workflow_version==='python-agent-v3' && !row.portrait_asset_id){
+      if(['python-agent-v3','python-agent-v4'].includes(row.workflow_version) && !row.portrait_asset_id){
         const projectId=randomUUID();
         db.prepare('INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at) VALUES(?,?,?,?,?)').run(projectId,row.owner_session_id,safeConfig,time,time);
         media.attachProject(row.owner_session_id,projectId,JSON.parse(safeConfig));

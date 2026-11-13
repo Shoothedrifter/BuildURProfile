@@ -1,0 +1,645 @@
+{
+  "$defs": {
+    "DisplayLink": {
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "pattern": "^https?://",
+          "title": "Url",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "label"
+      ],
+      "title": "DisplayLink",
+      "type": "object"
+    },
+    "DisplaySupplement": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "maxLength": 500,
+          "title": "Text",
+          "type": "string"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/DisplayLink"
+          },
+          "maxItems": 5,
+          "title": "Links",
+          "type": "array"
+        },
+        "images": {
+          "items": {
+            "$ref": "#/$defs/SupplementImage"
+          },
+          "maxItems": 6,
+          "title": "Images",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "links",
+        "images"
+      ],
+      "title": "DisplaySupplement",
+      "type": "object"
+    },
+    "Expertise": {
+      "additionalProperties": false,
+      "properties": {
+        "eyebrow": {
+          "maxLength": 12000,
+          "title": "Eyebrow",
+          "type": "string"
+        },
+        "headline": {
+          "maxLength": 12000,
+          "title": "Headline",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 12000,
+          "title": "Summary",
+          "type": "string"
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Skills",
+          "type": "array"
+        },
+        "disciplines": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Disciplines",
+          "type": "array"
+        }
+      },
+      "required": [
+        "eyebrow",
+        "headline",
+        "summary",
+        "skills",
+        "disciplines"
+      ],
+      "title": "Expertise",
+      "type": "object"
+    },
+    "Marquee": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "enum": [
+            "left",
+            "right"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "speed": {
+          "title": "Speed",
+          "type": "integer"
+        },
+        "bindToScroll": {
+          "title": "Bindtoscroll",
+          "type": "boolean"
+        },
+        "rows": {
+          "title": "Rows",
+          "type": "integer"
+        },
+        "tileSize": {
+          "title": "Tilesize",
+          "type": "integer"
+        },
+        "pauseOnHover": {
+          "title": "Pauseonhover",
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 100,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "direction",
+        "speed",
+        "bindToScroll",
+        "rows",
+        "tileSize",
+        "pauseOnHover"
+      ],
+      "title": "Marquee",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 12000,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "maxLength": 12000,
+          "title": "Role",
+          "type": "string"
+        },
+        "location": {
+          "maxLength": 12000,
+          "title": "Location",
+          "type": "string"
+        },
+        "availability": {
+          "maxLength": 12000,
+          "title": "Availability",
+          "type": "string"
+        },
+        "intro": {
+          "maxLength": 12000,
+          "title": "Intro",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 12000,
+          "title": "Summary",
+          "type": "string"
+        },
+        "email": {
+          "maxLength": 12000,
+          "title": "Email",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "location",
+        "availability",
+        "intro",
+        "summary",
+        "email"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "ProjectCard": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "title": "Id",
+          "type": "string"
+        },
+        "index": {
+          "maxLength": 30,
+          "title": "Index",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 12000,
+          "title": "Title",
+          "type": "string"
+        },
+        "category": {
+          "maxLength": 12000,
+          "title": "Category",
+          "type": "string"
+        },
+        "year": {
+          "maxLength": 30,
+          "title": "Year",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 12000,
+          "title": "Description",
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Tags",
+          "type": "array"
+        },
+        "visual": {
+          "enum": [
+            "mint",
+            "lilac",
+            "peach"
+          ],
+          "title": "Visual",
+          "type": "string"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link"
+        }
+      },
+      "required": [
+        "id",
+        "index",
+        "title",
+        "category",
+        "year",
+        "description",
+        "tags",
+        "visual"
+      ],
+      "title": "ProjectCard",
+      "type": "object"
+    },
+    "ResumeContentV3": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "expertise": {
+          "$ref": "#/$defs/Expertise"
+        },
+        "projects": {
+          "items": {
+            "$ref": "#/$defs/ProjectCard"
+          },
+          "maxItems": 100,
+          "title": "Projects",
+          "type": "array"
+        },
+        "workExperience": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Workexperience",
+          "type": "array"
+        },
+        "campusExperience": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Campusexperience",
+          "type": "array"
+        },
+        "education": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Education",
+          "type": "array"
+        },
+        "resume": {
+          "$ref": "#/$defs/StructuredResumeV3"
+        }
+      },
+      "required": [
+        "profile",
+        "expertise",
+        "projects",
+        "resume"
+      ],
+      "title": "ResumeContentV3",
+      "type": "object"
+    },
+    "ResumeDisplayItemV3": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 12000,
+          "title": "Title",
+          "type": "string"
+        },
+        "details": {
+          "maxLength": 12000,
+          "title": "Details",
+          "type": "string"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/ResumeFact"
+          },
+          "maxItems": 100,
+          "title": "Facts",
+          "type": "array"
+        },
+        "itemId": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Itemid",
+          "type": "string"
+        },
+        "supplement": {
+          "$ref": "#/$defs/DisplaySupplement"
+        },
+        "order": {
+          "maximum": 99,
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "title",
+        "details",
+        "facts",
+        "itemId",
+        "supplement",
+        "order"
+      ],
+      "title": "ResumeDisplayItemV3",
+      "type": "object"
+    },
+    "ResumeDisplaySectionV3": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "basicInfo",
+            "jobIntent",
+            "selfEvaluation",
+            "education",
+            "workExperience",
+            "projects",
+            "awards",
+            "campusExperience",
+            "skills",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ResumeDisplayItemV3"
+          },
+          "maxItems": 100,
+          "title": "Items",
+          "type": "array"
+        },
+        "order": {
+          "maximum": 9,
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "items",
+        "order"
+      ],
+      "title": "ResumeDisplaySectionV3",
+      "type": "object"
+    },
+    "ResumeFact": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 12000,
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 12000,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 12000,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "value"
+      ],
+      "title": "ResumeFact",
+      "type": "object"
+    },
+    "StackedCards": {
+      "additionalProperties": false,
+      "properties": {
+        "scaleStep": {
+          "title": "Scalestep",
+          "type": "number"
+        },
+        "offsetStep": {
+          "title": "Offsetstep",
+          "type": "integer"
+        },
+        "stickyTop": {
+          "title": "Stickytop",
+          "type": "integer"
+        },
+        "layout": {
+          "enum": [
+            "center",
+            "offset",
+            "fan"
+          ],
+          "title": "Layout",
+          "type": "string"
+        },
+        "cardRadius": {
+          "title": "Cardradius",
+          "type": "integer"
+        },
+        "enableTilt": {
+          "title": "Enabletilt",
+          "type": "boolean"
+        },
+        "autoPlay": {
+          "title": "Autoplay",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scaleStep",
+        "offsetStep",
+        "stickyTop",
+        "layout",
+        "cardRadius",
+        "enableTilt",
+        "autoPlay"
+      ],
+      "title": "StackedCards",
+      "type": "object"
+    },
+    "StructuredResumeV3": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "resume-v3",
+          "title": "Version",
+          "type": "string"
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/$defs/ResumeDisplaySectionV3"
+          },
+          "maxItems": 10,
+          "title": "Sections",
+          "type": "array"
+        }
+      },
+      "required": [
+        "version",
+        "sections"
+      ],
+      "title": "StructuredResumeV3",
+      "type": "object"
+    },
+    "StyleVector": {
+      "additionalProperties": false,
+      "properties": {
+        "E": {
+          "title": "E",
+          "type": "number"
+        },
+        "K": {
+          "title": "K",
+          "type": "number"
+        },
+        "P": {
+          "title": "P",
+          "type": "number"
+        },
+        "S": {
+          "title": "S",
+          "type": "number"
+        },
+        "PChoice": {
+          "enum": [
+            "cool",
+            "neutral",
+            "warm",
+            "vivid"
+          ],
+          "title": "Pchoice",
+          "type": "string"
+        }
+      },
+      "required": [
+        "E",
+        "K",
+        "P",
+        "S",
+        "PChoice"
+      ],
+      "title": "StyleVector",
+      "type": "object"
+    },
+    "SupplementImage": {
+      "additionalProperties": false,
+      "properties": {
+        "imageId": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Imageid",
+          "type": "string"
+        },
+        "caption": {
+          "maxLength": 80,
+          "title": "Caption",
+          "type": "string"
+        }
+      },
+      "required": [
+        "imageId",
+        "caption"
+      ],
+      "title": "SupplementImage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "styleVector": {
+      "$ref": "#/$defs/StyleVector"
+    },
+    "skin": {
+      "enum": [
+        "dark-tech",
+        "light-minimal",
+        "high-saturation"
+      ],
+      "title": "Skin",
+      "type": "string"
+    },
+    "marquee": {
+      "$ref": "#/$defs/Marquee"
+    },
+    "stackedCards": {
+      "$ref": "#/$defs/StackedCards"
+    },
+    "content": {
+      "$ref": "#/$defs/ResumeContentV3"
+    }
+  },
+  "required": [
+    "styleVector",
+    "skin",
+    "marquee",
+    "stackedCards",
+    "content"
+  ],
+  "title": "DesignConfigV3",
+  "type": "object"
+}

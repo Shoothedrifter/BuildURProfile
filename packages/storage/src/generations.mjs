@@ -1,5 +1,5 @@
 import { createResumeMediaStore } from './generation/resume-media.mjs';
-import { projectConfirmedResume } from '../../contracts/src/resume-draft.ts';
+import { normalizeResumeDraft, projectConfirmedResumeV3 } from '../../contracts/src/resume-draft.ts';
 import { ServiceError } from '../../contracts/src/validation.mjs';
 import { transaction } from './database.mjs';
 import { createAssetStore } from "./generation/assets.mjs";
@@ -33,7 +33,7 @@ export function createGenerationService({ db, assetRoot = "data/avatar-assets", 
         const row=db.prepare('SELECT r.*,f.expires_at FROM resumes r JOIN resume_files f ON f.id=r.file_id WHERE r.id=? AND r.owner_session_id=?').get(input.resumeId,owner);
         if(!row || row.expires_at<=now()) throw new ServiceError(404,'简历不存在或已过期。');
         if(row.status!=='SUCCEEDED' || row.revision!==input.revision) throw new ServiceError(409,'草稿版本已更新，请重新核对并保存。');
-        let content; try {content=projectConfirmedResume(JSON.parse(row.draft_json));} catch(error){throw new ServiceError(400,error.message);}
+        let content; try {content=projectConfirmedResumeV3(normalizeResumeDraft(JSON.parse(row.draft_json)));} catch(error){throw new ServiceError(400,error.message);}
         const task=queue.enqueue(owner,{idempotencyKey:input.idempotencyKey,portraitAssetId:input.portraitAssetId,styleId:input.styleId,brief:{role:input.role,answers:input.answers,content}});
         media.materialize(owner,row.id,task.id,{content});
         db.prepare('UPDATE generations SET resume_request_json=? WHERE id=?').run(request,task.id);

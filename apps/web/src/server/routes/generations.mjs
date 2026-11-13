@@ -17,7 +17,7 @@ export async function handleGenerationRoutes({ req, res, url, parts, sessionId, 
     if (!input?.resumeId && !input?.brief && !(portraitEnabled && input?.portraitAssetId && input?.config)) {
       throw new ServiceError(400, "请先确认简历内容并完成测评。未上传照片时不能提交旧版配置。");
     }
-    if (!input.resumeId && input.brief?.content?.resume?.version === "resume-v2") throw new ServiceError(400,"请使用已保存草稿生成作品。");
+    if (!input.resumeId && ["resume-v2","resume-v3"].includes(input.brief?.content?.resume?.version)) throw new ServiceError(400,"请使用已保存草稿生成作品。");
     sendJson(res, 201, input.resumeId ? service.enqueueResume(sessionId, input) : service.enqueue(sessionId, input)); return true;
   }
   if (req.method === "GET" && parts[1] === "generations" && parts.length === 3) {

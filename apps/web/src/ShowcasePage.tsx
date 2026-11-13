@@ -1,6 +1,6 @@
 import { ResumeDisplay, ResumeSupplement, type ResumeImageResolver } from './components/ResumeDisplay';
 import { resumeV1View, resumeDisplayContent } from '../../../packages/contracts/src/resume-v2.mjs';
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 import type { DesignConfig, ResumeEntry, SkinId, StructuredResumeV1 } from "../../../packages/contracts/src/config";
 import { Marquee } from "./components/Marquee";
@@ -49,7 +49,8 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
   const [skin, setSkin] = useState<SkinId>(config.skin);
   const [touchDetected, setTouchDetected] = useState(touchInput);
   const touchMode = touchDowngraded || touchDetected;
-  const enriched = config.content.resume?.version === "resume-v2" ? config.content.resume : undefined;
+  const enriched = config.content.resume?.version === "resume-v2" || config.content.resume?.version === "resume-v3" ? config.content.resume : undefined;
+  const ordered = enriched?.version === "resume-v3";
   const content = enriched ? resumeDisplayContent(enriched) as DesignConfig["content"] : config.content;
   const { profile, expertise, projects, workExperience = [], campusExperience = [], education = [] } = content;
   const visibleProjects = projects.filter((project) => {
@@ -98,6 +99,12 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
     document.getElementById(targetId)?.scrollIntoView();
   };
 
+  const projectSection = visibleProjects.length > 0 && <section className="work-section page-container" id="work" aria-labelledby="work-title">
+    <div className="section-marker"><span>02 / PROJECTS</span><span className="marker-line" /></div>
+    <div className="work-heading"><div><p className="section-overline">{visibleProjects.length} projects</p><h2 id="work-title">Selected<br /><em>work</em><span className="work-period">.</span></h2></div><p>FROM THE CONFIRMED RESUME</p></div>
+    <StackedCards {...config.stackedCards} cards={visibleProjects} renderSupplement={enriched ? card => { const item=enriched.sections.find(s=>s.kind==='projects')?.items.find(i=>i.itemId===card.id); return item ? <ResumeSupplement item={item} resolveImage={resolveResumeImage}/> : null; } : undefined} />
+  </section>;
+
   return (
     <div className="showcase-page" data-testid="showcase-page" data-skin={skin} data-palette={config.styleVector.PChoice} onClickCapture={preserveShareHash ? handleSectionClick : undefined}>
       <header className="site-header page-container">
@@ -142,13 +149,10 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
           </div>
         </section>}
 
-        {visibleProjects.length > 0 && <section className="work-section page-container" id="work" aria-labelledby="work-title">
-          <div className="section-marker"><span>02 / PROJECTS</span><span className="marker-line" /></div>
-          <div className="work-heading"><div><p className="section-overline">{visibleProjects.length} projects</p><h2 id="work-title">Selected<br /><em>work</em><span className="work-period">.</span></h2></div><p>FROM THE CONFIRMED RESUME</p></div>
-          <StackedCards {...config.stackedCards} cards={visibleProjects} renderSupplement={enriched ? card => { const item=enriched.sections.find(s=>s.kind==='projects')?.items.find(i=>i.itemId===card.id); return item ? <ResumeSupplement item={item} resolveImage={resolveResumeImage}/> : null; } : undefined} />
-        </section>}
-
-        {enriched && <ResumeDisplay resume={enriched} resolveImage={resolveResumeImage}/>}
+        {!ordered && projectSection}
+        {ordered ? enriched.sections.map(section => <Fragment key={section.kind}>
+          {section.kind === 'projects' ? projectSection : <ResumeDisplay resume={{...enriched,sections:[section]}} resolveImage={resolveResumeImage}/>}
+        </Fragment>) : enriched && <ResumeDisplay resume={enriched} resolveImage={resolveResumeImage}/>}
         {visibleWork.length > 0 && <section className="resume-section page-container" aria-label="实习/工作经历">
           <div className="section-marker"><span>03 / EXPERIENCE</span><span className="marker-line" /></div>
           <h2>实习/工作经历</h2>

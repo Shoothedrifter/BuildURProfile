@@ -66,6 +66,7 @@ export type StructuredResumeV1 = Readonly<{
 export type ResumeModuleKindV2 = 'basicInfo' | 'jobIntent' | 'selfEvaluation' | 'education' | 'workExperience' | 'projects' | 'awards' | 'campusExperience' | 'skills' | 'other';
 export type ResumeDisplayItem = ResumeEntry & Readonly<{ itemId: string; supplement: Readonly<{ text: string; links: readonly { label: string; url: string }[]; images: readonly { imageId: string; caption: string }[] }> }>;
 export type StructuredResumeV2 = Readonly<{ version: 'resume-v2'; sections: readonly { kind: ResumeModuleKindV2; items: readonly ResumeDisplayItem[] }[] }>;
+export type StructuredResumeV3 = Readonly<{ version: 'resume-v3'; sections: readonly { kind: ResumeModuleKindV2; order: number; items: readonly (ResumeDisplayItem & {order:number})[] }[] }>;
 
 /** Three sections of mock resume content, held locally in config.json. */
 export type ResumeContent = Readonly<{
@@ -89,7 +90,7 @@ export type ResumeContent = Readonly<{
   workExperience?: readonly string[];
   campusExperience?: readonly string[];
   education?: readonly string[];
-  resume?: StructuredResumeV1 | StructuredResumeV2;
+  resume?: StructuredResumeV1 | StructuredResumeV2 | StructuredResumeV3;
   sourceRefs?: Readonly<Record<string, Readonly<{ page: number; excerpt: string }>>>;
 }>;
 
