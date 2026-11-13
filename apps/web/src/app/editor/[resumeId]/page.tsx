@@ -8,6 +8,7 @@ import { resumeApi, type PendingResumeImage } from "../../../lib/resumeApi";
 import { AgentChrome } from "../../../components/AgentChrome";
 import { ProofButton, ProofCard, StepHeader } from "../../../components/BuilderChrome";
 import { ConfirmDialog, EntryCard, ModuleCard, ModuleChecklist } from "../../../components/AgentEditor";
+import { mergeResumeItems, moveResumeItem, moveResumeSection, splitResumeItem } from "../../../lib/resumeEdit";
 
 const labels: Record<ResumeModuleKind, string> = {
   basicInfo: "基本信息", jobIntent: "求职意向", selfEvaluation: "自我评价", education: "教育背景",
@@ -18,6 +19,8 @@ const labels: Record<ResumeModuleKind, string> = {
 type DialogState = null | { kind: "reparse" } | { kind: "removeResume" }
   | { kind: "hideSection"; sectionKind: ResumeModuleKind }
   | { kind: "removeItem"; sectionKind: ResumeModuleKind; itemId: string }
+  | { kind: "splitItem"; sectionKind: ResumeModuleKind; itemId: string }
+  | { kind: "mergeItem"; sectionKind: ResumeModuleKind; itemId: string; nextId: string }
   | { kind: "saveFailed"; detail: string; retryStyle: boolean };
 
 export default function ResumeEditorPage({ params }: { params: Promise<{ resumeId: string }> }) {
@@ -37,6 +40,9 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [savedAt, setSavedAt] = useState("");
   const [expandedKind, setExpandedKind] = useState<ResumeModuleKind | null>("basicInfo");
   const [dialog, setDialog] = useState<DialogState>(null);
+  const [splitBoundary, setSplitBoundary] = useState(1);
+  const [mergeChoice, setMergeChoice] = useState<'combine' | 'first' | 'second'>('combine');
+  const dragged = useRef<{kind:'section';section:ResumeModuleKind} | {kind:'item';section:ResumeModuleKind;itemId:string} | null>(null);
   const basicSection = draft?.sections.find((section) => section.kind === "basicInfo");
   const selectedBasicFacts = basicSection?.visible ? basicSection.items.filter((item) => item.included)
     .flatMap((item) => item.facts).filter((fact) => fact.included && fact.value.trim()) : [];
@@ -78,7 +84,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const patchItem = (kind: ResumeModuleKind, itemId: string, patch: Partial<ResumeDraftItemV2>) =>
     updateSection(kind, (section) => ({
       visible: patch.included ? true : section.visible,
-      items: section.items.map((entry) => entry.itemId === itemId ? { ...entry, ...patch } : entry)
+      items: section.items.map((entry) => entry.itemId === itemId ? { ...entry, ...patch,
+        editedFields: [...new Set([...(entry.editedFields ?? []), ...Object.keys(patch)])] } : entry)
     }));
 
   const includeFact = (kind: ResumeModuleKind, itemId: string, factKey: string, included: boolean) =>
@@ -86,7 +93,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       visible: included || section.visible,
       items: section.items.map((entry) => entry.itemId === itemId ? {
         ...entry, included: included || entry.included,
-        facts: entry.facts.map((fact) => fact.key === factKey ? { ...fact, included } : fact)
+        facts: entry.facts.map((fact) => fact.key === factKey ? { ...fact, included } : fact),
+        editedFields: [...new Set([...(entry.editedFields ?? []), `fact:${factKey}`])]
       } : entry)
     }));
 
@@ -115,14 +123,28 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
 
   // 条目在模块内上下移动：交换位置后按新顺序重编 order，保存时由服务端全量校验
   const moveItemWithin = (kind: ResumeModuleKind, itemId: string, delta: number) =>
-    updateSection(kind, (section) => {
-      const index = section.items.findIndex((item) => item.itemId === itemId);
-      const target = index + delta;
-      if (index < 0 || target < 0 || target >= section.items.length) return {};
-      const items = [...section.items];
-      [items[index], items[target]] = [items[target], items[index]];
-      return { items: items.map((item, order) => ({ ...item, order })) };
-    });
+    setDraft(previous => previous ? moveResumeItem(previous, kind, itemId, delta) : previous);
+  const moveModule = (kind: ResumeModuleKind, delta: number) =>
+    setDraft(previous => previous ? moveResumeSection(previous, kind, delta) : previous);
+  const dropOnModule = (kind: ResumeModuleKind) => {
+    const drag = dragged.current;
+    if (drag?.kind === 'section' && draft) {
+      const from = draft.sections.find(section => section.kind === drag.section)?.order;
+      const to = draft.sections.find(section => section.kind === kind)?.order;
+      if (from !== undefined && to !== undefined) moveModule(drag.section, to - from);
+    }
+    dragged.current = null;
+  };
+  const dropOnItem = (kind: ResumeModuleKind, itemId: string) => {
+    const drag = dragged.current;
+    if (drag?.kind === 'item' && drag.section === kind && draft) {
+      const section = draft.sections.find(section => section.kind === kind);
+      const from = section?.items.find(item => item.itemId === drag.itemId)?.order;
+      const to = section?.items.find(item => item.itemId === itemId)?.order;
+      if (from !== undefined && to !== undefined) moveItemWithin(kind, drag.itemId, to - from);
+    }
+    dragged.current = null;
+  };
 
   const moveItem = (from: ResumeModuleKind, itemId: string, to: ResumeModuleKind) => {
     if (!draft || from === to) return;
@@ -185,6 +207,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       const target = draftRef.current?.sections.find(section => section.items.some(entry => entry.itemId === itemId));
       if (!target) { await resumeApi.deleteImage(resumeId, imageId); return; }
       updateItem(target.kind, itemId, current => ({ ...current,
+        editedFields: [...new Set([...(current.editedFields ?? []), 'supplements'])],
         supplements: { ...(current.supplements ?? { text: "", links: [], images: [] }),
           images: [...(current.supplements?.images ?? []), { imageId, caption: "" }] } }));
       setError("");
@@ -253,6 +276,24 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     setExpandedKind(kind);
     document.getElementById(`resume-${kind}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
   };
+  const splitTarget = dialog?.kind === 'splitItem'
+    ? draft?.sections.find(section=>section.kind===dialog.sectionKind)?.items.find(item=>item.itemId===dialog.itemId)
+    : undefined;
+  const splitParts = splitTarget?.details.split(/\n\s*\n/).map(part=>part.trim()).filter(Boolean) ?? [];
+  const confirmSplit = () => {
+    if (dialog?.kind !== 'splitItem' || !draft) return;
+    try {
+      setDraft(splitResumeItem(draft,dialog.sectionKind,dialog.itemId,splitBoundary,`manual-${crypto.randomUUID()}`));
+      setDialog(null);setError('');
+    } catch(cause) {setError(cause instanceof Error?cause.message:'拆分失败。');}
+  };
+  const confirmMerge = () => {
+    if (dialog?.kind !== 'mergeItem' || !draft) return;
+    try {
+      setDraft(mergeResumeItems(draft,dialog.sectionKind,dialog.itemId,dialog.nextId,mergeChoice));
+      setDialog(null);setError('');
+    } catch(cause) {setError(cause instanceof Error?cause.message:'合并失败。');}
+  };
 
   if (!draft && error) return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传">
     <section className="proof-step-page">
@@ -294,16 +335,19 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         })}</div>
       </section>}
       {draft && <div className="proof-confirm-layout">
-        <ModuleChecklist entries={draft.sections.map((section) => ({ kind: section.kind,
+        <ModuleChecklist entries={[...draft.sections].sort((a,b)=>a.order-b.order).map((section) => ({ kind: section.kind,
           label: labels[section.kind], pending: section.items.some((item) => item.needsReview) }))}
           activeKind={expandedKind} onSelect={selectModule} />
         <div className="proof-editor-column">
-          {draft.sections.map((section) => <ModuleCard key={section.kind} kind={section.kind}
+          {[...draft.sections].sort((a,b)=>a.order-b.order).map((section) => <ModuleCard key={section.kind} kind={section.kind}
             label={labels[section.kind]} section={section} expanded={expandedKind === section.kind}
+            onMoveUp={() => moveModule(section.kind,-1)} onMoveDown={() => moveModule(section.kind,1)}
+            onDragStart={() => {dragged.current={kind:'section',section:section.kind};}}
+            onDrop={() => dropOnModule(section.kind)}
             onToggleExpand={() => setExpandedKind(expandedKind === section.kind ? null : section.kind)}
             onVisibleChange={(visible) => { if (!visible && section.items.some(i=>i.needsReview)) setDialog({kind:"hideSection",sectionKind:section.kind}); else updateSection(section.kind, () => ({visible})); }}
             onAddItem={() => addItem(section.kind)}>
-            {section.items.map((item, index) => <EntryCard key={item.itemId} kind={section.kind}
+            {[...section.items].sort((a,b)=>a.order-b.order).map((item, index) => <EntryCard key={item.itemId} kind={section.kind}
               label={labels[section.kind]} item={item} index={index} total={section.items.length}
               canAddFacts={section.kind === "basicInfo" || section.kind === "jobIntent"}
               moduleOptions={moduleOptions}
@@ -311,17 +355,29 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
                 .filter((block): block is { page: number; text: string } => Boolean(block))}
               onPatchItem={(patch) => patchItem(section.kind, item.itemId, patch)}
               onPatchFactValue={(factKey, value) => updateItem(section.kind, item.itemId, (current) => ({ ...current,
+                editedFields:[...new Set([...(current.editedFields ?? []),`fact:${factKey}`])],
                 facts: current.facts.map((fact) => fact.key === factKey ? { ...fact, value } : fact) }))}
               onIncludeFact={(factKey, included) => includeFact(section.kind, item.itemId, factKey, included)}
-              onAddFact={() => updateItem(section.kind, item.itemId, (current) => ({ ...current, facts: [...current.facts, {
-                key: `custom-${crypto.randomUUID()}`, label: "新字段", value: "", included: false }] }))}
+              onAddFact={() => {const key=`custom-${crypto.randomUUID()}`;updateItem(section.kind, item.itemId, (current) => ({ ...current,
+                editedFields:[...new Set([...(current.editedFields ?? []),`fact:${key}`])], facts: [...current.facts, {
+                key, label: "新字段", value: "", included: false }] }));}}
               onPatchFactLabel={(factKey, nextLabel) => updateItem(section.kind, item.itemId, (current) => ({ ...current,
+                editedFields:[...new Set([...(current.editedFields ?? []),`fact:${factKey}`])],
                 facts: current.facts.map((fact) => fact.key === factKey ? { ...fact, label: nextLabel } : fact) }))}
               onUploadImage={(file) => { void uploadSupplementImage(section.kind, item.itemId, file); }}
-              onRemoveImage={(imageId)=>{updateItem(section.kind,item.itemId,current=>({...current,supplements:{...(current.supplements ?? {text:"",links:[],images:[]}),images:(current.supplements?.images ?? []).filter(m=>m.imageId!==imageId)}}));releaseImage(imageId);}}
+              onRemoveImage={(imageId)=>{updateItem(section.kind,item.itemId,current=>({...current,
+                editedFields:[...new Set([...(current.editedFields ?? []),'supplements'])],
+                supplements:{...(current.supplements ?? {text:"",links:[],images:[]}),images:(current.supplements?.images ?? []).filter(m=>m.imageId!==imageId)}}));releaseImage(imageId);}}
               imageUrl={(imageId) => resumeApi.imageUrl(resumeId, imageId)}
               onMoveUp={() => moveItemWithin(section.kind, item.itemId, -1)}
               onMoveDown={() => moveItemWithin(section.kind, item.itemId, 1)}
+              onDragStart={() => {dragged.current={kind:'item',section:section.kind,itemId:item.itemId};}}
+              onDrop={() => dropOnItem(section.kind,item.itemId)}
+              onSplit={['workExperience','projects','awards','campusExperience'].includes(section.kind)
+                ? () => {setSplitBoundary(1);setDialog({kind:'splitItem',sectionKind:section.kind,itemId:item.itemId});} : undefined}
+              onMerge={['workExperience','projects','awards','campusExperience'].includes(section.kind) && index < section.items.length-1
+                ? () => {setMergeChoice('combine');setDialog({kind:'mergeItem',sectionKind:section.kind,itemId:item.itemId,
+                    nextId:[...section.items].sort((a,b)=>a.order-b.order)[index+1].itemId});} : undefined}
               onRequestRemove={() => setDialog({ kind: "removeItem", sectionKind: section.kind, itemId: item.itemId })}
               onMoveTo={(to) => moveItem(section.kind, item.itemId, to)} />)}
           </ModuleCard>)}
@@ -353,6 +409,21 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       description="删除该条目及其补充内容？此操作不可撤销。" confirmLabel="确认删除"
       onConfirm={() => { if (dialog?.kind === "removeItem") removeItem(dialog.sectionKind, dialog.itemId); setDialog(null); }}
       onClose={() => setDialog(null)} />
+    <ConfirmDialog open={dialog?.kind === 'splitItem'} title="拆分条目" confirmLabel="确认拆分"
+      description={<><p>请选择两段经历之间的边界。第一条保留补充内容，第二条需要重新核对。</p>
+        <p>{splitTarget?.details}</p><label>拆分位置<select value={splitBoundary}
+          onChange={event=>setSplitBoundary(Number(event.target.value))}>
+          {splitParts.slice(1).map((_,index)=><option key={index} value={index+1}>第 {index+1} 段后</option>)}
+        </select></label></>}
+      onConfirm={confirmSplit} onClose={() => setDialog(null)} />
+    <ConfirmDialog open={dialog?.kind === 'mergeItem'} title="合并条目" confirmLabel="确认合并"
+      description={<><p>选择两条经历的补充内容归属；超出单条上限时请先调整。</p>
+        <label>补充内容<select value={mergeChoice}
+          onChange={event=>setMergeChoice(event.target.value as typeof mergeChoice)}>
+          <option value="combine">合并两条</option><option value="first">保留前一条</option>
+          <option value="second">保留后一条</option>
+        </select></label></>}
+      onConfirm={confirmMerge} onClose={() => setDialog(null)} />
     <ConfirmDialog open={dialog?.kind === "removeResume"} title="删除简历与原 PDF"
       description="确定删除这份简历、原 PDF 和解析草稿吗？此操作无法撤销。" confirmLabel="确认删除"
       busy={busy} onConfirm={() => void confirmRemove()} onClose={() => setDialog(null)} />

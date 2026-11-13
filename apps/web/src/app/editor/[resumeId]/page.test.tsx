@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import fixture from "../../../../../../packages/contracts/fixtures/resume-draft.v1.json";
+import { normalizeResumeDraft } from "../../../../../../packages/contracts/src/resume-draft";
 import ResumeEditorPage from "./page";
 import { resumeApi } from "../../../lib/resumeApi";
 
@@ -34,6 +35,41 @@ beforeEach(() => {
   vi.mocked(resumeApi.uploadImage).mockReset();
   vi.mocked(resumeApi.deleteImage).mockClear();
   vi.mocked(resumeApi.pendingImages).mockReset().mockResolvedValue({images:[]});
+});
+
+it('reorders modules and lets the user split a project at a paragraph boundary', async () => {
+  const draft = normalizeResumeDraft(fixture);
+  const project = {...draft.sections[0].items[0],itemId:'project-one',order:0,
+    title:'项目',details:'设计系统\n\n交互实现',included:true};
+  draft.sections.find(section => section.kind === 'projects')!.items = [project];
+  vi.mocked(resumeApi.read).mockResolvedValue({draft,revision:1,expiresAt:'2026-12-09T00:00:00Z'});
+  vi.mocked(resumeApi.save).mockImplementation(async (_id,next) => ({draft:next,revision:2,expiresAt:'2026-12-09T00:00:00Z'}));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  const projectHeading = await screen.findByRole('heading',{name:'项目经历'});
+  const projectSection = projectHeading.closest('section')!;
+  fireEvent.click(within(projectSection).getByRole('button',{name:'模块上移'}));
+  fireEvent.click(screen.getByRole('button',{name:/项目经历/}));
+  fireEvent.click(within(projectSection).getByRole('button',{name:'拆分此条'}));
+  const dialog = screen.getByRole('dialog',{name:'拆分条目'});
+  expect(dialog).toHaveTextContent('设计系统');
+  fireEvent.click(within(dialog).getByRole('button',{name:'确认拆分'}));
+  fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
+  await waitFor(() => expect(resumeApi.save).toHaveBeenCalled());
+  const saved = vi.mocked(resumeApi.save).mock.calls.at(-1)![1];
+  expect(saved.sections.find(section=>section.kind==='projects')!.order).toBe(4);
+  expect(saved.sections.find(section=>section.kind==='projects')!.items).toHaveLength(2);
+});
+
+it('marks user-edited text for later reparse merge', async () => {
+  const draft = normalizeResumeDraft(fixture);
+  vi.mocked(resumeApi.read).mockResolvedValue({draft,revision:1,expiresAt:'2026-12-09T00:00:00Z'});
+  vi.mocked(resumeApi.save).mockImplementation(async (_id,next) => ({draft:next,revision:2,expiresAt:'2026-12-09T00:00:00Z'}));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  const basic = (await screen.findByRole('heading',{name:'基本信息'})).closest('section')!;
+  fireEvent.change(within(basic).getByLabelText('标题'),{target:{value:'用户修改'}});
+  fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
+  await waitFor(()=>expect(resumeApi.save).toHaveBeenCalled());
+  expect(vi.mocked(resumeApi.save).mock.calls[0][1].sections[0].items[0].editedFields).toContain('title');
 });
 
 it("asks before reparsing into a separate draft and reports failure", async () => {

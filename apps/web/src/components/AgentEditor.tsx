@@ -26,7 +26,8 @@ export function ModuleChecklist({ entries, activeKind, onSelect }: {
 }
 
 // 单个模块卡片：折叠头（标题、已识别/待确认徽章、显示开关、展开）+ 隐藏提示 + 展开内容
-export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onVisibleChange, onAddItem, children }: {
+export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onVisibleChange, onAddItem,
+  onMoveUp, onMoveDown, onDragStart, onDrop, children }: {
   kind: ResumeModuleKind;
   label: string;
   section: ResumeDraftSection;
@@ -34,12 +35,24 @@ export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onV
   onToggleExpand: () => void;
   onVisibleChange: (visible: boolean) => void;
   onAddItem: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDragStart?: () => void;
+  onDrop?: () => void;
   children: ReactNode;
 }) {
   const pending = section.items.some((item) => item.needsReview);
-  return <section id={`resume-${kind}`} className="proof-card proof-module-card">
+  return <section id={`resume-${kind}`} className="proof-card proof-module-card"
+    onDragOver={event => event.preventDefault()} onDrop={event => {event.preventDefault(); onDrop?.();}}>
     <div className="proof-module-head">
+      <span draggable aria-label="拖动模块" role="button" tabIndex={0}
+        onDragStart={onDragStart} onKeyDown={event => {
+          if (event.key === 'ArrowUp') { event.preventDefault(); onMoveUp(); }
+          if (event.key === 'ArrowDown') { event.preventDefault(); onMoveDown(); }
+        }}>☷</span>
       <h2>{label}</h2>
+      <ProofButton variant="quiet" onClick={onMoveUp} aria-label="模块上移">↑</ProofButton>
+      <ProofButton variant="quiet" onClick={onMoveDown} aria-label="模块下移">↓</ProofButton>
       <span className="proof-module-badge" data-pending={pending || undefined}>
         {section.items.length === 0 ? "空" : pending ? "待确认" : `已识别 ${section.items.length} 条`}
       </span>
@@ -68,7 +81,8 @@ export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onV
 // 单条经历条目：勾选展示、低置信度警示、原文对照、标题/内容编辑、事实字段、补充内容、上下移动与删除
 export function EntryCard({ kind, label, item, index, total, canAddFacts, moduleOptions, sourceExcerpt,
   onPatchItem, onPatchFactValue, onIncludeFact, onAddFact, onPatchFactLabel,
-  onUploadImage, onRemoveImage, imageUrl, onMoveUp, onMoveDown, onRequestRemove, onMoveTo }: {
+  onUploadImage, onRemoveImage, imageUrl, onMoveUp, onMoveDown, onRequestRemove, onMoveTo,
+  onSplit, onMerge, onDragStart, onDrop }: {
   kind: ResumeModuleKind;
   label: string;
   item: ResumeDraftItem;
@@ -89,19 +103,31 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
   onMoveDown: () => void;
   onRequestRemove: () => void;
   onMoveTo: (to: ResumeModuleKind) => void;
+  onSplit?: () => void;
+  onMerge?: () => void;
+  onDragStart?: () => void;
+  onDrop?: () => void;
 }) {
   const lowConfidence = item.needsReview || item.confidence < 0.7 || item.segmentationConfidence < 0.7;
   const customFacts = item.facts.filter((fact) => fact.key.startsWith("custom-"));
   const supplements = item.supplements ?? { text: "", links: [], images: [] };
   const patchSupplements = (patch: Partial<ItemSupplements>) =>
     onPatchItem({ supplements: { ...supplements, ...patch } });
-  return <article className="proof-confirm-entry" aria-label={`${label}条目 ${index + 1}`}>
+  return <article className="proof-confirm-entry" aria-label={`${label}条目 ${index + 1}`}
+    onDragOver={event => event.preventDefault()} onDrop={event => {event.preventDefault(); onDrop?.();}}>
     <div className="proof-entry-top">
       <label><input type="checkbox" checked={item.included}
         onChange={(event) => onPatchItem({ included: event.target.checked })} />展示此条</label>
       <div className="proof-entry-tools">
+        <span draggable role="button" tabIndex={0} aria-label={`拖动条目 ${index + 1}`}
+          onDragStart={onDragStart} onKeyDown={event => {
+            if (event.key === 'ArrowUp') { event.preventDefault(); onMoveUp(); }
+            if (event.key === 'ArrowDown') { event.preventDefault(); onMoveDown(); }
+          }}>☷</span>
         <ProofButton variant="quiet" disabled={index === 0} onClick={onMoveUp}>↑ 上移</ProofButton>
         <ProofButton variant="quiet" disabled={index === total - 1} onClick={onMoveDown}>↓ 下移</ProofButton>
+        {onSplit && <ProofButton variant="quiet" onClick={onSplit}>拆分此条</ProofButton>}
+        {onMerge && <ProofButton variant="quiet" onClick={onMerge}>与下一条合并</ProofButton>}
         <ProofButton variant="quiet" onClick={onRequestRemove}>删除条目</ProofButton>
       </div>
     </div>
