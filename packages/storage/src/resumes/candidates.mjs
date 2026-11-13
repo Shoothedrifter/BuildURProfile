@@ -81,13 +81,20 @@ export function recordDeletedItems(db,resumeId,previous,next) {
 
 export function overwriteDraft(current,candidate) {
   const result=clone(candidate);
+  const matchedIds=new Set(),matches=new Map();
+  for(const section of result.sections){
+    const previous=current.sections.find(entry=>entry.kind===section.kind);
+    for(const item of section.items){
+      const matched=previous?.items.find(entry=>!matchedIds.has(entry.itemId)&&overlap(entry,item));
+      if(matched){matchedIds.add(matched.itemId);matches.set(item,matched);}
+    }
+  }
   const usedIds=new Set();
   result.sections=result.sections.map(section=>{
-    const previous=current.sections.find(entry=>entry.kind===section.kind);
     return {...section,items:section.items.map(item=>{
-      const matched=previous?.items.find(entry=>!usedIds.has(entry.itemId)&&overlap(entry,item));
+      const matched=matches.get(item);
       let itemId=matched?.itemId??item.itemId;
-      if(usedIds.has(itemId))itemId=randomUUID();
+      while(!matched&&(usedIds.has(itemId)||matchedIds.has(itemId)))itemId=randomUUID();
       usedIds.add(itemId);
       return {...item,itemId,
         needsReview:matched?item.needsReview:true,editedFields:[]};

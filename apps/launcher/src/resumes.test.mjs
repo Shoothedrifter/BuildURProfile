@@ -159,6 +159,12 @@ test('fill-empty protects edited fields and deleted source entries while preserv
   {...candidate.sections[5].items[0],itemId:'candidate-two',order:1}];
  const overwritten=overwriteDraft(split,two);
  assert.deepEqual(overwritten.sections[5].items.map(item=>item.itemId),['split-first','split-second']);
+ const reordered=structuredClone(two);
+ reordered.sections[5].items=[{...two.sections[5].items[0],itemId:'split-first',sourceBlockIds:['new-block']},
+  {...two.sections[5].items[1],itemId:'candidate-matched',order:1}];
+ const reserved=overwriteDraft(split,reordered).sections[5].items;
+ assert.notEqual(reserved[0].itemId,'split-first');
+ assert.equal(reserved[1].itemId,'split-first');
 });
 
 test('fill-empty candidate matches stable source, adds reviewed item and never changes edited text',async t=>{
