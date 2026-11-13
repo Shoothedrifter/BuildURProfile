@@ -185,6 +185,24 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
       );
       CREATE INDEX resume_versions_latest ON resume_versions(resume_id, revision DESC);`);
   });
+  applyMigration(db, 11, () => {
+    db.exec(`ALTER TABLE resume_parse_tasks ADD COLUMN candidate_id TEXT;
+      CREATE INDEX resume_parse_candidate ON resume_parse_tasks(candidate_id);
+      CREATE TABLE resume_reparse_candidates (
+        task_id TEXT PRIMARY KEY REFERENCES resume_parse_tasks(id) ON DELETE CASCADE,
+        resume_id TEXT NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+        owner_session_id TEXT NOT NULL, base_revision INTEGER NOT NULL,
+        mode TEXT NOT NULL CHECK(mode IN ('overwrite','fillEmpty')),
+        idempotency_key TEXT NOT NULL, source_json TEXT, draft_json TEXT,
+        applied_revision INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        UNIQUE(resume_id,idempotency_key)
+      );
+      CREATE TABLE resume_deleted_items (
+        resume_id TEXT NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL, kind TEXT NOT NULL, source_ids_json TEXT NOT NULL,
+        PRIMARY KEY(resume_id,item_id)
+      );`);
+  });
   return db;
 }
 

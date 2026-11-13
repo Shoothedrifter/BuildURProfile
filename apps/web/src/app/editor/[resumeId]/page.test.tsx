@@ -7,6 +7,8 @@ import { resumeApi } from "../../../lib/resumeApi";
 
 vi.mock("../../../lib/resumeApi", () => ({ resumeApi: {
   read: vi.fn(), save: vi.fn(), remove: vi.fn(), reparse: vi.fn(), blocks: vi.fn(),
+  createCandidate:vi.fn(),candidate:vi.fn(),applyCandidate:vi.fn(),cancelCandidate:vi.fn(),
+  versions:vi.fn().mockResolvedValue({versions:[]}),version:vi.fn(),restore:vi.fn(),
   pendingImages: vi.fn().mockResolvedValue({images:[]}),
   uploadImage: vi.fn(), deleteImage: vi.fn().mockResolvedValue({ok:true}),
   sourceUrl: (id: string) => `/api/resumes/${id}/source`,
@@ -26,9 +28,14 @@ function draftWithProjects(itemCount: number, needsReview = false) {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   vi.mocked(resumeApi.read).mockReset();
   vi.mocked(resumeApi.save).mockReset();
   vi.mocked(resumeApi.reparse).mockReset();
+  vi.mocked(resumeApi.createCandidate).mockReset();
+  vi.mocked(resumeApi.candidate).mockReset();
+  vi.mocked(resumeApi.applyCandidate).mockReset();
+  vi.mocked(resumeApi.versions).mockReset().mockResolvedValue({versions:[]});
   // 原文摘录是辅助信息，默认给空列表；需要对照的测试自行覆盖
   vi.mocked(resumeApi.blocks).mockReset();
   vi.mocked(resumeApi.blocks).mockResolvedValue({ blocks: [] });
@@ -77,7 +84,7 @@ it("asks before reparsing into a separate draft and reports failure", async () =
     expiresAt: "2026-12-09T00:00:00Z" });
   vi.mocked(resumeApi.reparse).mockRejectedValue(new Error("暂时无法重新解析"));
   render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
-  const reparseButton = await screen.findByRole("button", { name: "重新解析为新草稿" });
+  const reparseButton = await screen.findByRole("button", { name: "创建新草稿副本" });
   await waitFor(() => expect(reparseButton).toBeEnabled());
   fireEvent.click(reparseButton);
   const dialog = screen.getByRole("dialog");
@@ -86,6 +93,29 @@ it("asks before reparsing into a separate draft and reports failure", async () =
   await waitFor(() => expect(resumeApi.reparse).toHaveBeenCalledWith("resume-1"));
   expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法重新解析");
   expect(screen.getByRole("heading", { name: "实习 / 工作经历" })).toBeInTheDocument();
+});
+
+it('reviews an isolated fill-empty candidate before applying it to the same resume',async()=>{
+  const draft=normalizeResumeDraft(fixture);
+  draft.revision=1;
+  vi.mocked(resumeApi.read).mockResolvedValue({draft,revision:1,expiresAt:'2026-12-09T00:00:00Z',cacheScope:'synthetic-scope'});
+  vi.mocked(resumeApi.createCandidate).mockResolvedValue({taskId:'candidate-1',resumeId:'resume-1',status:'QUEUED',mode:'fillEmpty',baseRevision:1});
+  vi.mocked(resumeApi.candidate).mockResolvedValue({taskId:'candidate-1',resumeId:'resume-1',status:'SUCCEEDED',mode:'fillEmpty',baseRevision:1,
+    preview:[{kind:'projects',items:[{itemId:'new-project',title:'候选项目',details:'候选正文',facts:[]}]}]});
+  vi.mocked(resumeApi.applyCandidate).mockResolvedValue({draft:{...draft,revision:2},revision:2});
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  const reparse=await screen.findByRole('button',{name:'重新解析原 PDF'});
+  await waitFor(()=>expect(reparse).toBeEnabled());
+  fireEvent.click(reparse);
+  const modeDialog=screen.getByRole('dialog',{name:'重新解析原 PDF'});
+  expect(within(modeDialog).getByRole('combobox',{name:'应用方式'})).toHaveValue('fillEmpty');
+  fireEvent.click(within(modeDialog).getByRole('button',{name:'开始解析'}));
+  expect(await screen.findByText('候选项目')).toBeInTheDocument();
+  expect(screen.getByTitle('原 PDF 预览')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'审核后应用候选'}));
+  fireEvent.click(within(screen.getByRole('dialog',{name:'应用重解析候选'})).getByRole('button',{name:'确认应用'}));
+  await waitFor(()=>expect(resumeApi.applyCandidate).toHaveBeenCalledWith('resume-1','candidate-1',1));
+  expect(sessionStorage.getItem('burp-reparse-candidate-resume-1')).toBeNull();
 });
 
 it("explains missing contact selection beside the confirm action", async () => {

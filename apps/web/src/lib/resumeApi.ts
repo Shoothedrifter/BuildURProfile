@@ -4,6 +4,9 @@ export type ResumeStatus = { resumeId: string; fileId?: string; status: string; 
 export type PendingResumeImage = { imageId: string; itemId: string | null; contentType: string; size: number };
 export type StoredResume = { draft: ResumeDraftV2; revision: number; expiresAt: string; cacheScope?: string };
 export type ResumeVersion = { revision:number; createdAt:number };
+export type ResumeCandidate = {taskId:string;resumeId:string;status:string;stage?:string|null;progress?:number;
+  errorCode?:string|null;mode:'overwrite'|'fillEmpty';baseRevision:number;appliedRevision?:number|null;
+  preview?:{kind:string;items:{itemId:string;title:string;details:string;facts:{key:string;label:string;value:string}[]}[]}[]|null};
 // 原文对照摘录（服务端已裁剪：仅 blockId/page/readingOrder/text）
 export type SourceBlockExcerpt = { blockId: string; page: number; readingOrder: number; text: string };
 export type SourceBlocks = { blocks: SourceBlockExcerpt[] };
@@ -60,6 +63,19 @@ export const resumeApi = {
   reparse(resumeId: string): Promise<ResumeStatus> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse`, "POST",
       { idempotencyKey: crypto.randomUUID() });
+  },
+  createCandidate(resumeId:string,expectedRevision:number,mode:'overwrite'|'fillEmpty'):Promise<ResumeCandidate>{
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse-candidates`,'POST',
+      {expectedRevision,mode,idempotencyKey:crypto.randomUUID()});
+  },
+  candidate(resumeId:string,taskId:string):Promise<ResumeCandidate>{
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse-candidates/${encodeURIComponent(taskId)}`);
+  },
+  applyCandidate(resumeId:string,taskId:string,expectedRevision:number):Promise<{draft?:ResumeDraftV2;revision:number}>{
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse-candidates/${encodeURIComponent(taskId)}/apply`,'POST',{expectedRevision});
+  },
+  cancelCandidate(resumeId:string,taskId:string):Promise<{status:string}>{
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse-candidates/${encodeURIComponent(taskId)}/cancel`,'POST',{});
   },
   status(resumeId: string): Promise<ResumeStatus> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/status`);

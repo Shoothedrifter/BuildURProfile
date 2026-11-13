@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { projectConfirmedResumeV3, RESUME_MODULE_MAPPING } from "../../../../../../packages/contracts/src/resume-draft";
 import type { ResumeDraftItemV2, ResumeDraftSectionV2, ResumeDraftV2, ResumeModuleKind } from "../../../../../../packages/contracts/src/resume-draft";
 import { validHttpUrl } from "../../../../../../packages/contracts/src/resume-v2.mjs";
-import { resumeApi, type PendingResumeImage, type ResumeVersion } from "../../../lib/resumeApi";
+import { resumeApi, type PendingResumeImage, type ResumeVersion, type ResumeCandidate } from "../../../lib/resumeApi";
 import { createResumeAutosave } from "../../../lib/resumeAutosave";
 import { applyLocalDelta, getLocalDelta, makeLocalDelta, putLocalDelta, removeLocalDelta, type ResumeLocalDelta } from "../../../lib/resumeLocalDraft";
 import { AgentChrome } from "../../../components/AgentChrome";
@@ -30,6 +30,7 @@ function normalizeEditorLinks(raw:ResumeDraftV2):ResumeDraftV2 {
 }
 
 type DialogState = null | { kind: "reparse" } | { kind: "removeResume" }
+  | { kind:"reparseCandidate" } | { kind:"applyCandidate" }
   | { kind: "leave"; href:string }
   | { kind: "hideSection"; sectionKind: ResumeModuleKind }
   | { kind: "removeItem"; sectionKind: ResumeModuleKind; itemId: string }
@@ -56,6 +57,9 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [versions,setVersions]=useState<ResumeVersion[]>([]);
   const [historyOpen,setHistoryOpen]=useState(false);
   const [historyPreview,setHistoryPreview]=useState<ResumeDraftV2|null>(null);
+  const [candidateMode,setCandidateMode]=useState<'overwrite'|'fillEmpty'>('fillEmpty');
+  const [candidateTaskId,setCandidateTaskId]=useState('');
+  const [candidate,setCandidate]=useState<ResumeCandidate|null>(null);
   const [recoverableDelta,setRecoverableDelta]=useState<ResumeLocalDelta|null>(null);
   const [localReady,setLocalReady]=useState(false);
   const baseDraftRef=useRef<ResumeDraftV2|null>(null);
@@ -78,6 +82,27 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     .map((kind) => ({ kind: kind as ResumeModuleKind, label: labels[kind as ResumeModuleKind] }));
 
   useEffect(() => { void params.then(({ resumeId: id }) => setResumeId(id)); }, [params]);
+  useEffect(()=>{
+    if(!resumeId)return;
+    const saved=sessionStorage.getItem(`burp-reparse-candidate-${resumeId}`);
+    if(saved)setCandidateTaskId(saved);
+  },[resumeId]);
+  useEffect(()=>{
+    if(!resumeId||!candidateTaskId)return;
+    let active=true;let timer:ReturnType<typeof setTimeout>|undefined;
+    const poll=async()=>{
+      try{
+        const result=await resumeApi.candidate(resumeId,candidateTaskId);
+        if(!active)return;
+        setCandidate(result);
+        if(!['SUCCEEDED','FAILED','CANCELLED'].includes(result.status))timer=setTimeout(()=>void poll(),2000);
+      }catch(cause){
+        if(active)setError(cause instanceof Error?cause.message:'重解析候选读取失败。');
+      }
+    };
+    void poll();
+    return()=>{active=false;if(timer)clearTimeout(timer);};
+  },[resumeId,candidateTaskId]);
   useEffect(()=>{
     if(!resumeId)return;
     const controller=createResumeAutosave<ResumeDraftV2>({
@@ -342,6 +367,44 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     }
   };
 
+  const createCandidate=async()=>{
+    if(!resumeId||!draft)return;
+    setBusy(true);setError('');
+    try{
+      await autosaveRef.current?.flush(draft);
+      if(autosaveRef.current?.status()!=='saved')throw new Error('请先解决未保存修改。');
+      const revision=autosaveRef.current.latest()?.revision??draft.revision;
+      const created=await resumeApi.createCandidate(resumeId,revision,candidateMode);
+      setCandidate(created);setCandidateTaskId(created.taskId);
+      sessionStorage.setItem(`burp-reparse-candidate-${resumeId}`,created.taskId);
+      setDialog(null);
+    }catch(cause){setError(cause instanceof Error?cause.message:'重解析启动失败。');}
+    finally{setBusy(false);}
+  };
+  const applyCandidate=async()=>{
+    if(!resumeId||!draft||!candidate)return;
+    setBusy(true);setError('');
+    try{
+      await autosaveRef.current?.flush(draft);
+      if(autosaveRef.current?.status()!=='saved')throw new Error('请先解决未保存修改。');
+      const revision=autosaveRef.current.latest()?.revision??draft.revision;
+      const result=await resumeApi.applyCandidate(resumeId,candidate.taskId,revision);
+      const updated=result.draft??(await resumeApi.read(resumeId)).draft;
+      baseDraftRef.current=updated;autosaveRef.current?.initialize(updated);setDraft(updated);
+      setVersions((await resumeApi.versions(resumeId)).versions);
+      setCandidate(null);setCandidateTaskId('');setDialog(null);
+      sessionStorage.removeItem(`burp-reparse-candidate-${resumeId}`);
+    }catch(cause){setError(cause instanceof Error?cause.message:'候选应用失败，请重新核对。');}
+    finally{setBusy(false);}
+  };
+  const cancelCandidate=async()=>{
+    if(!candidate)return;
+    try{const result=await resumeApi.cancelCandidate(resumeId,candidate.taskId);
+      setCandidate({...candidate,status:result.status});
+      if(result.status==='CANCELLED'){setCandidateTaskId('');sessionStorage.removeItem(`burp-reparse-candidate-${resumeId}`);}
+    }catch(cause){setError(cause instanceof Error?cause.message:'取消候选失败。');}
+  };
+
   const refreshPendingImages = async () => {
     try { setPendingImages((await resumeApi.pendingImages(resumeId)).images); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "未保存图片读取失败。"); }
@@ -447,8 +510,28 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         <ProofButton disabled={busy || !draft} onClick={() => void refreshPendingImages()}>管理未保存图片</ProofButton>
         <ProofButton disabled={busy || !draft} onClick={() => void save()}>保存草稿</ProofButton>
         <ProofButton disabled={busy || !draft} onClick={()=>setHistoryOpen(value=>!value)}>版本历史</ProofButton>
-        <ProofButton disabled={busy || !draft} onClick={() => setDialog({ kind: "reparse" })}>重新解析为新草稿</ProofButton>
+        <ProofButton disabled={busy || !draft || !!candidateTaskId} onClick={()=>setDialog({kind:'reparseCandidate'})}>重新解析原 PDF</ProofButton>
+        <ProofButton disabled={busy || !draft} onClick={() => setDialog({ kind: "reparse" })}>创建新草稿副本</ProofButton>
       </div>
+      {candidate&&<section className="proof-card" aria-label="重解析候选">
+        <h2>重解析候选</h2>
+        <p role="status">{candidate.mode==='fillEmpty'?'仅补充空白字段':'覆盖当前内容'} · {candidate.status} {candidate.progress??0}%</p>
+        {candidate.errorCode&&<p role="alert">{candidate.errorCode}。当前草稿未更改。</p>}
+        {candidate.status==='SUCCEEDED'&&candidate.preview&&<>
+          <p>请与当前草稿及右侧原 PDF 对照。应用前若草稿版本变化，服务端会拒绝覆盖。</p>
+          {candidate.preview.filter(section=>section.items.length).map(section=><div key={section.kind}>
+            <h3>{labels[section.kind as ResumeModuleKind]} · 候选 {section.items.length} 条 / 当前 {draft?.sections.find(item=>item.kind===section.kind)?.items.length??0} 条</h3>
+            {section.items.map(item=><article key={item.itemId}><strong>{item.title}</strong><p>{item.details}</p>
+              {item.facts.map(fact=><p key={fact.key}>{fact.label}：{fact.value}</p>)}
+            </article>)}
+          </div>)}
+          <ProofButton disabled={busy} onClick={()=>setDialog({kind:'applyCandidate'})}>审核后应用候选</ProofButton>
+        </>}
+        {['QUEUED','RUNNING'].includes(candidate.status)&&<ProofButton disabled={busy} onClick={()=>void cancelCandidate()}>取消候选解析</ProofButton>}
+        {['FAILED','CANCELLED'].includes(candidate.status)&&<ProofButton onClick={()=>{
+          setCandidate(null);setCandidateTaskId('');sessionStorage.removeItem(`burp-reparse-candidate-${resumeId}`);
+        }}>关闭候选</ProofButton>}
+      </section>}
       {recoverableDelta&&<section className="proof-card" aria-label="恢复本机草稿">
         <h2>发现未保存的本机修改</h2>
         <p>这份副本只适用于当前会话和原修订。若另一页面已保存新版本，请先下载差异留存。</p>
@@ -560,6 +643,18 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     <ConfirmDialog open={dialog?.kind === "reparse"} title="重新解析为新草稿"
       description="将从原 PDF 创建一份新草稿，当前草稿会保留。新副本从现在起保留 30 天。"
       confirmLabel="继续" busy={busy} onConfirm={() => void confirmReparse()} onClose={() => setDialog(null)} />
+    <ConfirmDialog open={dialog?.kind==='reparseCandidate'} title="重新解析原 PDF"
+      description={<><p>先保存当前修改，再在同一份简历上创建待审核候选；原草稿会保持可用。</p>
+        <label>应用方式<select value={candidateMode} onChange={event=>setCandidateMode(event.target.value as typeof candidateMode)}>
+          <option value="fillEmpty">仅补充空白字段，保留人工编辑</option>
+          <option value="overwrite">覆盖当前内容，保留可恢复历史</option>
+        </select></label></>}
+      confirmLabel="开始解析" busy={busy} onConfirm={()=>void createCandidate()} onClose={()=>setDialog(null)} />
+    <ConfirmDialog open={dialog?.kind==='applyCandidate'} title="应用重解析候选"
+      description={candidate?.mode==='overwrite'
+        ?'将以候选内容及顺序替换当前草稿；当前版本会保留在历史中。'
+        :'只填未编辑的空白字段，新条目会标记待核对；人工修改和补充资产保留。'}
+      confirmLabel="确认应用" busy={busy} onConfirm={()=>void applyCandidate()} onClose={()=>setDialog(null)} />
     <ConfirmDialog open={dialog?.kind === "removeItem"} title="删除条目"
       description="删除该条目及其补充内容？此操作不可撤销。" confirmLabel="确认删除"
       onConfirm={() => { if (dialog?.kind === "removeItem") removeItem(dialog.sectionKind, dialog.itemId); setDialog(null); }}

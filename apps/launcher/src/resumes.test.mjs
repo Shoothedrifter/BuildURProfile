@@ -7,6 +7,7 @@ import { openDatabase } from '../../../packages/storage/src/database.mjs';
 import { createRequestHandler, dispatchWebRequest } from '../../web/src/server/http.mjs';
 
 import { pdf } from './test-fixtures/resume-pdf.mjs';
+import { mergeEmptyDraft, overwriteDraft } from '../../../packages/storage/src/resumes/candidates.mjs';
 async function setup(t) {
  const root=mkdtempSync(join(tmpdir(),'resume-test-')),db=openDatabase(':memory:');let time=Date.now();
  t.after(()=>{db.close();rmSync(root,{recursive:true,force:true});});
@@ -74,6 +75,125 @@ test('history keeps referenced images until old revisions are trimmed',async t=>
   draft=(await(await s.request(s.resumeId,'PATCH',JSON.stringify({revision:draft.revision,draft}))).json()).draft;
  }
  assert.equal((await s.request(s.resumeId+'/images/'+imageId)).status,404);
+});
+
+test('reparse candidate keeps current draft live and applies only after revision review',async t=>{
+ const s=await readyResume(t),before=await(await s.request(s.resumeId)).json();
+ const start=()=>s.request(s.resumeId+'/reparse-candidates','POST',JSON.stringify({expectedRevision:1,mode:'overwrite',idempotencyKey:'candidate-one'}),{'content-type':'application/json'});
+ const created=await start();assert.equal(created.status,202);const candidate=await created.json();
+ assert.equal((await(await start()).json()).taskId,candidate.taskId);
+ assert.equal((await(await s.request(s.resumeId+'/status')).json()).status,'SUCCEEDED');
+ const task=s.repo.queue.lease('candidate-worker');assert.equal(task.id,candidate.taskId);
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(before.draft.fileId);
+ Object.assign(source,{fileId:before.draft.fileId,uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:before.draft.fileId,resumeId:s.resumeId,revision:1});
+ for(const section of draft.sections)for(const item of section.items)item.included=false;
+ draft.sections[0].items[0].title='新解析标题';
+ s.repo.queue.complete(task.id,task.leaseToken,source,draft);
+ assert.equal((await(await s.request(s.resumeId)).json()).draft.sections[0].items[0].title,before.draft.sections[0].items[0].title);
+ const status=await(await s.request(s.resumeId+'/reparse-candidates/'+candidate.taskId)).json();
+ assert.equal(status.status,'SUCCEEDED');assert.equal(status.mode,'overwrite');
+ const applied=await s.request(s.resumeId+'/reparse-candidates/'+candidate.taskId+'/apply','POST',JSON.stringify({expectedRevision:1}),{'content-type':'application/json'});
+ assert.equal(applied.status,200);assert.equal((await applied.json()).revision,2);
+ assert.equal((await(await s.request(s.resumeId)).json()).draft.sections[0].items[0].title,'新解析标题');
+ assert.equal((await(await s.request(s.resumeId+'/reparse-candidates/'+candidate.taskId+'/apply','POST',JSON.stringify({expectedRevision:1}),{'content-type':'application/json'})).json()).revision,2);
+ assert.equal((await(await s.request(s.resumeId+'/versions')).json()).versions.length,2);
+});
+
+test('reparse candidate conflicts after concurrent edit and failed task leaves current draft intact',async t=>{
+ const s=await readyResume(t),base=(await(await s.request(s.resumeId)).json()).draft;
+ const created=await(await s.request(s.resumeId+'/reparse-candidates','POST',JSON.stringify({expectedRevision:1,mode:'fillEmpty',idempotencyKey:'candidate-two'}),{'content-type':'application/json'})).json();
+ base.sections[0].items[0].title='并发编辑';
+ await s.request(s.resumeId,'PATCH',JSON.stringify({revision:1,draft:base}));
+ const task=s.repo.queue.lease('worker');s.repo.queue.fail(task.id,task.leaseToken,'PARSE_FAILED',false);
+ assert.equal((await(await s.request(s.resumeId+'/status')).json()).status,'SUCCEEDED');
+ assert.equal((await(await s.request(s.resumeId+'/reparse-candidates/'+created.taskId)).json()).status,'FAILED');
+ assert.equal((await s.request(s.resumeId+'/reparse-candidates/'+created.taskId+'/apply','POST',JSON.stringify({expectedRevision:1}),{'content-type':'application/json'})).status,409);
+ assert.equal((await(await s.request(s.resumeId)).json()).draft.sections[0].items[0].title,'并发编辑');
+});
+
+test('fill-empty protects edited fields and deleted source entries while preserving order and assets',()=>{
+ const current=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ current.version='resume-draft-v2';
+ for(const section of current.sections)for(const item of section.items)item.editedFields=[];
+ current.sections[0].items[0].title='用户标题';
+ current.sections[0].items[0].details='';
+ current.sections[0].items[0].editedFields=['title','fact:phone'];
+ current.sections[0].items[0].facts[2].value='';
+ current.sections[0].items[0].supplements={text:'手写补充',links:[],images:[{imageId:'image_saved',caption:''}]};
+ current.sections[0].order=9;current.sections[9].order=0;
+ const candidate=structuredClone(current);
+ candidate.sections[0].items[0].title='模型标题';candidate.sections[0].items[0].details='模型正文';
+ candidate.sections[0].items[0].facts[2].value='模型电话';
+ candidate.sections[0].items[0].supplements={text:'',links:[],images:[]};
+ candidate.sections[0].order=0;candidate.sections[9].order=9;
+ candidate.sections[5].items=[{...candidate.sections[0].items[0],itemId:'new_project',order:0,
+   sourceBlockIds:['block_2'],title:'新项目',details:'新正文',facts:[],editedFields:[]}];
+ const filled=mergeEmptyDraft(current,candidate,new Set());
+ assert.equal(filled.sections[0].order,9);
+ assert.equal(filled.sections[0].items[0].itemId,'item_basic');
+ assert.equal(filled.sections[0].items[0].title,'用户标题');
+ assert.equal(filled.sections[0].items[0].details,'模型正文');
+ assert.equal(filled.sections[0].items[0].facts[2].value,'');
+ assert.equal(filled.sections[0].items[0].supplements.text,'手写补充');
+ assert.equal(filled.sections[5].items[0].needsReview,true);
+ assert.equal(filled.sections[5].items[0].included,false);
+ assert.equal(mergeEmptyDraft(current,candidate,new Set(['block_2'])).sections[5].items.length,0);
+ const replaced=overwriteDraft(current,candidate);
+ assert.equal(replaced.sections[0].items[0].itemId,'item_basic');
+ assert.equal(replaced.sections[0].items[0].title,'模型标题');
+ assert.equal(replaced.sections[0].order,0);
+});
+
+test('fill-empty candidate matches stable source, adds reviewed item and never changes edited text',async t=>{
+ const s=await readyResume(t),current=(await(await s.request(s.resumeId)).json()).draft;
+ current.sections[0].items[0].title='人工标题';
+ current.sections[0].items[0].editedFields=['title'];
+ current.sections[0].items[0].details='';
+ const saved=await(await s.request(s.resumeId,'PATCH',JSON.stringify({revision:1,draft:current}))).json();
+ const created=await(await s.request(s.resumeId+'/reparse-candidates','POST',JSON.stringify({expectedRevision:2,mode:'fillEmpty',idempotencyKey:'candidate-fill'}),{'content-type':'application/json'})).json();
+ const task=s.repo.queue.lease('worker');
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(current.fileId);
+ Object.assign(source,{fileId:current.fileId,uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ source.blocks.push({...source.blocks[0],blockId:'block_2',readingOrder:1,text:'new project'});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:current.fileId,resumeId:s.resumeId,revision:1});
+ for(const section of draft.sections)for(const item of section.items)item.included=false;
+ draft.sections[0].items[0].title='模型标题';draft.sections[0].items[0].details='模型正文';
+ draft.sections[5].items=[{...structuredClone(draft.sections[0].items[0]),itemId:'candidate_project',order:0,
+   sourceBlockIds:['block_2'],title:'新项目',details:'新内容',facts:[],needsReview:false}];
+ s.repo.queue.complete(task.id,task.leaseToken,source,draft);
+ const applied=await s.request(s.resumeId+'/reparse-candidates/'+created.taskId+'/apply','POST',JSON.stringify({expectedRevision:2}),{'content-type':'application/json'});
+ assert.equal(applied.status,200);
+ const merged=(await applied.json()).draft;
+ assert.equal(merged.revision,3);
+ assert.equal(merged.sections[0].items[0].itemId,saved.draft.sections[0].items[0].itemId);
+ assert.equal(merged.sections[0].items[0].title,'人工标题');
+ assert.equal(merged.sections[0].items[0].details,'模型正文');
+ assert.equal(merged.sections[5].items[0].needsReview,true);
+ assert.equal(merged.sections[5].items[0].included,false);
+ assert.equal((await(await s.request(s.resumeId+'/status')).json()).status,'SUCCEEDED');
+});
+
+test('candidate completion after an edit is discarded without touching the current resume',async t=>{
+ const s=await readyResume(t),base=(await(await s.request(s.resumeId)).json()).draft;
+ const created=await(await s.request(s.resumeId+'/reparse-candidates','POST',JSON.stringify({expectedRevision:1,mode:'overwrite',idempotencyKey:'stale-complete'}),{'content-type':'application/json'})).json();
+ const task=s.repo.queue.lease('worker');
+ base.sections[0].items[0].title='新的人工作业';
+ await s.request(s.resumeId,'PATCH',JSON.stringify({revision:1,draft:base}));
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(base.fileId);
+ Object.assign(source,{fileId:base.fileId,uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:base.fileId,resumeId:s.resumeId,revision:1});
+ for(const section of draft.sections)for(const item of section.items)item.included=false;
+ s.repo.queue.complete(task.id,task.leaseToken,source,draft);
+ const candidate=await(await s.request(s.resumeId+'/reparse-candidates/'+created.taskId)).json();
+ assert.equal(candidate.status,'FAILED');assert.equal(candidate.errorCode,'REVISION_CONFLICT');
+ assert.equal((await(await s.request(s.resumeId)).json()).draft.sections[0].items[0].title,'新的人工作业');
 });
 test('upload retains one private PDF, source remains after parse, ownership and deletion enforced',async t=>{
  const s=await setup(t),r=await s.request('upload','POST',pdf());assert.equal(r.status,201);const file=await r.json();

@@ -13,6 +13,18 @@ export async function handleResumeRoutes({req,res,parts,sessionId,repository,sen
   sendJson(res,202,queued);
   return true;
  }
+ if(parts.length===4&&parts[3]==='reparse-candidates'&&req.method==='POST'){
+  sendJson(res,202,queue.createCandidate(sessionId,parts[2],await bodyJson(req,4096)));return true;
+ }
+ if(parts.length===5&&parts[3]==='reparse-candidates'&&req.method==='GET'){
+  sendJson(res,200,queue.candidate(sessionId,parts[2],parts[4]));return true;
+ }
+ if(parts.length===6&&parts[3]==='reparse-candidates'&&parts[5]==='apply'&&req.method==='POST'){
+  sendJson(res,200,queue.applyCandidate(sessionId,parts[2],parts[4],await bodyJson(req,4096)));return true;
+ }
+ if(parts.length===6&&parts[3]==='reparse-candidates'&&parts[5]==='cancel'&&req.method==='POST'){
+  sendJson(res,200,queue.cancelCandidate(sessionId,parts[2],parts[4]));return true;
+ }
  if(parts.length===4&&parts[3]==='status'&&req.method==='GET'){sendJson(res,200,queue.status(sessionId,parts[2]));return true;}
  if(parts.length===4&&parts[3]==='blocks'&&req.method==='GET'){sendJson(res,200,queue.blocks(sessionId,parts[2]));return true;}
  if(parts.length===4&&parts[3]==='cancel'&&req.method==='POST'){sendJson(res,200,queue.cancel(sessionId,parts[2]));return true;}

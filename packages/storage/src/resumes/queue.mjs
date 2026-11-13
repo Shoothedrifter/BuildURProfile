@@ -5,6 +5,7 @@ import { resumeError } from './files.mjs';
 import { validateResumeSource } from '../../../contracts/src/resume-source.ts';
 import { normalizeResumeDraft, validateResumeDraft, validateResumeDraftV2 } from '../../../contracts/src/resume-draft.ts';
 import { draftImageIds, historyImageIds, listVersions, readVersion, reclaimImages, restoreVersion, snapshotPrevious } from './versions.mjs';
+import { mergeEmptyDraft, overwriteDraft, reconcileCandidateSource, recordDeletedItems } from './candidates.mjs';
 const STAGES = ['queued', 'validate_source', 'extract_layout', 'classify_sections', 'map_design_modules', 'split_items', 'format_items', 'verify_evidence', 'complete_draft'];
 const ERRORS = new Set(['PARSE_TIMEOUT', 'PARSE_FAILED', 'FILE_TYPE_INVALID', 'PDF_PAGE_LIMIT', 'PDF_ENCRYPTED', 'PDF_NO_TEXT']);
 const iso = value => new Date(value).toISOString().replace('.000Z', 'Z');
@@ -35,7 +36,7 @@ export function createResumeParseQueue({
     liveFile(owner, row.file_id);
     return row;
   }
-  const latest = id => db.prepare('SELECT * FROM resume_parse_tasks WHERE resume_id=? ORDER BY rowid DESC LIMIT 1').get(id);
+  const latest = id => db.prepare('SELECT * FROM resume_parse_tasks WHERE resume_id=? AND candidate_id IS NULL ORDER BY rowid DESC LIMIT 1').get(id);
   function sourceFor(row) {
     const file = liveFile(row.owner_session_id, row.file_id);
     return {
@@ -62,7 +63,7 @@ export function createResumeParseQueue({
       const status = row.status === 'CANCELLING' ? 'CANCELLED' : row.attempt_count >= maxAttempts ? 'FAILED' : 'QUEUED';
       db.prepare('UPDATE resume_parse_tasks SET status=?,lease_token=NULL,lease_until=NULL,error_code=?,next_attempt_at=?,updated_at=? WHERE id=?').run(status, status === 'CANCELLED' ? null : 'PARSE_TIMEOUT', now() + 1000 * 2 ** Math.max(0, row.attempt_count - 1), now(), row.id);
       if (status === 'QUEUED') db.prepare("UPDATE resume_parse_tasks SET stage='queued',progress=0 WHERE id=?").run(row.id);
-      state(row.resume_id, status);
+      if(!row.candidate_id)state(row.resume_id, status);
     }
   }
   function publicStatus(row) {
@@ -113,6 +114,84 @@ export function createResumeParseQueue({
         return publicStatus(row);
       });
     },
+    createCandidate(owner,id,input) {
+      if(!input||!['overwrite','fillEmpty'].includes(input.mode)||!Number.isInteger(input.expectedRevision)
+          ||typeof input.idempotencyKey!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(input.idempotencyKey))
+        throw resumeError(400,'INVALID_DRAFT');
+      return transaction(db,()=>{
+        const row=owned(owner,id);
+        if(row.status!=='SUCCEEDED'||!row.draft_json)throw resumeError(409,'DRAFT_NOT_READY');
+        const previous=db.prepare('SELECT * FROM resume_reparse_candidates WHERE resume_id=? AND idempotency_key=?').get(id,input.idempotencyKey);
+        if(previous){
+          if(previous.mode!==input.mode||previous.base_revision!==input.expectedRevision)throw resumeError(409,'IDEMPOTENCY_CONFLICT');
+          return {taskId:previous.task_id,resumeId:id,...this.candidate(owner,id,previous.task_id)};
+        }
+        if(row.revision!==input.expectedRevision)throw resumeError(409,'REVISION_CONFLICT');
+        if(db.prepare('SELECT COUNT(*) n FROM resume_reparse_candidates WHERE owner_session_id=? AND created_at>?').get(owner,now()-60_000).n>=rateLimit)
+          throw resumeError(429,'RATE_LIMITED');
+        const taskId=randomUUID();
+        db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,workflow_version,idempotency_key,status,created_at,updated_at,candidate_id) VALUES(?,?,?,?,?,?,'QUEUED',?,?,?)")
+          .run(taskId,id,owner,row.file_id,'resume-parse-v2',input.idempotencyKey,now(),now(),taskId);
+        db.prepare('INSERT INTO resume_reparse_candidates(task_id,resume_id,owner_session_id,base_revision,mode,idempotency_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
+          .run(taskId,id,owner,row.revision,input.mode,input.idempotencyKey,now(),now());
+        return {taskId,resumeId:id,status:'QUEUED',mode:input.mode,baseRevision:row.revision};
+      });
+    },
+    candidate(owner,id,taskId) {
+      owned(owner,id);
+      const record=db.prepare('SELECT c.*,t.status,t.stage,t.progress,t.error_code FROM resume_reparse_candidates c JOIN resume_parse_tasks t ON t.id=c.task_id WHERE c.resume_id=? AND c.task_id=? AND c.owner_session_id=?').get(id,taskId,owner);
+      if(!record)throw resumeError(404,'CANDIDATE_NOT_FOUND');
+      const preview=record.draft_json?JSON.parse(record.draft_json).sections.map(section=>({kind:section.kind,
+        items:section.items.map(item=>({itemId:item.itemId,title:item.title,details:item.details,facts:item.facts}))})):null;
+      return {taskId,resumeId:id,status:record.status,stage:record.stage,progress:record.progress,
+        errorCode:record.error_code,mode:record.mode,baseRevision:record.base_revision,
+        appliedRevision:record.applied_revision,preview};
+    },
+    applyCandidate(owner,id,taskId,input) {
+      return transaction(db,()=>{
+        const row=owned(owner,id);
+        const candidate=db.prepare('SELECT c.*,t.status FROM resume_reparse_candidates c JOIN resume_parse_tasks t ON t.id=c.task_id WHERE c.resume_id=? AND c.task_id=? AND c.owner_session_id=?').get(id,taskId,owner);
+        if(!candidate)throw resumeError(404,'CANDIDATE_NOT_FOUND');
+        if(!input||!Number.isInteger(input.expectedRevision))throw resumeError(400,'INVALID_REVISION');
+        if(candidate.applied_revision!==null)return {revision:candidate.applied_revision,alreadyApplied:true};
+        if(candidate.status!=='SUCCEEDED'||!candidate.draft_json||!candidate.source_json)throw resumeError(409,'CANDIDATE_NOT_READY');
+        if(row.revision!==candidate.base_revision||row.revision!==input.expectedRevision)throw resumeError(409,'REVISION_CONFLICT');
+        const current=normalizeResumeDraft(JSON.parse(row.draft_json));
+        const oldSource=sourceFor(row);
+        const reconciled=reconcileCandidateSource(oldSource,JSON.parse(candidate.source_json),
+          normalizeResumeDraft(JSON.parse(candidate.draft_json)),taskId);
+        const deleted=new Set(db.prepare('SELECT source_ids_json FROM resume_deleted_items WHERE resume_id=?').all(id)
+          .flatMap(entry=>JSON.parse(entry.source_ids_json)));
+        const result=candidate.mode==='overwrite'?overwriteDraft(current,reconciled.draft)
+          :mergeEmptyDraft(current,reconciled.draft,deleted);
+        result.revision=row.revision+1;
+        let clean;
+        try{clean=validateResumeDraftV2(result,reconciled.source);}catch{throw resumeError(400,'INVALID_DRAFT');}
+        const ids=[...draftImageIds(clean)];
+        if(ids.length){
+          const count=db.prepare(`SELECT COUNT(*) n FROM resume_images WHERE resume_id=? AND id IN (${ids.map(()=>'?').join(',')})`).get(id,...ids).n;
+          if(count!==ids.length)throw resumeError(409,'HISTORY_IMAGE_MISSING');
+        }
+        const prior=snapshotPrevious(db,row,now);
+        const insert=db.prepare('INSERT INTO resume_blocks(resume_id,block_id,block_json) VALUES(?,?,?)');
+        for(const block of reconciled.newBlocks)insert.run(id,block.blockId,JSON.stringify(block));
+        recordDeletedItems(db,id,current,clean);
+        db.prepare('UPDATE resumes SET draft_json=?,revision=?,updated_at=? WHERE id=?').run(JSON.stringify(clean),clean.revision,now(),id);
+        db.prepare('UPDATE resume_reparse_candidates SET applied_revision=?,updated_at=? WHERE task_id=?').run(clean.revision,now(),taskId);
+        reclaimImages(db,id,new Set([...prior,...draftImageIds(current)]));
+        return {draft:clean,revision:clean.revision};
+      });
+    },
+    cancelCandidate(owner,id,taskId) {
+      return transaction(db,()=>{
+        owned(owner,id);
+        const task=db.prepare('SELECT * FROM resume_parse_tasks WHERE id=? AND resume_id=? AND owner_session_id=? AND candidate_id=?').get(taskId,id,owner,taskId);
+        if(!task)throw resumeError(404,'CANDIDATE_NOT_FOUND');
+        if(['QUEUED','RUNNING'].includes(task.status))db.prepare('UPDATE resume_parse_tasks SET status=?,updated_at=? WHERE id=?')
+          .run(task.status==='QUEUED'?'CANCELLED':'CANCELLING',now(),taskId);
+        return {status:db.prepare('SELECT status FROM resume_parse_tasks WHERE id=?').get(taskId).status};
+      });
+    },
     status(owner, id) {
       // BEGIN IMMEDIATE fences other connections before selecting expired leases.
       // Recovery and the returned resume/task state must observe one transaction.
@@ -151,7 +230,9 @@ export function createResumeParseQueue({
       return transaction(db,()=>{
         const row=owned(owner,id);
         if(row.status!=='SUCCEEDED'||!row.draft_json) throw resumeError(409,'DRAFT_NOT_READY');
-        return restoreVersion(db,row,input,sourceFor(row),now);
+        const result=restoreVersion(db,row,input,sourceFor(row),now);
+        recordDeletedItems(db,id,normalizeResumeDraft(JSON.parse(row.draft_json)),result.draft);
+        return result;
       });
     },
     // 原文对照摘录：仅暴露条目核对所需字段，bbox/字号等私有布局细节不下发
@@ -234,6 +315,7 @@ export function createResumeParseQueue({
         const previous=JSON.parse(row.draft_json);
         const removed=new Set([...draftImageIds(previous)].filter(imageId=>!imageIds.includes(imageId)));
         const pruned=snapshotPrevious(db,row,now);
+        recordDeletedItems(db,id,normalizeResumeDraft(previous),clean);
         clean.revision = revision + 1;
         db.prepare('UPDATE resumes SET draft_json=?,revision=?,updated_at=? WHERE id=?').run(JSON.stringify(clean), clean.revision, now(), id);
         reclaimImages(db,id,new Set([...removed,...pruned]));
@@ -268,7 +350,7 @@ export function createResumeParseQueue({
         const token = randomUUID();
         const workflowVersion = row.workflow_version === 'resume-parse-v1' ? 'resume-parse-v2' : row.workflow_version;
         db.prepare("UPDATE resume_parse_tasks SET status='RUNNING',workflow_version=?,stage='validate_source',error_code=NULL,lease_token=?,lease_until=?,worker_id=?,attempt_count=attempt_count+1,updated_at=? WHERE id=?").run(workflowVersion, token, now() + leaseMs, workerId, now(), row.id);
-        state(row.resume_id, 'RUNNING');
+        if(!row.candidate_id)state(row.resume_id, 'RUNNING');
         const file = liveFile(row.owner_session_id, row.file_id);
         return {
           id: row.id,
@@ -316,6 +398,18 @@ export function createResumeParseQueue({
         if (cleanSource.blocks.some(b => !covered.has(b.blockId))) throw resumeError(400, 'INVALID_DRAFT');
         const hidden = new Set(['phone', 'age', 'politicalStatus', 'politicalAffiliation', 'expectedSalary', 'salary']);
         if (cleanDraft.sections.some(s => s.items.some(i => i.included || i.facts.some(f => hidden.has(f.key) && f.included)))) throw resumeError(400, 'INVALID_DRAFT');
+        if(task.candidate_id){
+          const candidate=db.prepare('SELECT * FROM resume_reparse_candidates WHERE task_id=? AND resume_id=?').get(id,task.resume_id);
+          const current=owned(task.owner_session_id,task.resume_id);
+          if(!candidate||current.revision!==candidate.base_revision){
+            db.prepare("UPDATE resume_parse_tasks SET status='FAILED',error_code='REVISION_CONFLICT',lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(now(),id);
+            return {ok:true};
+          }
+          db.prepare('UPDATE resume_reparse_candidates SET source_json=?,draft_json=?,updated_at=? WHERE task_id=?')
+            .run(JSON.stringify(cleanSource),JSON.stringify(normalizeResumeDraft(cleanDraft)),now(),id);
+          db.prepare("UPDATE resume_parse_tasks SET status='SUCCEEDED',stage='complete_draft',progress=100,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(now(),id);
+          return {ok:true};
+        }
         db.prepare('DELETE FROM resume_blocks WHERE resume_id=?').run(task.resume_id);
         const insert = db.prepare('INSERT INTO resume_blocks(resume_id,block_id,block_json) VALUES(?,?,?)');
         for (const block of cleanSource.blocks) insert.run(task.resume_id, block.blockId, JSON.stringify(block));
@@ -334,7 +428,7 @@ export function createResumeParseQueue({
         const status = retry ? 'QUEUED' : 'FAILED';
         db.prepare('UPDATE resume_parse_tasks SET status=?,error_code=?,lease_token=NULL,lease_until=NULL,next_attempt_at=?,updated_at=? WHERE id=?').run(status, error, now() + 1000 * 2 ** (row.attempt_count - 1), now(), id);
         if (retry) db.prepare("UPDATE resume_parse_tasks SET stage='queued',progress=0 WHERE id=?").run(id);
-        state(row.resume_id, status);
+        if(!row.candidate_id)state(row.resume_id, status);
         return {
           ok: true
         };
@@ -345,7 +439,7 @@ export function createResumeParseQueue({
         const row = requireLease(id, token, true);
         if (row.status !== 'CANCELLING') throw resumeError(409, 'LEASE_LOST');
         db.prepare("UPDATE resume_parse_tasks SET status='CANCELLED',lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(now(), id);
-        state(row.resume_id, 'CANCELLED');
+        if(!row.candidate_id)state(row.resume_id, 'CANCELLED');
         return {
           ok: true
         };
