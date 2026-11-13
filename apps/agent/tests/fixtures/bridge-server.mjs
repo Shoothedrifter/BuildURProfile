@@ -23,8 +23,9 @@ const portrait = generationService.savePortrait("test-owner", `data:${portraitMi
 const queuedPortrait = generationService.enqueue("test-owner", { brief, idempotencyKey: "python-bridge-photo",
   portraitAssetId: portrait.id, styleId: "retro-flat-anime-head" });
 const resumeRepository = createResumeRepository({db,root:join(root,'resumes')});
-const uploadedResume = await resumeRepository.upload('test-owner',pdf(),'synthetic.pdf','application/pdf');
-const parsedResume = resumeRepository.queue.parse('test-owner',{fileId:uploadedResume.fileId,idempotencyKey:'python-resume-bridge'});
+const ocrRequested=process.env.AGENT_TEST_OCR==='1';
+const uploadedResume = await resumeRepository.upload('test-owner',pdf(1,!ocrRequested),'synthetic.pdf','application/pdf');
+const parsedResume = resumeRepository.queue.parse('test-owner',{fileId:uploadedResume.fileId,idempotencyKey:'python-resume-bridge',ocrRequested});
 const token = process.env.AGENT_SERVICE_TOKEN;
 const server = createPaymentHttpServer({ db, service: {}, generationService, resumeRepository, portraitEnabled: true,
   agentToken: token, secret: Buffer.alloc(32, 7), agentStyleLoader: (id) => ({ id, version: "test-v1",

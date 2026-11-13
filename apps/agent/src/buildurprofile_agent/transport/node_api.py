@@ -50,17 +50,21 @@ class ResumeParseTask:
     page_count: int
     uploaded_at: str
     expires_at: str
+    ocr_pages: list[int] | None = None
 
     @classmethod
     def from_json(cls, value: dict[str, Any]) -> "ResumeParseTask":
         keys = ("id", "leaseToken", "resumeId", "fileId", "uploadedAt", "expiresAt")
         if any(not isinstance(value.get(key), str) or not value[key] for key in keys):
             raise ValueError("Invalid resume lease response")
-        if value.get("workflowVersion") != "resume-parse-v2" or type(value.get("pageCount")) is not int or not 1 <= value["pageCount"] <= 20:
+        if value.get("workflowVersion") not in {"resume-parse-v2", "resume-parse-v3"} or type(value.get("pageCount")) is not int or not 1 <= value["pageCount"] <= 20:
             raise ValueError("Invalid resume lease response")
+        pages = value.get("ocrPages", [])
+        if pages is not None and (not isinstance(pages, list) or any(type(page) is not int or page < 1 or page > value["pageCount"] for page in pages) or len(pages) != len(set(pages))):
+            raise ValueError("Invalid OCR page list")
         return cls(value["id"], value["leaseToken"], value["workflowVersion"],
                    value["resumeId"], value["fileId"], value["pageCount"],
-                   value["uploadedAt"], value["expiresAt"])
+                   value["uploadedAt"], value["expiresAt"], pages)
 
 
 @dataclass(frozen=True)
@@ -163,9 +167,10 @@ class NodeAgentClient:
                                        lease=task.lease_token)
         return response.content
 
-    async def resume_plan(self, task: ResumeParseTask) -> dict:
-        response = await self._request("GET", f"/_internal/agent/resume-tasks/{task.id}/plan",
-                                       lease=task.lease_token)
+    async def resume_plan(self, task: ResumeParseTask, pages: list[str] | None = None) -> dict:
+        response = await self._request("POST" if pages is not None else "GET",
+            f"/_internal/agent/resume-tasks/{task.id}/plan", lease=task.lease_token,
+            json={"pages": pages} if pages is not None else None)
         result = response.json()
         if not isinstance(result, dict):
             raise ValueError("PARSE_FAILED: invalid parse plan")

@@ -1,6 +1,9 @@
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim && \
+    rm -rf /var/lib/apt/lists/*
 COPY apps/agent /app/apps/agent
 RUN pip install --no-cache-dir uv==0.11.12 && \
     uv sync --project /app/apps/agent --frozen --no-dev --no-editable && \

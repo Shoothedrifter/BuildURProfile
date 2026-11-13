@@ -25,9 +25,9 @@ export function createResumeRepository({db,root,now=Date.now}) {
  },
  async upload(owner,bytes,fileName,mime){
   if(typeof fileName!=='string'||fileName.length>200||/[\x00-\x1f\x7f/\\]/.test(fileName)||!fileName.toLowerCase().endsWith('.pdf')||mime?.split(';')[0].trim().toLowerCase()!=='application/pdf')throw resumeError(400,'FILE_TYPE_INVALID');
-  const pageCount=await validatePdf(bytes),id=randomUUID(),uploadedAt=Math.floor(now()/1000)*1000;
-  try{store.write(id,bytes);db.prepare('INSERT INTO resume_files(id,owner_session_id,file_name,size,page_count,uploaded_at,expires_at) VALUES(?,?,?,?,?,?,?)').run(id,owner,fileName,bytes.length,pageCount,uploadedAt,uploadedAt+30*86400000);}catch{store.remove(id);throw resumeError(500,'UPLOAD_FAILED');}
-  return {fileId:id,fileName,size:bytes.length,pageCount};
+  const {pageCount,emptyPages}=await validatePdf(bytes),id=randomUUID(),uploadedAt=Math.floor(now()/1000)*1000;
+  try{store.write(id,bytes);db.prepare('INSERT INTO resume_files(id,owner_session_id,file_name,size,page_count,uploaded_at,expires_at,empty_pages_json) VALUES(?,?,?,?,?,?,?,?)').run(id,owner,fileName,bytes.length,pageCount,uploadedAt,uploadedAt+30*86400000,JSON.stringify(emptyPages));}catch{store.remove(id);throw resumeError(500,'UPLOAD_FAILED');}
+  return {fileId:id,fileName,size:bytes.length,pageCount,emptyPages};
  },async cloneForReparse(owner,resumeId){
   const original=getResume(owner,resumeId);
   return repository.upload(owner,store.read(original.id),original.file_name,'application/pdf');

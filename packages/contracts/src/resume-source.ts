@@ -1,6 +1,9 @@
 import schema from '../schema/resume-source.v1.json' with { type: 'json' };
+import schemaV2 from '../schema/resume-source.v2.json' with { type: 'json' };
 export type PdfBlock = { blockId: string; page: number; bbox: number[]; fontSize: number; bold: boolean; readingOrder: number; text: string };
 export type ResumeSourceV1 = { version: 'resume-source-v1'; fileId: string; extractionVersion: 'pdf-layout-v1'; uploadedAt: string; expiresAt: string; pageCount: number; blocks: PdfBlock[] };
+export type ResumeSourceV2 = Omit<ResumeSourceV1,'version'|'extractionVersion'|'blocks'> & {
+  version:'resume-source-v2';extractionVersion:'pdf-layout-v2';blocks:(PdfBlock & {sourceType:'pdf'|'ocr';ocrConfidence?:number|null})[]};
 type Schema = { $ref?: string; $defs?: Record<string, Schema>; type?: string; const?: unknown; enum?: unknown[]; properties?: Record<string, Schema>; required?: string[]; additionalProperties?: boolean; items?: Schema; minItems?: number; maxItems?: number; minLength?: number; maxLength?: number; pattern?: string; minimum?: number; maximum?: number };
 /** The checked-in Pydantic schema is also the TS boundary's structural authority. */
 export function validateSchema(value: unknown, rawSchema: unknown): void {
@@ -25,15 +28,21 @@ export function validateSchema(value: unknown, rawSchema: unknown): void {
   };
   check(value, root);
 }
-export function validateResumeSource(raw: unknown): ResumeSourceV1 {
-  validateSchema(raw, schema);
-  const source = raw as ResumeSourceV1;
+export function validateResumeSource(raw: unknown): ResumeSourceV1 | ResumeSourceV2 {
+  const isV2=(raw as {version?:string})?.version==='resume-source-v2';
+  validateSchema(raw,isV2?schemaV2:schema);
+  const source = raw as ResumeSourceV1 | ResumeSourceV2;
   const dates = [source.uploadedAt, source.expiresAt].map(t => new Date(t));
   if (dates.some((d,i) => !Number.isFinite(d.getTime()) || d.toISOString().replace('.000Z', 'Z') !== [source.uploadedAt, source.expiresAt][i]) || dates[1].getTime() - dates[0].getTime() !== 30 * 86400000) throw new Error('Invalid retention dates');
   const ids = new Set<string>(), orders = new Map<number, number>();
   for (const b of source.blocks) {
     if (ids.has(b.blockId) || b.page > source.pageCount || b.readingOrder <= (orders.get(b.page) ?? -1) || b.bbox.some(n => n < 0 || n > 100000) || b.bbox[2] < b.bbox[0] || b.bbox[3] < b.bbox[1]) throw new Error('Invalid PDF layout');
     ids.add(b.blockId); orders.set(b.page, b.readingOrder);
+    if(isV2){
+      const block=b as ResumeSourceV2['blocks'][number];
+      if(block.sourceType==='ocr'&&(typeof block.ocrConfidence!=='number'||!Number.isFinite(block.ocrConfidence)||block.ocrConfidence<0||block.ocrConfidence>1)
+          ||block.sourceType==='pdf'&&block.ocrConfidence!=null)throw new Error('Invalid OCR provenance');
+    }
   }
   return structuredClone(source);
 }

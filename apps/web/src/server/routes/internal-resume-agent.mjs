@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { resumeError } from '../../../../../packages/storage/src/resumes/files.mjs';
-import { planFromPdf } from '../resume-plan.mjs';
+import { planFromPdf, planFromPages } from '../resume-plan.mjs';
 export async function handleInternalResumeAgentRoutes({
   req,
   res,
@@ -44,6 +44,15 @@ export async function handleInternalResumeAgentRoutes({
   if (req.method === 'GET' && action === 'plan') {
     const bytes = queue.source(id, req.headers['x-agent-lease']);
     sendJson(res, 200, await planFromPdf(bytes));
+    return true;
+  }
+  if (req.method === 'POST' && action === 'plan') {
+    queue.source(id, req.headers['x-agent-lease']);
+    const input = await bodyJson(req, 250_000);
+    if (!Array.isArray(input?.pages) || input.pages.length < 1 || input.pages.length > 20
+        || input.pages.some(page => typeof page !== 'string' || page.length > 200_000)
+        || input.pages.join('').length > 200_000) throw resumeError(400, 'PARSE_FAILED');
+    sendJson(res, 200, planFromPages(input.pages));
     return true;
   }
   if (req.method !== 'POST' || !['heartbeat', 'complete', 'fail', 'ack-cancel'].includes(action)) return false;

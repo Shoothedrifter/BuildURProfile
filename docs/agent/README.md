@@ -9,7 +9,7 @@
 | `src/buildurprofile_agent/server.py` | FastAPI、checkpoint 和 worker 生命周期 |
 | `src/buildurprofile_agent/worker.py` | 消费任务、心跳、取消与错误分类 |
 | `src/buildurprofile_agent/graph.py` | LangGraph 节点、条件分支与 Skill 计划 |
-| `src/buildurprofile_agent/graphs/resume_parse.py` | 七节点 `resume-parse-v2` 私有解析图；checkpoint 仅含任务元数据 |
+| `src/buildurprofile_agent/graphs/resume_parse.py` | `resume-parse-v2/v3` 私有解析图；checkpoint 仅含任务元数据 |
 | `src/buildurprofile_agent/contracts.py` | Python 边界数据模型 |
 | `src/buildurprofile_agent/transport/node_api.py` | 带令牌和租约的 Node 客户端 |
 | `src/buildurprofile_agent/skills/` | 注册表、评分、设计、内容组装、肖像和 QA |
@@ -20,9 +20,9 @@
 
 ## Skill 扩展
 
-当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2/v3`、`resume.format.v1`、`avatar.wibi.v1` 和 `artifact.qa.v1/v2`。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。`resume.sections.v1` 与 `resume.items.v1` 保留兼容定义，v2 图不调用。细节见[解析流程 v2](resume-anchored-formatting.md)。
+当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2/v3/v4`、`resume.format.v1/v2`、`avatar.wibi.v1` 和 `artifact.qa.v1/v2/v3`。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。旧解析 Skill 保留兼容定义。细节见[解析流程 v2](resume-anchored-formatting.md)。
 
-简历解析由独立 Worker 领取 `resume-parse-v2` 队列。PDF 版面提取使用 `pdfplumber`，Web 通过 PDF.js 运行与旧浏览器入口相同的条目解析函数。`RESUME_TEXT_PROVIDER=openai` 使用 OpenAI Responses 严格 JSON Schema；`RESUME_TEXT_PROVIDER=zai` 使用智谱 Response API 的 `json_object` 输出，再由 Agent 按同一 Schema 和来源块合同校验。两者复用现有 OpenAI Python SDK，但必须使用各自的 API Key 和地址。原 PDF、提取文本、模型提示与结果只在当前图执行内存中流转，不进入 LangGraph checkpoint。缺少模型或对应 Key 时任务明确失败为 `PARSE_FAILED`，Agent 日志只记录安全的失败类别，不输出密钥、简历或模型响应。配置见 [Agent 样例](../../apps/agent/.env.example)。合成假模型跨端测试覆盖真实 Node HTTP 租约和 Python 图；真实供应商仍须单独联调。
+简历解析由独立 Worker 领取 `resume-parse-v2/v3` 队列。文本页用 `pdfplumber` 提取；用户主动选择 OCR 后，`pypdfium2` 仅渲染无文字页并调用本机 Tesseract 中英文语言包，私有 `resume-source-v2` 记录来源与置信度，低置信度条目待核对。Web 通过 PDF.js 和旧浏览器解析器制定模块与条目边界。`RESUME_TEXT_PROVIDER=openai` 使用 OpenAI Responses 严格 JSON Schema；`RESUME_TEXT_PROVIDER=zai` 使用智谱 Response API 的 `json_object` 输出，再由 Agent 按同一合同校验。两者复用现有 OpenAI Python SDK，但必须使用各自的 API Key 和地址。原 PDF、页面图像、提取文本、模型提示与结果只在当前图执行内存中流转，不进入 LangGraph checkpoint 或日志。缺少模型或对应 Key 时任务返回 `PARSE_FAILED`；OCR 缺组件、缺语言包、超时和无文字有独立错误码。配置见 [Agent 样例](../../apps/agent/.env.example)。合成假模型跨端测试覆盖 Node HTTP 租约和 Python 图；真实供应商仍须单独联调。
 
 新增 Skill 时，在 `skills/` 实现并注册稳定 ID、版本、输入输出校验、能力、许可和超时，再由图节点显式授予所需能力。新增能力需加入 `KNOWN_CAPABILITIES` 并审查数据边界；不注入支付、数据库、任意 shell 或文件系统对象。外部下载的 `SKILL.md` 不作为可执行指令运行。
 
@@ -62,8 +62,8 @@ Wibi 风格规则具有个人非商业限制。未获得商业授权或替换为
 
 生产开放肖像还需完成真实供应商评测、身份一致性与内容 QA、成本和地区配置，以及持久资产快照与离线嵌入设计。现有文件格式校验不能替代视觉验收。
 
-## 确认内容 v3
+## 确认内容 v4
 
-新 Agent 简历生成使用 `python-agent-v3`、`GenerationBriefV2` 和 `DesignConfigV2`。`resume.compose.v3` 只验证并透传 `resume-v2` 的条目、事实和补充内容；不再调用模型重写，图片只有稳定 ID。`artifact.qa.v2` 验证新合同，图同时检查最终 content 与确认 brief 完全一致。肖像重生成可以复用受校验的 v2 config，仍受本机非商业预览限制。
+新 Agent 简历生成使用 `python-agent-v4`、`GenerationBriefV3` 和 `DesignConfigV3`。`resume.compose.v4` 只验证并透传按用户确认顺序排列的 `resume-v3` 条目、事实和补充内容；不再调用模型重写，图片只有稳定 ID。`artifact.qa.v3` 验证新合同，图同时检查最终 content 与确认 brief 完全一致。肖像重生成仍受本机非商业预览限制。
 
-Worker 同时消费旧 `python-agent-v2`，其 `resume.compose.v2`、v1 合同及旧黄金样例保持原语义。新旧版本混用明确失败；不能直接让 v2 图读取 `resume-v2`。Schema 导出和 `agent-golden.v2.json`、真实 Node HTTP ↔ Python 图的合成测试覆盖新版合同与免费项目创建，不需要真实模型或支付凭据。
+Worker 同时消费旧 `python-agent-v2/v3`，其合同及黄金样例保持原语义。新旧版本混用明确失败。Schema 导出、`agent-golden.v3.json` 和 Node HTTP ↔ Python 图的合成测试覆盖新版合同与免费项目创建，不需要真实模型或支付凭据。

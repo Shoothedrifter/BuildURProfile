@@ -88,6 +88,49 @@ async def test_real_node_bridge_text_only():
 
 
 @pytest.mark.asyncio
+async def test_real_node_bridge_ocr_private_plan_and_completion(monkeypatch):
+    token = "o" * 64
+    tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+           "5\t1\t1\t1\t1\t1\t20\t30\t120\t18\t64\tSynthetic fixture\n")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: type("Result", (), {
+        "returncode": 0, "stdout": tsv.encode(), "stderr": b""})())
+    proc = subprocess.Popen(["node", "apps/agent/tests/fixtures/bridge-server.mjs"], cwd=ROOT,
+                            env={**os.environ, "AGENT_SERVICE_TOKEN": token, "AGENT_TEST_OCR": "1"},
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True)
+    try:
+        line = await asyncio.wait_for(asyncio.to_thread(proc.stdout.readline), timeout=10)
+        assert line, proc.stderr.read()
+        endpoint = json.loads(line)
+        client = NodeAgentClient(endpoint["baseUrl"], token)
+        try:
+            task = await client.lease_resume("python_ocr_integration")
+            assert task and task.workflow_version == "resume-parse-v3" and task.ocr_pages == [1]
+
+            class MockTextModel:
+                async def generate_json(self, name, schema, prompt):
+                    assert "Synthetic fixture" in prompt
+                    return {"items": [{"anchorId": "a0", "kind": "other",
+                        "title": "Synthetic fixture", "details": "Synthetic fixture", "confidence": .95}]}
+
+            await process_resume_task(task, client, MockTextModel(), default_registry(),
+                                      MemorySaver(), "python_ocr_integration")
+            from buildurprofile_agent.transport.node_api import LeaseLost
+            with pytest.raises(LeaseLost):
+                await client.resume_source(task)
+            assert await client.lease_resume("python_ocr_integration") is None
+        finally:
+            await client.close()
+    finally:
+        proc.terminate()
+        try:
+            await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await asyncio.to_thread(proc.wait)
+
+
+@pytest.mark.asyncio
 async def test_resume_transport_keeps_private_protocol_separate_and_fences_old_lease():
     import httpx
     from buildurprofile_agent.transport.node_api import LeaseLost

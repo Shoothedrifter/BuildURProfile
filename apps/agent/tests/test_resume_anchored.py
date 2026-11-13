@@ -181,16 +181,17 @@ async def test_formatter_still_rejects_rearranged_or_invented_number_segments():
 
 
 @pytest.mark.asyncio
-async def test_number_rejection_names_the_number_and_anchor_for_diagnosis():
-    # 拒绝时必须留下可诊断上下文：被拒数字与锚点原文，线上失败才能定位到具体条目
+async def test_number_rejection_does_not_log_private_anchor_text():
     raw = source("项目甲", "完成模型训练")
     anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
         {"anchorId": "a0", "kind": "projects", "page": 1,
          "text": "项目甲\n完成模型训练"}]})
     model = FakeModel({"items": [{"anchorId": "a0", "kind": "projects", "title": "项目甲",
                                   "details": "训练准确率提升 90%", "confidence": .99}]})
-    with pytest.raises(ValueError, match=r"absent from source.*number=90.*anchor=a0.*项目甲"):
+    with pytest.raises(ValueError, match=r"absent from source") as error:
         await format_anchors(raw, anchors, model)
+    assert "项目甲" not in str(error.value)
+    assert "90" not in str(error.value)
 
 
 @pytest.mark.asyncio

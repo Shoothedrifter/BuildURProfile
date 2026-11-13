@@ -15,10 +15,9 @@ export async function validatePdf(bytes) {
   if(doc.numPages<1||doc.numPages>20)throw resumeError(400,'PDF_PAGE_LIMIT');
   // Encrypted PDFs remain disallowed even when an empty password opens them.
   if(await doc.getPermissions() !== null)throw resumeError(400,'PDF_ENCRYPTED');
-  let hasText=false;
-  for(let n=1;n<=doc.numPages;n++) {const page=await doc.getPage(n);const text=await page.getTextContent();if(text.items.some(item=>item.str?.trim()))hasText=true;page.cleanup();}
-  if(!hasText)throw resumeError(400,'PDF_NO_TEXT');
-  return doc.numPages;
+  const emptyPages=[];
+  for(let n=1;n<=doc.numPages;n++) {const page=await doc.getPage(n);const text=await page.getTextContent();if(!text.items.some(item=>item.str?.trim()))emptyPages.push(n);page.cleanup();}
+  return {pageCount:doc.numPages,emptyPages};
  }catch(error){if(error.errorCode)throw error;throw resumeError(400,error.name==='PasswordException'?'PDF_ENCRYPTED':'FILE_TYPE_INVALID');}
  finally{await task.destroy();}
 }

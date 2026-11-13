@@ -27,6 +27,7 @@
 
 1. 安装 Node.js 22.12+（推荐 24+）、Python 3.11+ 和 uv 0.11.x。
 2. 运行 `npm ci` 和 `uv sync --project apps/agent --frozen --extra test`。
+   若需在本机处理扫描页，另安装 Tesseract 可执行文件及 `eng`、`chi_sim` 语言包，并验证 `tesseract --list-langs` 包含两者；Compose 的 Agent 镜像已安装这些组件。缺少组件时普通文本解析仍可使用，OCR 会返回专用错误码。
 3. 旧浏览器解析与无照片预览可直接运行 `npm run dev`。新 Agent 简历解析需从 `apps/agent/.env.example` 准备根 `.env.agent`，按所选 OpenAI 或 GLM 供应商填入模型和对应 Key；需要支付时，再从 `apps/launcher/.env.local.example` 准备根 `.env`；需要肖像时运行 `npm run setup:avatar` 并配置图像供应商。修改 `.env.agent` 后重启 `npm run dev`，运行中的 Python Agent 不会自动重新读取它。
 4. 打开 `http://127.0.0.1:5173`；Next.js 开发服务默认监听 5173（前后端同源），Agent 默认 8788。图像服务配置见[Agent](../agent/README.md)，支付字段见[支付文档](../api/payment.md)。
 

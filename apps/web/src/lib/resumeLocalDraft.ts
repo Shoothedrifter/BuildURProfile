@@ -46,12 +46,18 @@ export function applyLocalDelta(base:ResumeDraftV2,delta:ResumeLocalDelta,cacheS
       const baseline=original.get(id);
       const itemPatch=itemPatches.get(id);
       if(!baseline&&!itemPatch?.isNew)throw new Error('本地草稿条目无效。');
+      const parent=itemPatch?.values.derivedFromItemId
+        ?original.get(itemPatch.values.derivedFromItemId):undefined;
+      if(!baseline&&itemPatch?.values.derivedFromItemId&&!parent)
+        throw new Error('本地草稿拆分来源无效。');
       const item=baseline?structuredClone(baseline):{
         itemId:id,order:index,title:'',details:'',facts:[],sourceBlockIds:[],
         confidence:1,segmentationConfidence:1,needsReview:false,included:false,
         origin:'user' as const,editedFields:[]
       };
-      return {...item,...itemPatch?.values,order:index} as ResumeDraftItemV2;
+      return {...item,...(parent?{sourceBlockIds:[...parent.sourceBlockIds],
+        confidence:parent.confidence,segmentationConfidence:parent.segmentationConfidence}:{}),
+        ...itemPatch?.values,order:index} as ResumeDraftItemV2;
     });
   }
   return next;

@@ -22,13 +22,13 @@ it("discloses retention and OpenAI before uploading, then queues Agent parse", a
   expect(screen.getByText(/30 天/)).toBeInTheDocument();
   expect(screen.getByText(/OpenAI/)).toBeInTheDocument();
   expect(screen.getByText(/仅 PDF · 单次 1 个文件 · ≤10MB · 1–20 页/)).toBeInTheDocument();
-  expect(screen.getByText(/不支持加密文件或扫描版 PDF/)).toBeInTheDocument();
+  expect(screen.getByText(/扫描版 PDF 可在普通解析失败后主动尝试本机 OCR/)).toBeInTheDocument();
   expect(screen.getAllByRole("img", { name: "BuildURProfile" })).toHaveLength(2);
   fireEvent.change(screen.getByLabelText(/选择或拖入 PDF 简历/), {
     target: { files: [new File(["%PDF-synthetic"], "synthetic.pdf", { type: "application/pdf" })] }
   });
   fireEvent.click(screen.getByRole("button", { name: "上传并解析简历" }));
-  await waitFor(() => expect(resumeApi.parse).toHaveBeenCalledWith("file-1"));
+  await waitFor(() => expect(resumeApi.parse).toHaveBeenCalledWith("file-1", false));
   // 解析阶段映射为「整理模块」，同时展示百分比进度
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("整理模块"));
   expect(screen.getByRole("status")).toHaveTextContent("45%");
@@ -45,7 +45,7 @@ it("can retry a failed Agent parse after refreshing the upload page", async () =
   const view = render(<UploadPage />);
   expect(await screen.findByRole("alert")).toHaveTextContent("PARSE_FAILED");
   fireEvent.click(screen.getByRole("button", { name: "重试 Agent 解析" }));
-  await waitFor(() => expect(resumeApi.parse).toHaveBeenCalledWith("file-1"));
+  await waitFor(() => expect(resumeApi.parse).toHaveBeenCalledWith("file-1", false));
   view.unmount();
 });
 
@@ -58,7 +58,7 @@ it("recovers a previous upload's file ID from the owned status response", async 
   expect(await screen.findByRole("alert")).toHaveTextContent("PARSE_FAILED");
   expect(sessionStorage.getItem("burp-agent-file-id")).toBe("file-1");
   fireEvent.click(screen.getByRole("button", { name: "重试 Agent 解析" }));
-  await waitFor(() => expect(resumeApi.parse).toHaveBeenCalledWith("file-1"));
+  await waitFor(() => expect(resumeApi.parse).toHaveBeenCalledWith("file-1", false));
   view.unmount();
 });
 
@@ -68,5 +68,18 @@ it("explains why an encrypted PDF is rejected", async () => {
     errorCode: "PDF_ENCRYPTED" });
   const view = render(<UploadPage />);
   expect(await screen.findByRole("alert")).toHaveTextContent(/加密/);
+  view.unmount();
+});
+
+it("offers local OCR only after a scanned PDF failed normal parsing", async () => {
+  sessionStorage.setItem("burp-agent-resume-id", "resume-1");
+  sessionStorage.setItem("burp-agent-file-id", "file-1");
+  vi.mocked(resumeApi.status).mockResolvedValue({ resumeId: "resume-1", status: "FAILED",
+    fileId: "file-1", errorCode: "PDF_NO_TEXT", ocrAvailable: true });
+  vi.mocked(resumeApi.parse).mockResolvedValue({ resumeId: "resume-1", status: "QUEUED" });
+  const view = render(<UploadPage />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/本机 OCR/);
+  fireEvent.click(screen.getByRole("button", { name: "尝试本机 OCR" }));
+  await waitFor(() => expect(resumeApi.parse).toHaveBeenCalledWith("file-1", true));
   view.unmount();
 });

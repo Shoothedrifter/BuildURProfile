@@ -6,8 +6,9 @@ import { validateResumeSource } from '../../../contracts/src/resume-source.ts';
 import { normalizeResumeDraft, validateResumeDraft, validateResumeDraftV2 } from '../../../contracts/src/resume-draft.ts';
 import { draftImageIds, historyImageIds, listVersions, readVersion, reclaimImages, restoreVersion, snapshotPrevious } from './versions.mjs';
 import { mergeEmptyDraft, overwriteDraft, reconcileCandidateSource, recordDeletedItems } from './candidates.mjs';
-const STAGES = ['queued', 'validate_source', 'extract_layout', 'classify_sections', 'map_design_modules', 'split_items', 'format_items', 'verify_evidence', 'complete_draft'];
-const ERRORS = new Set(['PARSE_TIMEOUT', 'PARSE_FAILED', 'FILE_TYPE_INVALID', 'PDF_PAGE_LIMIT', 'PDF_ENCRYPTED', 'PDF_NO_TEXT']);
+const STAGES = ['queued', 'validate_source', 'extract_layout', 'ocr_pages', 'classify_sections', 'map_design_modules', 'split_items', 'format_items', 'verify_evidence', 'complete_draft'];
+const ERRORS = new Set(['PARSE_TIMEOUT', 'PARSE_FAILED', 'FILE_TYPE_INVALID', 'PDF_PAGE_LIMIT', 'PDF_ENCRYPTED', 'PDF_NO_TEXT',
+  'OCR_UNAVAILABLE','OCR_LANGUAGE_MISSING','OCR_TIMEOUT','OCR_NO_TEXT','OCR_FAILED','REVISION_CONFLICT']);
 const iso = value => new Date(value).toISOString().replace('.000Z', 'Z');
 
 /** Private parse queue. No PDF bytes or source text are stored in task rows. */
@@ -39,14 +40,16 @@ export function createResumeParseQueue({
   const latest = id => db.prepare('SELECT * FROM resume_parse_tasks WHERE resume_id=? AND candidate_id IS NULL ORDER BY rowid DESC LIMIT 1').get(id);
   function sourceFor(row) {
     const file = liveFile(row.owner_session_id, row.file_id);
+    const blocks=db.prepare('SELECT block_json FROM resume_blocks WHERE resume_id=? ORDER BY rowid').all(row.id).map(b=>JSON.parse(b.block_json));
+    const isV2=blocks.some(block=>block.sourceType);
     return {
-      version: 'resume-source-v1',
+      version: isV2?'resume-source-v2':'resume-source-v1',
       fileId: file.id,
-      extractionVersion: 'pdf-layout-v1',
+      extractionVersion: isV2?'pdf-layout-v2':'pdf-layout-v1',
       uploadedAt: iso(file.uploaded_at),
       expiresAt: iso(file.expires_at),
       pageCount: file.page_count,
-      blocks: db.prepare('SELECT block_json FROM resume_blocks WHERE resume_id=? ORDER BY rowid').all(row.id).map(b => JSON.parse(b.block_json))
+      blocks: isV2?blocks.map(block=>block.sourceType?block:{...block,sourceType:'pdf',ocrConfidence:null}):blocks
     };
   }
   function requireLease(id, token, allowCancel = false) {
@@ -75,7 +78,8 @@ export function createResumeParseQueue({
       status: task?.status ?? row.status,
       stage: task?.stage ?? null,
       progress: task?.progress ?? 0,
-      errorCode: task?.error_code ?? null
+      errorCode: task?.error_code ?? null,
+      ocrAvailable: JSON.parse(liveFile(row.owner_session_id,row.file_id).empty_pages_json??'null')?.length>0
     };
   }
   return {
@@ -83,30 +87,38 @@ export function createResumeParseQueue({
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw resumeError(400, 'PARSE_FAILED');
       const {
         fileId,
-        idempotencyKey
+        idempotencyKey,ocrRequested=false
       } = input;
-      if (typeof fileId !== 'string' || typeof idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(idempotencyKey)) throw resumeError(400, 'PARSE_FAILED');
+      if (typeof fileId !== 'string' || typeof idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(idempotencyKey)
+          ||typeof ocrRequested!=='boolean') throw resumeError(400, 'PARSE_FAILED');
       return transaction(db, () => {
         const prior = db.prepare('SELECT * FROM resume_parse_requests WHERE owner_session_id=? AND idempotency_key=?').get(owner, idempotencyKey);
         if (prior) {
           if (prior.file_id !== fileId) throw resumeError(409, 'IDEMPOTENCY_CONFLICT');
+          const previousTask=db.prepare('SELECT workflow_version FROM resume_parse_tasks WHERE id=?').get(prior.task_id);
+          if((previousTask?.workflow_version==='resume-parse-v3')!==ocrRequested)throw resumeError(409,'IDEMPOTENCY_CONFLICT');
           return publicStatus(owned(owner, prior.resume_id));
         }
-        liveFile(owner, fileId);
+        const file=liveFile(owner, fileId);
+        if(ocrRequested&&file.empty_pages_json==='[]')throw resumeError(400,'OCR_NOT_NEEDED');
         if (db.prepare('SELECT COUNT(*) AS n FROM resume_parse_requests WHERE owner_session_id=? AND created_at>?').get(owner, now() - 60_000).n >= rateLimit) throw resumeError(429, 'RATE_LIMITED');
         sweep();
         let row = db.prepare('SELECT * FROM resumes WHERE file_id=? AND owner_session_id=?').get(fileId, owner);
+        if(ocrRequested&&row?.status==='SUCCEEDED')throw resumeError(409,'DRAFT_ALREADY_READY');
         if (!row) {
           const id = randomUUID();
           db.prepare("INSERT INTO resumes(id,file_id,owner_session_id,status,created_at,updated_at) VALUES(?,?,?,'QUEUED',?,?)").run(id, fileId, owner, now(), now());
           row = owned(owner, id);
         }
         let task = latest(row.id);
+        if (task && ['QUEUED','RUNNING','CANCELLING'].includes(task.status)
+            && (task.workflow_version==='resume-parse-v3')!==ocrRequested)
+          throw resumeError(409,'PARSE_IN_PROGRESS');
         if (!task || ['FAILED', 'CANCELLED'].includes(task.status)) {
           // Fence all historical leases before making a new task for this resume.
           db.prepare('UPDATE resume_parse_tasks SET lease_token=NULL,lease_until=NULL WHERE resume_id=?').run(row.id);
           const id = randomUUID();
-          db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,workflow_version,idempotency_key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'QUEUED',?,?)").run(id, row.id, owner, fileId, 'resume-parse-v2', idempotencyKey, now(), now());
+          db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,workflow_version,idempotency_key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'QUEUED',?,?)").run(id, row.id, owner, fileId, ocrRequested?'resume-parse-v3':'resume-parse-v2', idempotencyKey, now(), now());
           state(row.id, 'QUEUED');
           task = latest(row.id);
         }
@@ -116,6 +128,7 @@ export function createResumeParseQueue({
     },
     createCandidate(owner,id,input) {
       if(!input||!['overwrite','fillEmpty'].includes(input.mode)||!Number.isInteger(input.expectedRevision)
+          ||(input.ocrRequested!==undefined&&typeof input.ocrRequested!=='boolean')
           ||typeof input.idempotencyKey!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(input.idempotencyKey))
         throw resumeError(400,'INVALID_DRAFT');
       return transaction(db,()=>{
@@ -123,17 +136,20 @@ export function createResumeParseQueue({
         if(row.status!=='SUCCEEDED'||!row.draft_json)throw resumeError(409,'DRAFT_NOT_READY');
         const previous=db.prepare('SELECT * FROM resume_reparse_candidates WHERE resume_id=? AND idempotency_key=?').get(id,input.idempotencyKey);
         if(previous){
-          if(previous.mode!==input.mode||previous.base_revision!==input.expectedRevision)throw resumeError(409,'IDEMPOTENCY_CONFLICT');
+          if(previous.mode!==input.mode||previous.base_revision!==input.expectedRevision
+              ||Boolean(previous.ocr_requested)!==Boolean(input.ocrRequested))throw resumeError(409,'IDEMPOTENCY_CONFLICT');
           return {taskId:previous.task_id,resumeId:id,...this.candidate(owner,id,previous.task_id)};
         }
         if(row.revision!==input.expectedRevision)throw resumeError(409,'REVISION_CONFLICT');
+        const file=liveFile(owner,row.file_id);
+        if(input.ocrRequested&&file.empty_pages_json==='[]')throw resumeError(400,'OCR_NOT_NEEDED');
         if(db.prepare('SELECT COUNT(*) n FROM resume_reparse_candidates WHERE owner_session_id=? AND created_at>?').get(owner,now()-60_000).n>=rateLimit)
           throw resumeError(429,'RATE_LIMITED');
         const taskId=randomUUID();
         db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,workflow_version,idempotency_key,status,created_at,updated_at,candidate_id) VALUES(?,?,?,?,?,?,'QUEUED',?,?,?)")
-          .run(taskId,id,owner,row.file_id,'resume-parse-v2',input.idempotencyKey,now(),now(),taskId);
-        db.prepare('INSERT INTO resume_reparse_candidates(task_id,resume_id,owner_session_id,base_revision,mode,idempotency_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)')
-          .run(taskId,id,owner,row.revision,input.mode,input.idempotencyKey,now(),now());
+          .run(taskId,id,owner,row.file_id,input.ocrRequested?'resume-parse-v3':'resume-parse-v2',input.idempotencyKey,now(),now(),taskId);
+        db.prepare('INSERT INTO resume_reparse_candidates(task_id,resume_id,owner_session_id,base_revision,mode,idempotency_key,created_at,updated_at,ocr_requested) VALUES(?,?,?,?,?,?,?,?,?)')
+          .run(taskId,id,owner,row.revision,input.mode,input.idempotencyKey,now(),now(),input.ocrRequested?1:0);
         return {taskId,resumeId:id,status:'QUEUED',mode:input.mode,baseRevision:row.revision};
       });
     },
@@ -144,7 +160,7 @@ export function createResumeParseQueue({
       const preview=record.draft_json?JSON.parse(record.draft_json).sections.map(section=>({kind:section.kind,
         items:section.items.map(item=>({itemId:item.itemId,title:item.title,details:item.details,facts:item.facts}))})):null;
       return {taskId,resumeId:id,status:record.status,stage:record.stage,progress:record.progress,
-        errorCode:record.error_code,mode:record.mode,baseRevision:record.base_revision,
+        errorCode:record.error_code,mode:record.mode,baseRevision:record.base_revision,ocrRequested:Boolean(record.ocr_requested),
         appliedRevision:record.applied_revision,preview};
     },
     applyCandidate(owner,id,taskId,input) {
@@ -163,7 +179,7 @@ export function createResumeParseQueue({
         const deleted=new Set(db.prepare('SELECT source_ids_json FROM resume_deleted_items WHERE resume_id=?').all(id)
           .flatMap(entry=>JSON.parse(entry.source_ids_json)));
         const result=candidate.mode==='overwrite'?overwriteDraft(current,reconciled.draft)
-          :mergeEmptyDraft(current,reconciled.draft,deleted);
+          :mergeEmptyDraft(current,reconciled.draft,deleted,Boolean(candidate.ocr_requested));
         result.revision=row.revision+1;
         let clean;
         try{clean=validateResumeDraftV2(result,reconciled.source);}catch{throw resumeError(400,'INVALID_DRAFT');}
@@ -213,7 +229,8 @@ export function createResumeParseQueue({
         draft: normalizeResumeDraft(JSON.parse(row.draft_json)),
         expiresAt: iso(liveFile(row.owner_session_id, row.file_id).expires_at),
         revision: row.revision,
-        cacheScope: session.cache_scope
+        cacheScope: session.cache_scope,
+        ocrAvailable: JSON.parse(liveFile(owner,row.file_id).empty_pages_json??'null')?.length>0
       };
     },
     versions(owner,id) {
@@ -360,7 +377,8 @@ export function createResumeParseQueue({
           fileId: row.file_id,
           pageCount: file.page_count,
           uploadedAt: iso(file.uploaded_at),
-          expiresAt: iso(file.expires_at)
+          expiresAt: iso(file.expires_at),
+          ocrPages: workflowVersion==='resume-parse-v3'?JSON.parse(file.empty_pages_json??'null'):[]
         };
       });
     },
@@ -393,7 +411,8 @@ export function createResumeParseQueue({
         } catch {
           throw resumeError(400, 'INVALID_DRAFT');
         }
-        if (cleanSource.fileId !== file.id || cleanSource.pageCount !== file.page_count || cleanSource.uploadedAt !== iso(file.uploaded_at) || cleanSource.expiresAt !== iso(file.expires_at) || cleanDraft.resumeId !== task.resume_id || cleanDraft.revision !== 1) throw resumeError(400, 'INVALID_DRAFT');
+        if (cleanSource.fileId !== file.id || cleanSource.pageCount !== file.page_count || cleanSource.uploadedAt !== iso(file.uploaded_at) || cleanSource.expiresAt !== iso(file.expires_at) || cleanDraft.resumeId !== task.resume_id || cleanDraft.revision !== 1
+          || (task.workflow_version==='resume-parse-v3' ? cleanSource.version!=='resume-source-v2'||!cleanSource.blocks.some(b=>b.sourceType==='ocr') : cleanSource.version!=='resume-source-v1')) throw resumeError(400, 'INVALID_DRAFT');
         const covered = new Set(cleanDraft.sections.flatMap(s => s.items.flatMap(i => i.sourceBlockIds)));
         if (cleanSource.blocks.some(b => !covered.has(b.blockId))) throw resumeError(400, 'INVALID_DRAFT');
         const hidden = new Set(['phone', 'age', 'politicalStatus', 'politicalAffiliation', 'expectedSalary', 'salary']);
@@ -424,7 +443,7 @@ export function createResumeParseQueue({
       return transaction(db, () => {
         const row = requireLease(id, token);
         const error = ERRORS.has(code) ? code : 'PARSE_FAILED';
-        const retry = retryable === true && ['PARSE_TIMEOUT', 'PARSE_FAILED'].includes(error) && row.attempt_count < maxAttempts;
+        const retry = retryable === true && ['PARSE_TIMEOUT', 'PARSE_FAILED','OCR_TIMEOUT'].includes(error) && row.attempt_count < maxAttempts;
         const status = retry ? 'QUEUED' : 'FAILED';
         db.prepare('UPDATE resume_parse_tasks SET status=?,error_code=?,lease_token=NULL,lease_until=NULL,next_attempt_at=?,updated_at=? WHERE id=?').run(status, error, now() + 1000 * 2 ** (row.attempt_count - 1), now(), id);
         if (retry) db.prepare("UPDATE resume_parse_tasks SET stage='queued',progress=0 WHERE id=?").run(id);

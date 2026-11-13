@@ -10,7 +10,7 @@ const savedFileKey = "burp-agent-file-id";
 
 // 解析阶段 → 三段式步进展示（上传完成 → 解析文字 → 整理模块）
 const STAGE_STEP: Record<string, 1 | 2 | 3> = {
-  queued: 2, validate_source: 2, extract_layout: 2,
+  queued: 2, validate_source: 2, extract_layout: 2, ocr_pages: 2,
   classify_sections: 3, map_design_modules: 3, split_items: 3,
   format_items: 3, verify_evidence: 3, complete_draft: 3
 };
@@ -21,7 +21,12 @@ const REJECT_COPY: Record<string, string> = {
   FILE_TOO_LARGE: "PDF 不能超过 10MB，请压缩后重试。",
   PDF_PAGE_LIMIT: "PDF 超过 20 页，请拆分后再上传。",
   PDF_ENCRYPTED: "不支持加密 PDF，请解除密码后重新上传。",
-  PDF_NO_TEXT: "这份 PDF 无法提取文字，请上传文本型 PDF。",
+  PDF_NO_TEXT: "这份 PDF 没有可提取文字。可主动尝试本机 OCR。",
+  OCR_UNAVAILABLE: "本机 OCR 服务未安装，请联系管理员。",
+  OCR_LANGUAGE_MISSING: "本机 OCR 缺少中文或英文语言包，请联系管理员。",
+  OCR_TIMEOUT: "本机 OCR 处理超时，可重试。",
+  OCR_NO_TEXT: "OCR 未能识别出文字，请检查 PDF 清晰度。",
+  OCR_FAILED: "OCR 处理失败，可重试或更换 PDF。",
   FILE_TYPE_INVALID: "请选择 PDF 文件。",
   RATE_LIMITED: "操作太频繁，请稍后再试。"
 };
@@ -36,6 +41,7 @@ export default function UploadPage() {
   const [stage, setStage] = useState<string | undefined>();
   const [progress, setProgress] = useState<number | undefined>();
   const [error, setError] = useState("");
+  const [ocrAvailable, setOcrAvailable] = useState(false);
   const sequence = useRef(0);
 
   useEffect(() => {
@@ -58,6 +64,7 @@ export default function UploadPage() {
           setFileId(next.fileId);
           sessionStorage.setItem(savedFileKey, next.fileId);
         }
+        setOcrAvailable(Boolean(next.ocrAvailable));
         if (next.status === "SUCCEEDED") {
           window.location.assign(`/editor/${encodeURIComponent(resumeId)}`);
           return;
@@ -67,7 +74,6 @@ export default function UploadPage() {
           setStage(undefined);
           setError(next.errorCode && REJECT_COPY[next.errorCode]
             ? REJECT_COPY[next.errorCode]
-            : next.errorCode === "PDF_NO_TEXT" ? "这份 PDF 无法提取文字，请上传文本型 PDF。"
             : `Agent 解析未完成（${next.errorCode ?? next.status}），可重试。`);
           return;
         }
@@ -104,10 +110,10 @@ export default function UploadPage() {
     sessionStorage.removeItem(savedResumeKey);
     sessionStorage.removeItem(savedFileKey);
     setFile(next); setFileId(null); setResumeId(null); setPages(null);
-    setStatus(""); setStage(undefined); setProgress(undefined); setError("");
+    setStatus(""); setStage(undefined); setProgress(undefined); setError(""); setOcrAvailable(false);
   };
 
-  const start = async () => {
+  const start = async (ocrRequested = false) => {
     if (!file && !fileId) return;
     if (resumeId) setResumeId(null);
     setBusy(true); setError("");
@@ -122,7 +128,7 @@ export default function UploadPage() {
         sessionStorage.setItem(savedFileKey, id);
       }
       setStatus("已上传，等待 Agent 领取解析任务…");
-      const task = await resumeApi.parse(id);
+      const task = await resumeApi.parse(id, ocrRequested);
       sessionStorage.setItem(savedResumeKey, task.resumeId);
       setResumeId(task.resumeId);
     } catch (cause) {
@@ -158,7 +164,7 @@ export default function UploadPage() {
         <p className="proof-microcopy">支持键盘 Enter 选择文件</p>
       </ProofCard>
       <p className="proof-note">仅 PDF · 单次 1 个文件 · ≤10MB · 1–20 页</p>
-      <p className="proof-note">需包含可复制文字，不支持加密文件或扫描版 PDF。</p>
+      <p className="proof-note">不支持加密文件；扫描版 PDF 可在普通解析失败后主动尝试本机 OCR。</p>
       {file && <div className="proof-file-ready">
         <div>
           <strong>{file.name}</strong>
@@ -170,6 +176,8 @@ export default function UploadPage() {
       <div className="proof-actions">
         <ProofButton variant="primary" disabled={busy || (!file && !fileId)} onClick={() => void start()}>
           {fileId ? "重试 Agent 解析" : "上传并解析简历"}</ProofButton>
+        {fileId && ocrAvailable && !busy && <ProofButton onClick={() => void start(true)}>
+          尝试本机 OCR</ProofButton>}
         {resumeId && <ProofButton onClick={() => void cancel()}>取消解析</ProofButton>}
       </div>
       {parsing ? <div className="proof-parse-card" role="status">
@@ -185,7 +193,7 @@ export default function UploadPage() {
         </div>
       </div> : status ? <p role="status">{status}</p> : null}
       {error && <p className="proof-inline-error" role="alert">{error}</p>}
-      <p className="proof-microcopy">选择文本型 PDF。上传后，原件和可编辑草稿在私有服务器保留 30 天；系统先按原浏览器解析器确定模块和条目，再将必要文字发送给当前配置的文本模型供应商（OpenAI 或智谱 GLM）整理标题与正文。你可以随时提前删除。简历仅用于生成网站。</p>
+      <p className="proof-microcopy">上传后，原件和可编辑草稿在私有服务器保留 30 天；本机 OCR 只在你主动选择后处理无文字页，可能需要更久。系统按原浏览器解析器确定模块和条目，再将必要文字发送给当前配置的文本模型供应商（OpenAI 或智谱 GLM）整理标题与正文。你可以随时提前删除。简历仅用于生成网站。</p>
     </section>
   </AgentChrome>;
 }

@@ -26,13 +26,13 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 ## 合同与图执行
 
-新 Agent 简历使用 `GenerationBriefV2` / `DesignConfigV2`，其 `resume-v2.sections` 保存按固定十模块排序的已确认条目，以及补充文字、命名链接和图片 ID。服务端按会话读取 `resumeId/revision` 对应草稿并重新投影；客户端不能自报 v2 的 content。Python 再做严格校验。兼容字段 `profile/projects/...` 从条目派生，作品渲染不重复展示兼容副本。
+新 Agent 简历使用 `GenerationBriefV3` / `DesignConfigV3`，其 `resume-v3.sections` 按用户确认顺序保存十模块条目，以及补充文字、命名链接和图片 ID。服务端按会话读取 `resumeId/revision` 对应草稿并重新投影；客户端不能自报新版本 content。Python 再做严格校验。兼容字段 `profile/projects/...` 从条目派生，作品渲染不重复展示兼容副本。
 
-当前新 Agent 工作流为 `python-agent-v3`（`resume.compose.v3`、`artifact.qa.v2`），内容组装只验证和复制，不调用 LLM 改写用户补充内容。旧浏览器兼容入口及已有任务继续使用 `python-agent-v2` / v1 展示合同；Worker 按任务版本分流，禁止混读。版本化 Schema 位于 `packages/contracts/schema`，Python 模型位于 `apps/agent/src/buildurprofile_agent/contracts.py`。
+当前新 Agent 工作流为 `python-agent-v4`（`resume.compose.v4`、`artifact.qa.v3`），内容组装只验证和复制，不调用 LLM 改写用户补充内容。旧浏览器兼容入口及已有 v2/v3 任务继续按原版本处理；Worker 按任务版本分流，禁止混读。版本化 Schema 位于 `packages/contracts/schema`，Python 模型位于 `apps/agent/src/buildurprofile_agent/contracts.py`。
 
 图顺序为：校验输入 → 选择 Skill 计划 → 评分 → 设计映射 → 注入确认内容 → 可选肖像 → 最终 QA → 提交配置。Skill 声明稳定 ID、版本、能力、输入输出和超时，执行器只授予当前节点所需能力。
 
-新上传路径由 `resume-parse-v2` 独立队列和七节点 LangGraph 图解析。Web 在私有原件上复用旧浏览器解析算法，生成仅供 Agent 使用的 `resume-parse-plan-v1` 模块和条目锚点；Python 将 PDF 来源块对齐锚点，再由 `resume.format.v1` 文本模型逐条整理标题与正文，不能自由拆分或合并条目。固定映射和来源校验由代码执行，详见[解析流程 v2](../agent/resume-anchored-formatting.md)。私有 `resume-source-v1` 块与 `resume-draft-v1` 十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存并确认，显式清除待核对状态后，投影剥离来源及隐藏字段，输出 `resume-v2`。原件、块与草稿从上传起 30 天自动删除，可提前删除。旧 `resume.parse.v3` 浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
+新上传路径由 `resume-parse-v2/v3` 独立队列和 LangGraph 图解析。Web 在私有原件或本机 OCR 文字上复用旧浏览器解析算法，生成仅供 Agent 使用的 `resume-parse-plan-v1` 模块和条目锚点；Python 将来源块对齐锚点，再由 `resume.format.v1` 文本模型逐条整理标题与正文，不能自由拆分或合并条目。用户明确选择时，v3 只对无文字页运行本机 OCR，私有 `resume-source-v2` 标记 OCR 来源与置信度。固定映射和来源校验由代码执行，详见[解析流程 v2](../agent/resume-anchored-formatting.md)。十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存、排序、拆合、自动保存与恢复历史，显式清除待核对状态后，投影剥离来源及隐藏字段，按确认顺序输出 `resume-v3`。原件、块、草稿和历史从上传起 30 天自动删除，可提前删除。重解析候选独立于当前草稿，并在 revision 相同时才可应用。旧浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
 
 图状态与 checkpoint 可保存任务 ID、清洗后的 brief、评分、配置、Skill 版本、风格与资产 ID、QA 结果。不得保存 PDF 原文、`sourceRefs`、照片字节、密钥和支付数据。照片及风格参考图仅在外部图像请求期间读取。
 

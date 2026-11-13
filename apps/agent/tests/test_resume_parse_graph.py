@@ -8,6 +8,9 @@ from buildurprofile_agent.skills.registry import default_registry
 from buildurprofile_agent.transport.node_api import ResumeParseTask
 from buildurprofile_agent.worker import process_resume_task
 from test_resume_parse import pdf_at
+from test_resume_parse import pdf_pages
+from types import SimpleNamespace
+import subprocess
 
 
 class FakeClient:
@@ -95,6 +98,37 @@ async def test_worker_completes_resume_draft():
     await process_resume_task(task, client, FakeModel(), default_registry(), MemorySaver())
     assert client.completed[1]["resumeId"] == "resume-2"
     assert client.failed is None
+
+
+@pytest.mark.asyncio
+async def test_ocr_graph_keeps_private_text_out_of_checkpoint_and_marks_review(monkeypatch):
+    tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+           "5\t1\t1\t1\t1\t1\t20\t30\t100\t18\t55\tJane Doe jane@example.com\n")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: SimpleNamespace(
+        returncode=0, stdout=tsv.encode(), stderr=b""))
+
+    class OcrClient(FakeClient):
+        async def resume_plan(self, task, pages=None):
+            assert pages == ["Jane Doe jane@example.com"]
+            return {"version": "resume-parse-plan-v1", "anchors": [
+                {"anchorId": "a0", "kind": "basicInfo", "page": 1, "text": pages[0]}]}
+
+    class OcrModel:
+        async def generate_json(self, name, schema, prompt):
+            return {"items": [{"anchorId": "a0", "kind": "basicInfo",
+                "title": "Jane Doe", "details": "jane@example.com", "confidence": .9}]}
+
+    task = ResumeParseTask("task-ocr", "lease-ocr", "resume-parse-v3", "resume-ocr", "file-ocr", 1,
+                           "2026-11-09T00:00:00Z", "2026-12-09T00:00:00Z", [1])
+    client = OcrClient(pdf_pages([[]]))
+    saver = MemorySaver()
+    await process_resume_task(task, client, OcrModel(), default_registry(), saver)
+    assert client.failed is None
+    source, draft = client.completed
+    assert source["version"] == "resume-source-v2"
+    assert source["blocks"][0]["sourceType"] == "ocr"
+    assert draft["sections"][0]["items"][0]["needsReview"] is True
+    assert "Jane Doe" not in str(saver.storage)
 
 
 @pytest.mark.asyncio

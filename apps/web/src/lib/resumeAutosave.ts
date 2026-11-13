@@ -16,12 +16,13 @@ export function createResumeAutosave<T extends VersionedDraft>({save,onSaved,onS
   let timer:ReturnType<typeof setTimeout>|null=null;
   let running:Promise<void>|null=null;
   let disposed=false;
+  let retryDelay=2000;
   const fingerprint=(draft:T)=>JSON.stringify({...draft,revision:0});
   const emit=(next:AutosaveStatus)=>{status=next;onStatus?.(next);};
   const clear=()=>{if(timer){clearTimeout(timer);timer=null;}};
   const api={
     initialize(draft:T){
-      clear();current=draft;serverRevision=draft.revision;savedFingerprint=fingerprint(draft);
+      clear();retryDelay=2000;current=draft;serverRevision=draft.revision;savedFingerprint=fingerprint(draft);
       emit('saved');
     },
     update(draft:T){
@@ -46,6 +47,7 @@ export function createResumeAutosave<T extends VersionedDraft>({save,onSaved,onS
         try{
           const result=await save(sent);
           serverRevision=result.revision;
+          retryDelay=2000;
           const sentFingerprint=fingerprint(sent);
           savedFingerprint=fingerprint(result.draft);
           if(current && fingerprint(current)===sentFingerprint)current=result.draft;
@@ -57,8 +59,16 @@ export function createResumeAutosave<T extends VersionedDraft>({save,onSaved,onS
           throw error;
         }
       })();
-      try{await running;}finally{running=null;}
-      if(['conflict','offline','invalid'].includes(api.status()))return;
+      let failure:unknown;
+      try{await running;}catch(error){failure=error;}finally{running=null;}
+      if(api.status()==='offline'&&!disposed){
+        const delay=retryDelay;
+        retryDelay=Math.min(retryDelay*2,30_000);
+        timer=setTimeout(()=>{timer=null;void api.flush().catch(()=>{});},delay);
+      }
+      if(failure)throw failure;
+      if(api.status()==='offline')return;
+      if(['conflict','invalid'].includes(api.status()))return;
       if(current && fingerprint(current)!==savedFingerprint)return api.flush();
       emit('saved');
     },

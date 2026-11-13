@@ -7,7 +7,7 @@ import json
 import re
 import unicodedata
 
-from buildurprofile_agent.contracts import RESUME_MODULE_MAPPING, ResumeDraftV1, ResumeSourceV1
+from buildurprofile_agent.contracts import RESUME_MODULE_MAPPING, ResumeDraftV1, ResumeSourceV1, ResumeSourceV2
 from .item_splitter import _facts
 
 
@@ -47,9 +47,14 @@ def _match_score(block: str, anchor: str) -> float:
     return longest / len(block)
 
 
+def _source_model(source: ResumeSourceV1 | ResumeSourceV2 | dict):
+    raw = source.model_dump() if isinstance(source, ResumeSourceV1) else source
+    return (ResumeSourceV2 if raw.get("version") == "resume-source-v2" else ResumeSourceV1).model_validate(raw)
+
+
 def align_anchors(source: ResumeSourceV1 | dict, plan: dict) -> list[dict]:
     """Assign every PDF evidence block to one legacy browser-parser item."""
-    source = ResumeSourceV1.model_validate(source)
+    source = _source_model(source)
     if not isinstance(plan, dict) or set(plan) != {"version", "anchors"} or plan["version"] != "resume-parse-plan-v1":
         raise ValueError("PARSE_FAILED: invalid browser plan")
     planned = plan["anchors"]
@@ -116,6 +121,9 @@ def align_anchors(source: ResumeSourceV1 | dict, plan: dict) -> list[dict]:
         index = assignments[position]
         assert index is not None
         anchors[index]["sourceBlockIds"].append(block.blockId)
+        if getattr(block, "sourceType", None) == "ocr" and block.ocrConfidence < .8:
+            anchors[index]["needsReview"] = True
+            anchors[index]["confidence"] = min(anchors[index]["confidence"], block.ocrConfidence)
         if scores[position] < .72 and _canonical(block.text) not in SECTION_HEADINGS:
             anchors[index]["needsReview"] = True
             anchors[index]["confidence"] = min(anchors[index]["confidence"], .7)
@@ -159,15 +167,13 @@ def _grounded_output(item: dict, anchor: dict) -> bool:
         if number not in original and not _number_equivalent(number, original_numbers, segments,
                                                              digits_stream):
             # 带上被拒数字与锚点原文，线上失败可定位到具体条目
-            raise ValueError(
-                f"PARSE_FAILED: formatted number absent from source: number={number} "
-                f"anchor={anchor['anchorId']} text={anchor['text'][:120]!r}")
+            raise ValueError("PARSE_FAILED: formatted number absent from source")
     return any(token not in original for token in re.findall(r"[a-z][a-z0-9._+-]{2,}", output))
 
 
 async def format_anchors(source: ResumeSourceV1 | dict, anchors: list[dict], model) -> list[dict]:
     """Require exactly one compact, source-grounded formatted item per anchor."""
-    ResumeSourceV1.model_validate(source)
+    _source_model(source)
     if not anchors:
         raise ValueError("PARSE_FAILED: no browser anchors")
     def detail_limit(anchor: dict) -> int:
@@ -241,7 +247,7 @@ async def format_anchors(source: ResumeSourceV1 | dict, anchors: list[dict], mod
 
 def make_anchored_draft(source: ResumeSourceV1 | dict, resume_id: str, anchors: list[dict],
                         formatted: list[dict]) -> ResumeDraftV1:
-    source = ResumeSourceV1.model_validate(source)
+    source = _source_model(source)
     if len(anchors) != len(formatted) or {item["anchorId"] for item in formatted} != {
             anchor["anchorId"] for anchor in anchors}:
         raise ValueError("PARSE_FAILED: formatted evidence coverage")

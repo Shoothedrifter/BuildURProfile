@@ -94,4 +94,7 @@ def default_registry() -> SkillRegistry:
     registry.register(Skill("resume.format.v1", "1.0.0", frozenset({"text_model"}), True, 120.0,
                             lambda inputs, grants: format_anchors(inputs["source"], inputs["anchors"],
                                                                     grants["text_model"])))
+    registry.register(Skill("resume.format.v2", "2.0.0", frozenset({"text_model"}), True, 120.0,
+                            lambda inputs, grants: format_anchors(inputs["source"], inputs["anchors"],
+                                                                    grants["text_model"])))
     return registry

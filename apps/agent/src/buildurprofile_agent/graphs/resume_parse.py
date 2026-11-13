@@ -6,6 +6,7 @@ prompts and draft evidence live in this invocation's closure, never in a saver.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -13,11 +14,13 @@ from langgraph.graph import END, START, StateGraph
 from buildurprofile_agent.contracts import RESUME_MODULE_MAPPING, validate_resume_draft
 from buildurprofile_agent.skills.anchored_formatter import align_anchors, make_anchored_draft
 from buildurprofile_agent.skills.pdf_layout import extract_pdf_source
+from buildurprofile_agent.skills.ocr import ocr_pdf_pages
 from buildurprofile_agent.skills.registry import SkillRegistry, default_registry
 from buildurprofile_agent.transport.node_api import CancelRequested, ResumeParseTask
 
 
 WORKFLOW_VERSION = "resume-parse-v2"
+OCR_WORKFLOW_VERSION = "resume-parse-v3"
 NODES = ("validate_source", "extract_layout", "classify_sections", "map_design_modules",
          "format_items", "verify_evidence", "complete_draft")
 
@@ -53,7 +56,8 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
     async def validate_source(state: ResumeParseState) -> dict:
         if (state["task_id"] != task.id or state["file_id"] != task.file_id
                 or state["resume_id"] != task.resume_id
-                or state["workflow_version"] != WORKFLOW_VERSION):
+                or state["workflow_version"] != task.workflow_version
+                or task.workflow_version not in {WORKFLOW_VERSION, OCR_WORKFLOW_VERSION}):
             raise ValueError("SKILL_VERSION_MISMATCH")
         await progress("validate_source", 5)
         private["pdf"] = await client.resume_source(task)
@@ -62,11 +66,22 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
         return {"stage": "validate_source"}
 
     async def extract_layout(_: ResumeParseState) -> dict:
-        run.source = extract_pdf_source(private.pop("pdf"), file_id=task.file_id,
-            uploaded_at=task.uploaded_at, expires_at=task.expires_at)
+        pdf = private.pop("pdf")
+        if task.workflow_version == OCR_WORKFLOW_VERSION:
+            await progress("ocr_pages", 12)
+            run.source = await asyncio.to_thread(ocr_pdf_pages, pdf, task.ocr_pages,
+                file_id=task.file_id, uploaded_at=task.uploaded_at, expires_at=task.expires_at)
+        else:
+            run.source = extract_pdf_source(pdf, file_id=task.file_id,
+                uploaded_at=task.uploaded_at, expires_at=task.expires_at)
         if run.source.pageCount != task.page_count:
             raise ValueError("PARSE_FAILED: PDF page count mismatch")
-        private["plan"] = await client.resume_plan(task)
+        if task.workflow_version == OCR_WORKFLOW_VERSION:
+            pages = ["\n".join(block.text for block in run.source.blocks if block.page == page)
+                     for page in range(1, run.source.pageCount + 1)]
+            private["plan"] = await client.resume_plan(task, pages)
+        else:
+            private["plan"] = await client.resume_plan(task)
         return await progress("extract_layout", 20)
 
     async def classify_sections(_: ResumeParseState) -> dict:
@@ -79,8 +94,9 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
         return await progress("map_design_modules", 50)
 
     async def format_items(_: ResumeParseState) -> dict:
-        descriptor = registry.describe("resume.format.v1")
-        private["formatted"] = await registry.run("resume.format.v1", {"source": run.source,
+        skill_id = "resume.format.v2" if task.workflow_version == OCR_WORKFLOW_VERSION else "resume.format.v1"
+        descriptor = registry.describe(skill_id)
+        private["formatted"] = await registry.run(skill_id, {"source": run.source,
             "anchors": private["anchors"]}, grants={"text_model": model},
             expected_version=descriptor["version"])
         return await progress("format_items", 75)

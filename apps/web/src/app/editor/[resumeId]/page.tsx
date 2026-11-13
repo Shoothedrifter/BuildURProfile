@@ -46,6 +46,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [pendingImages, setPendingImages] = useState<PendingResumeImage[]>([]);
   const [recoveryTargets, setRecoveryTargets] = useState<Record<string, string>>({});
   const [expiresAt, setExpiresAt] = useState("");
+  const [ocrAvailable,setOcrAvailable]=useState(false);
   const [blocksById, setBlocksById] = useState<Record<string, { page: number; text: string }>>({});
   const uploading = useRef(false);
   const mounted = useRef(true);
@@ -130,7 +131,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       if (!active) return;
       baseDraftRef.current=result.draft;cacheScopeRef.current=result.cacheScope ?? '';
       autosaveRef.current?.initialize(result.draft);
-      setDraft(result.draft); setExpiresAt(result.expiresAt);
+      setDraft(result.draft); setExpiresAt(result.expiresAt);setOcrAvailable(Boolean(result.ocrAvailable));
       if(result.cacheScope)void getLocalDelta(result.cacheScope,resumeId)
         .then(local=>{if(active&&local)setRecoverableDelta(local);})
         .catch(()=>{}).finally(()=>{if(active)setLocalReady(true);});
@@ -367,14 +368,14 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     }
   };
 
-  const createCandidate=async()=>{
+  const createCandidate=async(ocrRequested=false)=>{
     if(!resumeId||!draft)return;
     setBusy(true);setError('');
     try{
       await autosaveRef.current?.flush(draft);
       if(autosaveRef.current?.status()!=='saved')throw new Error('请先解决未保存修改。');
       const revision=autosaveRef.current.latest()?.revision??draft.revision;
-      const created=await resumeApi.createCandidate(resumeId,revision,candidateMode);
+      const created=await resumeApi.createCandidate(resumeId,revision,ocrRequested?'fillEmpty':candidateMode,ocrRequested);
       setCandidate(created);setCandidateTaskId(created.taskId);
       sessionStorage.setItem(`burp-reparse-candidate-${resumeId}`,created.taskId);
       setDialog(null);
@@ -511,6 +512,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         <ProofButton disabled={busy || !draft} onClick={() => void save()}>保存草稿</ProofButton>
         <ProofButton disabled={busy || !draft} onClick={()=>setHistoryOpen(value=>!value)}>版本历史</ProofButton>
         <ProofButton disabled={busy || !draft || !!candidateTaskId} onClick={()=>setDialog({kind:'reparseCandidate'})}>重新解析原 PDF</ProofButton>
+        {ocrAvailable&&<ProofButton disabled={busy || !draft || !!candidateTaskId}
+          onClick={()=>void createCandidate(true)}>对无文字页尝试本机 OCR</ProofButton>}
         <ProofButton disabled={busy || !draft} onClick={() => setDialog({ kind: "reparse" })}>创建新草稿副本</ProofButton>
       </div>
       {candidate&&<section className="proof-card" aria-label="重解析候选">

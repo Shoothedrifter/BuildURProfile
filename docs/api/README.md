@@ -45,7 +45,9 @@
 | `GET /api/hero-assets/:id` | 读取所属会话的有效图片，使用私有禁止缓存响应 |
 
 服务端根据会话决定所有者，不接受客户端注入所有权。写操作校验 CSRF；入队清洗拒绝 PDF 原文、`sourceRefs` 和多余字段。源照片和成图分别按 1 天、7 天有效期管理。开发期不设应用内肖像生成次数上限，供应商自身的额度和计费仍然生效。
-新 Agent 路径仅接受服务端投影的 `resume-v2`；客户端通过旧 brief 路径提交 v2 会被拒绝。revision 不匹配返回 409；待核对、无效链接、图片归属或格式错误在入队前拒绝，任务和图片复制事务回滚。已有 v1 合同仍可供浏览器兼容入口使用。
+新 Agent 路径仅接受服务端投影的 `resume-v3`；客户端不能通过旧 brief 路径自报新版本 content。revision 不匹配返回 409；待核对、无效链接、图片归属或格式错误在入队前拒绝，任务和图片复制事务回滚。旧合同仍可供已有项目和任务读取。
+
+PDF 上传接受符合大小、页数和加密规则的扫描件，并记录无文字页。普通 `POST /api/resumes/parse` 仍可能返回 `PDF_NO_TEXT`；用户明确选择后可携带 `ocrRequested:true` 对同一未过期 `fileId` 重试。混合 PDF 的 `POST /api/resumes/:id/reparse-candidates` 可携带 `ocrRequested:true`，由独立任务生成候选，不改变当前草稿。OCR 工作流使用 `resume-parse-v3` 和 `resume-source-v2`；内部 `POST /_internal/agent/resume-tasks/:id/plan` 只接受有效服务令牌和租约，用 Web 原解析器对 OCR 文字制定条目边界。
 
 `GET /api/resumes/:id/images` 列出尚未被已保存草稿引用的属主图片（稳定 ID、原条目 ID、MIME 和大小），供用户恢复或逐张删除，不执行批量回收。`POST /api/resumes/:id/images` 上传私有补充图片；新客户端携带 `x-resume-item` 以支持条目限额。`DELETE /api/resumes/:id/images/:imageId` 仅删除尚未被已保存草稿引用的图片；移除已保存图片须先保存草稿，服务端删除失去引用的旧图。限制与生命周期见[架构说明](../shared/architecture.md#简历图片与作品资产)。
 

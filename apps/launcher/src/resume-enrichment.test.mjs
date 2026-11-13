@@ -16,7 +16,7 @@ function setup(t){
  t.after(()=>{db.close();rmSync(root,{recursive:true,force:true});});
  for(const owner of ['owner','other'])db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(owner,time,time+365*86400000);
  const draft=structuredClone(fixture);draft.revision=1;
- db.prepare('INSERT INTO resume_files VALUES(?,?,?,?,?,?,?)').run(draft.fileId,'owner','synthetic.pdf',100,1,time,time+30*86400000);
+ db.prepare('INSERT INTO resume_files(id,owner_session_id,file_name,size,page_count,uploaded_at,expires_at) VALUES(?,?,?,?,?,?,?)').run(draft.fileId,'owner','synthetic.pdf',100,1,time,time+30*86400000);
  db.prepare("INSERT INTO resumes(id,file_id,owner_session_id,status,draft_json,created_at,updated_at) VALUES(?,?,'owner','SUCCEEDED',?,?,?)").run(draft.resumeId,draft.fileId,JSON.stringify(draft),time,time);
  for(const b of source.blocks)db.prepare('INSERT INTO resume_blocks VALUES(?,?,?)').run(draft.resumeId,b.blockId,JSON.stringify(b));
  const queue=createResumeParseQueue({db,repository:{},now:()=>time});

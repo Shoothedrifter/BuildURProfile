@@ -12,7 +12,8 @@ from typing import Any
 import httpx
 
 from .graph import SUPPORTED_WORKFLOWS, build_generation_graph, task_input
-from .graphs.resume_parse import WORKFLOW_VERSION as RESUME_WORKFLOW_VERSION, build_resume_parse_graph
+from .graphs.resume_parse import WORKFLOW_VERSION as RESUME_WORKFLOW_VERSION, OCR_WORKFLOW_VERSION, build_resume_parse_graph
+from .skills.ocr import OcrError
 from .providers.base import ImageProviderError
 from .providers.text_model import OpenAIResumeTextModel, ResumeTextModelError
 from .skills.registry import SkillRegistry, default_registry
@@ -121,7 +122,7 @@ async def process_resume_task(task: ResumeParseTask, client: NodeAgentClient, mo
                 return
 
     try:
-        if task.workflow_version != RESUME_WORKFLOW_VERSION:
+        if task.workflow_version not in {RESUME_WORKFLOW_VERSION, OCR_WORKFLOW_VERSION}:
             raise ValueError("SKILL_VERSION_MISMATCH")
         run = build_resume_parse_graph(task, client, model, registry, checkpointer=checkpointer)
         state = {"task_id": task.id, "file_id": task.file_id, "resume_id": task.resume_id,
@@ -152,10 +153,12 @@ async def process_resume_task(task: ResumeParseTask, client: NodeAgentClient, mo
     except LeaseLost:
         log.warning("resume parse lease lost id=%s", task.id)
     except Exception as error:
-        code = ("SKILL_VERSION_MISMATCH" if "SKILL_VERSION_MISMATCH" in str(error)
+        code = (error.code if isinstance(error, OcrError)
+                else "SKILL_VERSION_MISMATCH" if "SKILL_VERSION_MISMATCH" in str(error)
                 else "PDF_NO_TEXT" if "no extractable text" in str(error)
                 else "PARSE_FAILED")
         retryable = (isinstance(error, ResumeTextModelError) and error.retryable
+                     or isinstance(error, OcrError) and error.code == "OCR_TIMEOUT"
                      or isinstance(error, (httpx.TransportError, httpx.TimeoutException)))
         reason_code = error.reason if isinstance(error, ResumeTextModelError) else "PARSER_ERROR"
         log.warning("resume parse failed id=%s code=%s reason=%s", task.id, code, reason_code)

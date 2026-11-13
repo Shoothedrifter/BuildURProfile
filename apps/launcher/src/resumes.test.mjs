@@ -141,10 +141,24 @@ test('fill-empty protects edited fields and deleted source entries while preserv
  assert.equal(filled.sections[5].items[0].needsReview,true);
  assert.equal(filled.sections[5].items[0].included,false);
  assert.equal(mergeEmptyDraft(current,candidate,new Set(['block_2'])).sections[5].items.length,0);
+ current.sections[5].visible=false;current.sections[5].items=[];
+ const ocrFilled=mergeEmptyDraft(current,candidate,new Set(),true);
+ assert.equal(ocrFilled.sections[5].visible,false);
+ assert.equal(ocrFilled.sections[5].items[0].title,'新项目');
+ assert.equal(ocrFilled.sections[5].items[0].needsReview,true);
+ assert.equal(mergeEmptyDraft(current,candidate,new Set()).sections[5].items.length,0);
  const replaced=overwriteDraft(current,candidate);
  assert.equal(replaced.sections[0].items[0].itemId,'item_basic');
  assert.equal(replaced.sections[0].items[0].title,'模型标题');
  assert.equal(replaced.sections[0].order,0);
+ const split=structuredClone(current);
+ split.sections[5].items=[{...candidate.sections[5].items[0],itemId:'split-first'},
+  {...candidate.sections[5].items[0],itemId:'split-second',order:1}];
+ const two=structuredClone(candidate);
+ two.sections[5].items=[{...candidate.sections[5].items[0],itemId:'candidate-one'},
+  {...candidate.sections[5].items[0],itemId:'candidate-two',order:1}];
+ const overwritten=overwriteDraft(split,two);
+ assert.deepEqual(overwritten.sections[5].items.map(item=>item.itemId),['split-first','split-second']);
 });
 
 test('fill-empty candidate matches stable source, adds reviewed item and never changes edited text',async t=>{
@@ -209,10 +223,78 @@ test('upload retains one private PDF, source remains after parse, ownership and 
 });
 test('upload rejects invalid type, malformed, oversized, empty text and page limit without orphan files',async t=>{
  const s=await setup(t);
- for(const [data,headers,code] of [[pdf(),{'x-file-name':'x.txt'},'FILE_TYPE_INVALID'],[pdf(),{'content-type':'text/plain'},'FILE_TYPE_INVALID'],[Buffer.from('bad'),{},'FILE_TYPE_INVALID'],[Buffer.from('%PDF-invalid'),{},'FILE_TYPE_INVALID'],[Buffer.alloc(10000001),{},'FILE_TOO_LARGE'],[pdf(21),{},'PDF_PAGE_LIMIT'],[pdf(1,false),{},'PDF_NO_TEXT']]) {
+ for(const [data,headers,code] of [[pdf(),{'x-file-name':'x.txt'},'FILE_TYPE_INVALID'],[pdf(),{'content-type':'text/plain'},'FILE_TYPE_INVALID'],[Buffer.from('bad'),{},'FILE_TYPE_INVALID'],[Buffer.from('%PDF-invalid'),{},'FILE_TYPE_INVALID'],[Buffer.alloc(10000001),{},'FILE_TOO_LARGE'],[pdf(21),{},'PDF_PAGE_LIMIT']]) {
   const r=await s.request('upload','POST',data,headers);assert.equal((await r.json()).errorCode,code);assert.equal(readdirSync(s.root).length,0);
  }
  for(const pages of [1,20])assert.equal((await s.request('upload','POST',pdf(pages))).status,201);
+});
+test('scanned PDF remains private for explicit OCR retry and a mixed PDF marks only blank pages',async t=>{
+ const s=await setup(t);
+ const scanned=await s.request('upload','POST',pdf(1,false));assert.equal(scanned.status,201);
+ const scan=await scanned.json();assert.deepEqual(scan.emptyPages,[1]);
+ const first=await(await s.request('parse','POST',JSON.stringify({fileId:scan.fileId,idempotencyKey:'scan-normal'}),{'content-type':'application/json'})).json();
+ const normal=s.repo.queue.lease('worker');assert.equal(normal.workflowVersion,'resume-parse-v2');
+ const overlapping=await s.request('parse','POST',JSON.stringify({fileId:scan.fileId,idempotencyKey:'scan-ocr',ocrRequested:true}),{'content-type':'application/json'});
+ assert.equal(overlapping.status,409);
+ s.repo.queue.fail(normal.id,normal.leaseToken,'PDF_NO_TEXT',false);
+ assert.equal((await(await s.request(first.resumeId+'/status')).json()).errorCode,'PDF_NO_TEXT');
+ const retried=await s.request('parse','POST',JSON.stringify({fileId:scan.fileId,idempotencyKey:'scan-ocr',ocrRequested:true}),{'content-type':'application/json'});
+ assert.equal(retried.status,202);
+ const ocr=s.repo.queue.lease('worker');assert.equal(ocr.workflowVersion,'resume-parse-v3');
+ assert.deepEqual(ocr.ocrPages,[1]);
+ assert.deepEqual(Buffer.from(s.repo.readFile(s.db.prepare('SELECT owner_session_id FROM resume_files WHERE id=?').get(scan.fileId).owner_session_id,scan.fileId)),pdf(1,false));
+ const mixed=await(await s.request('upload','POST',pdf(2,[true,false]))).json();
+ assert.deepEqual(mixed.emptyPages,[2]);
+});
+test('OCR lease accepts only versioned source and plan POST stays private',async t=>{
+ const s=await setup(t),scan=await(await s.request('upload','POST',pdf(1,false))).json();
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:scan.fileId,idempotencyKey:'ocr-v3',ocrRequested:true}),{'content-type':'application/json'})).json();
+ const task=s.repo.queue.lease('ocr_worker');
+ const token='t'.repeat(40);
+ const handler=createRequestHandler({db:s.db,service:{},resumeRepository:s.repo,agentToken:token,secret:Buffer.alloc(32,7)});
+ const plan=async(lease=task.leaseToken,auth=token,pages=['Jane Doe jane@example.com'])=>dispatchWebRequest(
+  new Request(`http://test/_internal/agent/resume-tasks/${task.id}/plan`,{method:'POST',
+   headers:{authorization:`Bearer ${auth}`,'x-agent-lease':lease,'content-type':'application/json'},
+   body:JSON.stringify({pages})}),handler);
+ assert.equal((await plan(task.leaseToken,'bad')).status,403);
+ assert.equal((await plan('bad')).status,409);
+ assert.equal((await plan(task.leaseToken,token,['x'.repeat(200001)])).status,400);
+ const response=await plan();assert.equal(response.status,200);
+ assert.equal((await response.json()).anchors[0].kind,'basicInfo');
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(scan.fileId);
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ Object.assign(source,{version:'resume-source-v2',extractionVersion:'pdf-layout-v2',fileId:scan.fileId,
+  uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),
+  expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ source.blocks=source.blocks.map((block,index)=>({...block,sourceType:'ocr',ocrConfidence:index===0?.58:.92}));
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:scan.fileId,resumeId:parsed.resumeId,revision:1});
+ for(const section of draft.sections)for(const item of section.items){item.included=false;item.needsReview=true;}
+ assert.equal(s.repo.queue.complete(task.id,task.leaseToken,source,draft).ok,true);
+ assert.equal((await(await s.request(parsed.resumeId+'/status')).json()).status,'SUCCEEDED');
+ assert.equal((await(await s.request(parsed.resumeId)).json()).draft.sections[0].items[0].needsReview,true);
+});
+test('mixed PDF OCR uses an independent candidate while current draft remains available',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf(2,[true,false]))).json();
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'mixed-normal'}),{'content-type':'application/json'})).json();
+ const task=s.repo.queue.lease('normal_worker');
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(file.fileId);
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ Object.assign(source,{fileId:file.fileId,pageCount:2,
+  uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),
+  expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:file.fileId,resumeId:parsed.resumeId,revision:1});
+ for(const section of draft.sections)for(const item of section.items)item.included=false;
+ s.repo.queue.complete(task.id,task.leaseToken,source,draft);
+ const candidate=await s.request(`${parsed.resumeId}/reparse-candidates`,'POST',JSON.stringify({
+  expectedRevision:1,mode:'fillEmpty',idempotencyKey:'mixed-ocr',ocrRequested:true}),{'content-type':'application/json'});
+ assert.equal(candidate.status,202);
+ const lease=s.repo.queue.lease('ocr_worker');
+ assert.equal(lease.workflowVersion,'resume-parse-v3');
+ assert.deepEqual(lease.ocrPages,[2]);
+ assert.equal((await(await s.request(parsed.resumeId)).json()).revision,1);
+ assert.equal((await(await s.request(parsed.resumeId+'/status')).json()).status,'SUCCEEDED');
 });
 test('retention expires from upload and removes source and private drafts',async t=>{
  const s=await setup(t);const file=await(await s.request('upload','POST',pdf())).json();const row=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(file.fileId);assert.equal(row.expires_at-row.uploaded_at,30*86400000);

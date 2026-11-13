@@ -39,4 +39,23 @@ describe('resume autosave',()=>{
     expect(save).toHaveBeenCalledTimes(1);
     autosave.dispose();
   });
+  it('retries an offline save without another edit and stops retrying after success',async()=>{
+    vi.useFakeTimers();
+    try{
+      const save=vi.fn().mockRejectedValueOnce(new Error('network unavailable'))
+        .mockImplementation(async(draft:Draft)=>saved(draft));
+      const autosave=createResumeAutosave<Draft>({save,delayMs:800});
+      autosave.initialize({revision:1,value:'原稿'});
+      autosave.update({revision:1,value:'待保存'});
+      await vi.advanceTimersByTimeAsync(800);
+      expect(autosave.status()).toBe('offline');
+      expect(save).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(autosave.status()).toBe('saved');
+      expect(save).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(save).toHaveBeenCalledTimes(2);
+      autosave.dispose();
+    }finally{vi.useRealTimers();}
+  });
 });

@@ -1,8 +1,8 @@
 import type { ResumeDraftV2 } from "../../../../packages/contracts/src/resume-draft";
 
-export type ResumeStatus = { resumeId: string; fileId?: string; status: string; stage?: string; progress?: number; errorCode?: string | null };
+export type ResumeStatus = { resumeId: string; fileId?: string; status: string; stage?: string; progress?: number; errorCode?: string | null; ocrAvailable?: boolean };
 export type PendingResumeImage = { imageId: string; itemId: string | null; contentType: string; size: number };
-export type StoredResume = { draft: ResumeDraftV2; revision: number; expiresAt: string; cacheScope?: string };
+export type StoredResume = { draft: ResumeDraftV2; revision: number; expiresAt: string; cacheScope?: string; ocrAvailable?: boolean };
 export type ResumeVersion = { revision:number; createdAt:number };
 export type ResumeCandidate = {taskId:string;resumeId:string;status:string;stage?:string|null;progress?:number;
   errorCode?:string|null;mode:'overwrite'|'fillEmpty';baseRevision:number;appliedRevision?:number|null;
@@ -57,16 +57,16 @@ export const resumeApi = {
       xhr.send(file);
     });
   },
-  parse(fileId: string): Promise<ResumeStatus> {
-    return request("/api/resumes/parse", "POST", { fileId, idempotencyKey: crypto.randomUUID() });
+  parse(fileId: string, ocrRequested = false): Promise<ResumeStatus> {
+    return request("/api/resumes/parse", "POST", { fileId, idempotencyKey: crypto.randomUUID(), ocrRequested });
   },
   reparse(resumeId: string): Promise<ResumeStatus> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse`, "POST",
       { idempotencyKey: crypto.randomUUID() });
   },
-  createCandidate(resumeId:string,expectedRevision:number,mode:'overwrite'|'fillEmpty'):Promise<ResumeCandidate>{
+  createCandidate(resumeId:string,expectedRevision:number,mode:'overwrite'|'fillEmpty',ocrRequested=false):Promise<ResumeCandidate>{
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse-candidates`,'POST',
-      {expectedRevision,mode,idempotencyKey:crypto.randomUUID()});
+      {expectedRevision,mode,idempotencyKey:crypto.randomUUID(),ocrRequested});
   },
   candidate(resumeId:string,taskId:string):Promise<ResumeCandidate>{
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/reparse-candidates/${encodeURIComponent(taskId)}`);

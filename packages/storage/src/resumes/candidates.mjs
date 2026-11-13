@@ -3,15 +3,16 @@ import { randomUUID } from 'node:crypto';
 const overlap=(a,b)=>a.sourceBlockIds.some(id=>b.sourceBlockIds.includes(id));
 const clone=value=>structuredClone(value);
 
-export function mergeEmptyDraft(current,candidate,deletedSourceIds=new Set()) {
+export function mergeEmptyDraft(current,candidate,deletedSourceIds=new Set(),allowHiddenItems=false) {
   const result=clone(current);
   const usedIds=new Set(result.sections.flatMap(section=>section.items.map(item=>item.itemId)));
   for(const section of result.sections){
-    if(!section.visible)continue;
+    if(!section.visible&&!allowHiddenItems)continue;
     const incoming=candidate.sections.find(entry=>entry.kind===section.kind);
     if(!incoming)continue;
     for(const entry of incoming.items){
       const original=section.items.find(item=>overlap(item,entry));
+      if(!section.visible&&original)continue;
       if(!original){
         if(entry.sourceBlockIds.some(id=>deletedSourceIds.has(id)))continue;
         const itemId=usedIds.has(entry.itemId)?randomUUID():entry.itemId;
@@ -44,6 +45,10 @@ export function mergeEmptyDraft(current,candidate,deletedSourceIds=new Set()) {
 }
 
 export function reconcileCandidateSource(existing,candidate,draft,taskId) {
+  const v2=candidate.version==='resume-source-v2'||existing.version==='resume-source-v2';
+  const oldBlocks=v2?existing.blocks.map(block=>block.sourceType?block:{...block,sourceType:'pdf',ocrConfidence:null}):existing.blocks;
+  const nextOrder=new Map();
+  for(const block of oldBlocks)nextOrder.set(block.page,Math.max(nextOrder.get(block.page)??-1,block.readingOrder));
   const oldByContent=new Map(existing.blocks.map(block=>[
     JSON.stringify([block.page,block.readingOrder,block.text]),block.blockId]));
   const mapped=new Map(),newBlocks=[];
@@ -51,12 +56,17 @@ export function reconcileCandidateSource(existing,candidate,draft,taskId) {
     const key=JSON.stringify([block.page,block.readingOrder,block.text]);
     const id=oldByContent.get(key)??`reparse_${taskId.replaceAll('-','').slice(0,16)}_${index}`;
     mapped.set(block.blockId,id);
-    if(!oldByContent.has(key))newBlocks.push({...block,blockId:id});
+    if(!oldByContent.has(key)){
+      const readingOrder=(nextOrder.get(block.page)??-1)+1;
+      nextOrder.set(block.page,readingOrder);
+      newBlocks.push({...block,blockId:id,readingOrder});
+    }
   }
   const next=clone(draft);
   for(const section of next.sections)for(const item of section.items)
     item.sourceBlockIds=[...new Set(item.sourceBlockIds.map(id=>mapped.get(id)??id))];
-  return {draft:next,newBlocks,source:{...existing,blocks:[...existing.blocks,...newBlocks]}};
+  return {draft:next,newBlocks,source:{...existing,
+    ...(v2?{version:'resume-source-v2',extractionVersion:'pdf-layout-v2'}:{}),blocks:[...oldBlocks,...newBlocks]}};
 }
 
 export function recordDeletedItems(db,resumeId,previous,next) {
@@ -71,11 +81,15 @@ export function recordDeletedItems(db,resumeId,previous,next) {
 
 export function overwriteDraft(current,candidate) {
   const result=clone(candidate);
+  const usedIds=new Set();
   result.sections=result.sections.map(section=>{
     const previous=current.sections.find(entry=>entry.kind===section.kind);
     return {...section,items:section.items.map(item=>{
-      const matched=previous?.items.find(entry=>overlap(entry,item));
-      return {...item,itemId:matched?.itemId??item.itemId,
+      const matched=previous?.items.find(entry=>!usedIds.has(entry.itemId)&&overlap(entry,item));
+      let itemId=matched?.itemId??item.itemId;
+      if(usedIds.has(itemId))itemId=randomUUID();
+      usedIds.add(itemId);
+      return {...item,itemId,
         needsReview:matched?item.needsReview:true,editedFields:[]};
     })};
   });
