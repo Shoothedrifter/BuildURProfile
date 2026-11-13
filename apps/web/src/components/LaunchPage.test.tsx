@@ -13,7 +13,10 @@ const renderLaunchPage = (overrides: Partial<React.ComponentProps<typeof LaunchP
   return { ...render(<LaunchPage {...props} />), props };
 };
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("LaunchPage", () => {
   it("renders the Figma launch information architecture with real destinations", () => {
@@ -67,5 +70,24 @@ describe("LaunchPage", () => {
 
     Reflect.deleteProperty(Element.prototype, "scrollIntoView");
     expect(() => fireEvent.click(screen.getByRole("button", { name: "查看样例" }))).not.toThrow();
+  });
+
+  it("uses instant scrolling when the user prefers reduced motion", () => {
+    const scrollIntoView = vi.fn();
+    const scrollTo = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView
+    });
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
+    vi.spyOn(window, "scrollTo").mockImplementation(scrollTo);
+    renderLaunchPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看样例" }));
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "auto", block: "start" });
+    fireEvent.click(screen.getByRole("button", { name: "返回 BuildURProfile 首页顶部" }));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
+
+    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   });
 });

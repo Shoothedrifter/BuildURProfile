@@ -213,7 +213,9 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const goLanding = (section?: "about" | "process") => {
     props.onPhaseChange("landing");
     window.setTimeout(() => {
-      if (section) document.getElementById(section)?.scrollIntoView({ behavior: "smooth" });
+      const target = section ? document.getElementById(section) : null;
+      const behavior = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ behavior });
       else window.scrollTo({ top: 0, behavior: "instant" });
     }, 0);
   };

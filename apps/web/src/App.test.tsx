@@ -199,6 +199,26 @@ describe("showcase builder", () => {
     expect(screen.queryByRole("navigation", { name: "生成进度" })).not.toBeInTheDocument();
   });
 
+  it("keeps legacy product and process navigation anchored to the new launch sections", async () => {
+    const visitedIds: string[] = [];
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(function (this: Element) { visitedIds.push((this as HTMLElement).id); })
+    });
+    try {
+      render(<App />);
+      openUpload();
+      fireEvent.click(screen.getByRole("button", { name: "制作流程" }));
+      await waitFor(() => expect(visitedIds).toEqual(["process"]));
+
+      openUpload();
+      fireEvent.click(screen.getByRole("button", { name: "产品介绍" }));
+      await waitFor(() => expect(visitedIds).toEqual(["process", "about"]));
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
   it("accepts a dragged PDF and waits for the explicit parse action", async () => {
     render(<App />);
     openUpload();

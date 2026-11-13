@@ -54,16 +54,20 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   background: var(--launch-bg);
   color: var(--launch-ink);
 }
-.launch-page :is(button, a) {
+.launch-page :where(button, a) {
   font: inherit;
 }
-.launch-page button {
+.launch-page :where(button) {
   border: 0;
   color: inherit;
   cursor: pointer;
 }
 .launch-page :is(button, a):focus-visible {
   outline: 3px solid var(--launch-ink);
+  outline-offset: 3px;
+}
+.launch-shell .proof-dialog :is(button, a, input, textarea, select, summary):focus-visible {
+  outline: 3px solid var(--proof-ink);
   outline-offset: 3px;
 }
 .launch-header,

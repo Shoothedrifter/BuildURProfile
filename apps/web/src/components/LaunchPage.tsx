@@ -20,15 +20,21 @@ const examples = [
   { title: "我的项目与故事", role: "跨领域探索者", tone: "stone", label: "查看我的项目与故事样例" }
 ] as const;
 
+function preferredScrollBehavior(): ScrollBehavior {
+  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? "auto"
+    : "smooth";
+}
+
 function scrollToExamples(): void {
   const target = document.getElementById("launch-examples");
   if (target && typeof target.scrollIntoView === "function") {
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    target.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
   }
 }
 
 function scrollToTop(): void {
-  if (typeof window.scrollTo === "function") window.scrollTo({ top: 0, behavior: "smooth" });
+  if (typeof window.scrollTo === "function") window.scrollTo({ top: 0, behavior: preferredScrollBehavior() });
 }
 
 export function LaunchPage({ projectCount, onProjects, onSample, onLegacyParse }: LaunchPageProps) {
@@ -69,7 +75,7 @@ export function LaunchPage({ projectCount, onProjects, onSample, onLegacyParse }
         </div>
       </section>
 
-      <section className="launch-section" aria-labelledby="launch-value-title">
+      <section className="launch-section" id="about" aria-labelledby="launch-value-title">
         <h2 id="launch-value-title">从简历到网站，每一步都有帮助</h2>
         <div className="launch-value-grid">
           {valueCards.map((card) => <article className="launch-value-card" key={card.title}>
@@ -94,7 +100,7 @@ export function LaunchPage({ projectCount, onProjects, onSample, onLegacyParse }
         <button type="button" className="launch-button launch-button--secondary launch-more" aria-label="查看更多作品集样例" onClick={onSample}>查看更多样例 →</button>
       </section>
 
-      <section className="launch-section launch-steps" aria-labelledby="launch-steps-title">
+      <section className="launch-section launch-steps" id="process" aria-labelledby="launch-steps-title">
         <h2 id="launch-steps-title">三步，开启你的个人展示</h2>
         <ol>
           <li>1 上传 PDF →</li>
