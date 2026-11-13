@@ -1,17 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { parseEnv } from "node:util";
+import { applyAgentEnvFile, readAgentEnvFile } from "../apps/launcher/src/agent-env.mjs";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
 const env = { ...process.env, PYTHONUTF8: "1" };
 for (const key of Object.keys(env)) if (key.startsWith("ALIPAY_") || key.startsWith("PAYMENT_")) delete env[key];
-if (existsSync(".env.agent")) {
-  const file = parseEnv(readFileSync(".env.agent", "utf8"));
-  for (const key of ["OPENAI_API_KEY", "OPENAI_IMAGE_MODEL", "CLOUDFLARE_ACCOUNT_ID",
-    "CLOUDFLARE_API_TOKEN", "IMAGE_PROVIDER", "AGENT_CHECKPOINT_PATH"]) {
-    if (file[key] !== undefined) env[key] = file[key];
-  }
-}
+// .env.agent 全量透传（剔除支付前缀），与 apps/launcher/src/dev.mjs 共用同一逻辑；
+// 新增供应商变量无需再改启动脚本。
+applyAgentEnvFile(env, readAgentEnvFile());
 const defaultVenv = existsSync("apps/agent/.venv/bin/python")
   ? "apps/agent/.venv/bin/python"
   : existsSync("apps/agent/.venv/Scripts/python.exe")

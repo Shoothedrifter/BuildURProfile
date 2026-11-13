@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { parseEnv } from "node:util";
+import { applyAgentEnvFile, readAgentEnvFile } from "./agent-env.mjs";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
 const token = process.env.AGENT_SERVICE_TOKEN || randomBytes(32).toString("hex");
@@ -31,14 +31,11 @@ const agentEnv = {
 for (const key of Object.keys(agentEnv)) {
   if (key.startsWith("ALIPAY_") || key.startsWith("PAYMENT_")) delete agentEnv[key];
 }
-if (existsSync(".env.agent")) {
-  const file = parseEnv(readFileSync(".env.agent", "utf8"));
-  for (const key of ["OPENAI_API_KEY", "ZAI_API_KEY", "OPENAI_IMAGE_MODEL", "RESUME_TEXT_PROVIDER", "RESUME_TEXT_MODEL", "CLOUDFLARE_ACCOUNT_ID",
-    "CLOUDFLARE_API_TOKEN", "IMAGE_PROVIDER", "AGENT_CHECKPOINT_PATH", "AGENT_RESUME_WORKER_ID"]) {
-    if (file[key] !== undefined) agentEnv[key] = file[key];
-  }
-  if (file.RESUME_TEXT_PROVIDER !== undefined) webEnv.RESUME_TEXT_PROVIDER = file.RESUME_TEXT_PROVIDER;
-}
+// .env.agent 全量透传给 Agent 进程（剔除支付前缀），与 scripts/run-python-agent.mjs 共用同一逻辑；
+// 新增供应商变量无需再改启动脚本。
+const agentFile = readAgentEnvFile();
+applyAgentEnvFile(agentEnv, agentFile);
+if (agentFile.RESUME_TEXT_PROVIDER !== undefined) webEnv.RESUME_TEXT_PROVIDER = agentFile.RESUME_TEXT_PROVIDER;
 
 const defaultVenv = existsSync("apps/agent/.venv/bin/python")
   ? "apps/agent/.venv/bin/python"
