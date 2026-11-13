@@ -59,11 +59,11 @@
 
 ### Task 3：服务端历史、自动保存及断网恢复（P1b）
 
-**Interfaces:** `GET /api/resumes/:id/versions`、`GET /api/resumes/:id/versions/:revision`、`POST /api/resumes/:id/restore`（body: `{expectedRevision,targetRevision}`）；`useResumeAutosave` 串行提交及重试；IndexedDB 只存当前会话未保存的草稿差异和基准 revision。
+**Interfaces:** `GET /api/resumes/:id/versions`、`GET /api/resumes/:id/versions/:revision`、`POST /api/resumes/:id/restore`（body: `{expectedRevision,targetRevision}`）；`useResumeAutosave` 串行提交及重试；服务端在草稿读取时返回随机且不授予认证权限的 `cacheScope`；IndexedDB 按该值、resumeId 和基准 revision 分区，只存当前会话未保存的草稿差异。
 
-- [ ] 在 `apps/launcher/src/resumes.test.mjs` 写失败测试：当前加最近 10 个前版本、恢复递增 revision、跨会话拒绝、过期/删除清理、图片悬空拒绝；在编辑页测试写 800 ms 防抖、立即图片/链接保存、乱序回包、断网缓存、冲突停止自动覆盖。
+- [ ] 在 `apps/launcher/src/resumes.test.mjs` 写失败测试：当前加最近 10 个前版本、恢复递增 revision、跨会话拒绝、过期/删除清理、图片被历史引用时禁止删除、历史裁剪后正确回收；在编辑页测试写 800 ms 防抖、立即图片/链接保存、乱序回包、断网缓存、跨会话缓存不可恢复、站内自定义挽留与刷新原生提示、冲突停止自动覆盖。
 - [ ] 运行 Node/Web 定向测试确认失败。
-- [ ] 增加迁移与 `versions.mjs`；保存和恢复同事务更新版本及草稿，保留引用图片直到相应历史版本到期或被裁剪；接入本地缓存、保存状态和离开提示。避免把 PDF/source 写入 IndexedDB。
+- [ ] 增加迁移与 `versions.mjs`；保存和恢复同事务更新版本及草稿；修改 `queue.patch()`、`deleteImage()`、未保存图片列表和历史裁剪路径，使当前/历史引用阻止删除、无引用后再回收；接入按 `cacheScope` 分区的本地缓存、保存状态和两类离开提示。避免把 PDF/source 写入 IndexedDB。
 - [ ] 运行 `npm test`、`npm run build`、`npm run test:payment`，验证删除和到期；中文提交。
 
 ### Task 4：原 PDF 重解析候选及覆盖/补空（P1b）
@@ -79,18 +79,18 @@
 
 **Interfaces:** `projectConfirmedResumeV3(draft)` 输出有序 `resume-v3.sections/items`；新生成任务使用 `python-agent-v4` 与 `resume.compose.v4`，旧 v2/v3 任务保留分派；作品、项目编辑、分享快照和 ZIP 消费同一顺序。
 
-- [ ] 在合同、`apps/web/src/ShowcasePage.test.tsx`、`apps/web/src/components/EditorPanel.test.tsx`、`apps/launcher/src/payment.test.mjs` 和 Python 图测试写失败用例：模块/条目用户顺序一致，隐藏/空模块省略，工作校园独立，补充资产不串项，旧 v1/v2 项目保持原顺序和可读性。
+- [ ] 在合同、`apps/web/src/ShowcasePage.test.tsx`、`apps/web/src/components/EditorPanel.test.tsx`、`apps/launcher/src/payment.test.mjs` 和 Python 图测试写失败用例：固定 Marquee 下的十模块按用户顺序展示，项目 StackedCards 出现在项目模块的指定位置，基本信息可排序，隐藏/空模块省略，工作校园独立，补充资产不串项，旧 v1/v2 项目保持原顺序和可读性。
 - [ ] 运行定向测试确认失败。
 - [ ] 新增 v3 公开 Schema/黄金样例和版本化投影，同步更新 brief/config、Node→Python 分派、Skill、QA、Web 与导出；不接受模型生成页面代码。
 - [ ] 运行 `npm test`、`npm run build`、`npm run test:payment`、`npm run test:agent`、`npm run test:skills`；中文提交。Task 5 应随 P1a 一起发布，不能只发布可排序编辑器。
 
 ### Task 6：用户主动选择的本机 OCR（P1c）
 
-**Interfaces:** `ocr_pdf_pages(pdf_bytes, pages, timeout_seconds)` 输出带页码/边框/阅读顺序/`ocr` 来源的私有块；`POST /api/resumes/parse` 可携带 `{fileId,idempotencyKey,ocrRequested:true}` 重试同一私有文件，解析任务携带 `ocrRequested` 和新工作流版本。原有文本页保持原提取路径。
+**Interfaces:** `ocr_pdf_pages(pdf_bytes, pages, timeout_seconds)` 输出带页码/边框/阅读顺序/`ocr` 来源的私有块；初次失败时 `POST /api/resumes/parse` 可携带 `{fileId,idempotencyKey,ocrRequested:true}` 重试同一私有文件；已成功解析的混合 PDF 走 Task 4 的独立候选任务并携带 `ocrRequested`，当前草稿保持 `SUCCEEDED`。解析任务使用新工作流版本。原有文本页保持原提取路径。
 
 - [ ] 用可提交的中英合成扫描 PDF 和混合 PDF 写失败测试：未选择 OCR 时仍返回 `PDF_NO_TEXT`；选择后只识别无文字页；文字重复消除、低置信度待核对、缺语言包/超时/取消的专用错误、无图像或来源字节进 checkpoint/日志。
 - [ ] 运行 Agent/服务端定向测试确认失败。
-- [ ] 锁定 PDFium 渲染和 Tesseract 中英文依赖，更新 `apps/agent/pyproject.toml`、锁文件、Dockerfile/Compose、部署说明；在队列中区分 OCR 与普通解析的幂等键及可重试状态，重试复用未过期 fileId；实现 OCR Skill 与原解析图分支，受既有大小、页数、租约及清理约束，前端明确告知本机处理及耗时。
+- [ ] 锁定 PDFium 渲染和 Tesseract 中英文依赖，更新 `apps/agent/pyproject.toml`、锁文件、Dockerfile/Compose、部署说明；在队列中区分 OCR 与普通解析的幂等键及可重试状态，初次失败重试复用未过期 fileId；已成功解析的混合 PDF 使用独立 OCR 候选任务，不复用 `queue.parse()` 返回的成功旧任务；实现 OCR Skill 与原解析图分支，受既有大小、页数、租约及清理约束，前端明确告知本机处理及耗时。
 - [ ] 运行 `npm run test:agent`、`npm run test:payment`、`npm test`、`npm run build`；构建 Web/Agent 镜像，验证 Compose 健康检查、持久卷和重启。中文提交。
 
 ## 总验收与审阅点
