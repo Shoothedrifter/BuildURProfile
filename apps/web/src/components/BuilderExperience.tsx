@@ -11,6 +11,7 @@ import type { Offer, OwnedProject } from "../lib/paymentApi";
 import { AVATAR_STYLES } from "../../../../packages/skills/src/avatar-catalog";
 import { ShowcasePage } from "../ShowcasePage";
 import { EditorPanel } from "./EditorPanel";
+import { LaunchPage } from "./LaunchPage";
 import {
   BuilderChrome,
   ProjectsDialog,
@@ -102,22 +103,6 @@ const stylePresets: Array<{
     }
   }
 ];
-
-function BrandPreview() {
-  return <div className="proof-mini-showcase" aria-label="Showcase 演示预览">
-    <p>SHOWCASE / 个人作品集</p>
-    <div className="proof-mini-window">
-      <span>林予安 / UI·UX Designer</span>
-      <strong>把复杂的问题，<br />变成自然的体验。</strong>
-      <small>产品设计 / 交互原型 / 用户研究</small>
-      <div className="proof-mini-projects">
-        <div><b>01</b><span>通勤出行体验</span></div>
-        <div><b>02</b><span>创作者工作台</span></div>
-      </div>
-    </div>
-    <strong>↗ 页面本身，就是你的下一件作品。</strong>
-  </div>;
-}
 
 function AvatarPicker({ enabled, photoDataUrl, photoName, avatarStyle, generating, onPhoto, onStyle, onClear }: {
   enabled: boolean;
@@ -254,6 +239,17 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </div>;
   }
 
+  if (phase === "landing") {
+    return <div className="launch-shell">
+      <LaunchPage projectCount={projects.length}
+        onProjects={() => setProjectsOpen(true)}
+        onSample={() => go("mock")}
+        onLegacyParse={() => go("upload")} />
+      <ProjectsDialog open={projectsOpen} projects={projects} onClose={() => setProjectsOpen(false)}
+        onSelect={props.onResumeProject} onDelete={props.onDeleteProject} />
+    </div>;
+  }
+
   const progressNumber = phase === "upload" ? 1 : phase === "confirm" ? 2 : phase === "quiz" ? 3 : phase === "result" ? 4 : phase === "delivery" ? 5 : 0;
 
   return <BuilderChrome projectCount={projects.length}
@@ -262,45 +258,6 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     onSample={() => go("mock")}
     onSection={(section) => goLanding(section)}>
     {phase !== "landing" && <><WorkflowProgress phase={phase} />{progressNumber > 0 && <div className="proof-step-shell" data-step={progressNumber} />}</>}
-
-    {phase === "landing" && <div className="proof-landing">
-      <div className="proof-landing-title">
-        <p>BUILD YOUR PROOF / 01</p>
-        <h1>你的能力，值得一个可以体验的网页。</h1>
-        <span>上传简历，找到你的风格。让求职、Networking 和个人展示，从一份可以交互的作品开始。</span>
-      </div>
-      <section className="proof-landing-hero" aria-label="BuildURProfile 介绍">
-        <BrandPreview />
-        <div className="proof-value">
-          <h2>别只说你会。<br />让对方亲自体验。</h2>
-          <p>设计师用页面展示审美与叙事，开发者用交互展示技术与创意。把静态经历，变成可探索的能力证明。</p>
-          <a className="proof-button proof-button--primary" href="/upload">免费开始制作 · Agent 解析 →</a>
-          <ProofButton onClick={() => go("upload")}>浏览器解析（兼容）</ProofButton>
-          <ProofButton onClick={() => go("mock")}>浏览作品集样例</ProofButton>
-          <small>免费生成、预览和编辑<br />满意后，按项目解锁发布与导出。</small>
-        </div>
-      </section>
-      <section className="proof-landing-section" id="process" aria-labelledby="process-title">
-        <h2 id="process-title">从一份 PDF，到属于你的 Showcase</h2>
-        <div className="proof-three-grid">
-          <ProofCard><strong>01 / 上传与核对</strong><p>提取简历模块，补充项目过程、成果链接与图片。</p></ProofCard>
-          <ProofCard><strong>02 / 找到你的表达</strong><p>选择模板或完成偏好测评，让风格与专业相契合。</p></ProofCard>
-          <ProofCard><strong>03 / 让作品被看见</strong><p>免费预览编辑，确认满意后解锁分享和导出。</p></ProofCard>
-        </div>
-      </section>
-      <section className="proof-landing-section" id="about" aria-labelledby="roles-title">
-        <h2 id="roles-title">为不同的能力，找到不同的表达</h2>
-        <div className="proof-three-grid">
-          <ProofCard><strong>UI / UX 设计师</strong><p>从洞察到交互，让作品集体现你的设计判断。</p></ProofCard>
-          <ProofCard><strong>前端 / 创意开发者</strong><p>让界面、动效与体验，成为可以操作的技术 Demo。</p></ProofCard>
-          <ProofCard><strong>跨领域探索者</strong><p>以项目与成果串联经历，让对方快速理解你的价值。</p></ProofCard>
-        </div>
-      </section>
-      <section className="proof-landing-section" aria-labelledby="faq-title">
-        <h2 id="faq-title">开始之前，你可能想知道</h2>
-        <ProofCard className="proof-faq"><strong>什么时候需要付费？</strong><p>生成、预览与编辑免费。点击分享链接或导出时，为当前项目支付一次费用，解锁该项目的发布与导出资格。</p></ProofCard>
-      </section>
-    </div>}
 
     {phase === "upload" && <section className="proof-step-page">
       <StepHeader number={2} title="从你的简历开始" description="上传一份 PDF，我们帮你整理经历；你始终决定最终展示什么。" />

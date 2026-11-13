@@ -45,7 +45,7 @@ const pages = [
 ];
 
 function openUpload() {
-  fireEvent.click(screen.getByRole("button", { name: /浏览器解析（兼容）/ }));
+  fireEvent.click(screen.getAllByRole("button", { name: /浏览器解析（兼容）/ })[0]);
 }
 
 async function chooseAndParse(name = "resume.pdf") {
@@ -135,7 +135,7 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     await waitFor(() => expect(paymentApi.deleteProject).toHaveBeenCalledWith("saved-project"));
     expect(await screen.findByText(/还没有保存的作品/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "你的能力，值得一个可以体验的网页。" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).toBeInTheDocument();
   });
 
   it("keeps a project visible when the server refuses deletion", async () => {
@@ -179,14 +179,24 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: /荣誉奖项/ }));
     expect(screen.getByRole("textbox", { name: /荣誉奖项 2/ })).toHaveValue("运营技术专栏");
   });
-  it("starts on the landing page and opens both the sample and project panel", async () => {
+  it("starts on the Figma launch page and keeps real samples and projects available", async () => {
     render(<App />);
-    expect(screen.getByRole("heading", { name: "你的能力，值得一个可以体验的网页。" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "作品集样例" }));
+    expect(screen.getByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "开始生成" })).toHaveAttribute("href", "/upload");
+    fireEvent.click(screen.getByRole("button", { name: "查看体验设计作品集样例" }));
     expect(await screen.findByRole("heading", { name: /Alex Morgan/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /返回生成器/ }));
-    fireEvent.click(screen.getByRole("button", { name: /我的项目/ }));
+    fireEvent.click(screen.getByRole("button", { name: "我的项目，共 0 个" }));
     expect(screen.getByRole("dialog", { name: "我的项目" })).toBeInTheDocument();
+  });
+
+  it("returns from legacy parsing to a clean Figma launch page", () => {
+    render(<App />);
+    openUpload();
+    expect(screen.getByRole("heading", { name: "从你的简历开始" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "← 返回首页" }));
+    expect(screen.getByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "生成进度" })).not.toBeInTheDocument();
   });
 
   it("accepts a dragged PDF and waits for the explicit parse action", async () => {
