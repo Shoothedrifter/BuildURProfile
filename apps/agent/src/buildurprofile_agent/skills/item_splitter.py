@@ -82,18 +82,34 @@ def _facts(kind: str, text: str) -> list[dict]:
         return []
     facts = []
     email = re.search(r"(?<![\w.-])[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}(?![\w.-])", text)
-    phone = re.search(r"(?<!\d)(?:\+?\d[\d -]{7,}\d)(?!\d)", text)
+    # 电话优先取 11 位手机号；放宽匹配须排除紧邻 @ 的邮箱数字部分，
+    # 否则浏览器 anchor 里的纯邮箱行会把 QQ 号先于手机号喂给电话字段
+    phone = (re.search(r"(?<!\d)1[3-9]\d{9}(?!\d)", text)
+             or re.search(r"(?<!\d)(?<!@)(?:\+?\d[\d -]{7,}\d)(?!\d)(?!@)", text))
     for key, label, match in (("email", "邮箱", email), ("phone", "电话", phone)):
         if match:
             facts.append({"key": key, "label": label, "value": match.group(), "included": False})
-    first_line = text.splitlines()[0].strip() if text.splitlines() else ""
+    lines = text.splitlines()
+    first_line = lines[0].strip() if lines else ""
     first_name = re.sub(r"^姓名\s*[:：]\s*", "", first_line)
     if first_name in {"基本信息", "个人信息"} or not re.fullmatch(
             r"[\u3400-\u9fff]{2,4}|[A-Za-z]+(?:[ '-][A-Za-z]+){1,3}", first_name):
         first_name = ""
+    # 「姓名：值」行内还并列其他「键：值」时（如 姓名：李纳 年龄：22岁 …），
+    # 截断到下一个键之前；截出的值必须仍是合格姓名，失败则继续走原有推断
+    anchored_name = ""
+    for line in lines:
+        labeled = re.match(r"\s*姓名\s*[:：]\s*(.+)$", line)
+        if not labeled:
+            continue
+        candidate = re.split(r"\s*[一-鿿A-Za-z]{1,6}\s*[:：]", labeled.group(1))[0].strip()
+        if candidate and re.fullmatch(
+                r"[㐀-鿿]{2,4}|[A-Za-z]+(?:[ '-][A-Za-z]+){1,3}", candidate):
+            anchored_name = candidate
+            break
     before_email = text[:email.start()].strip() if email else text.strip()
-    name = first_name or (before_email if before_email and len(before_email) <= 100
-                          and not re.search(r"\d{4}", before_email) else "")
+    name = anchored_name or first_name or (before_email if before_email and len(before_email) <= 100
+                                           and not re.search(r"\d{4}", before_email) else "")
     if name:
         facts.insert(0, {"key": "name", "label": "姓名", "value": name,
                          "included": False})

@@ -133,6 +133,11 @@ describe("resume parser", () => {
     expect(draft.basicInfo).toEqual(expect.arrayContaining([expect.objectContaining({ fieldKey: "phone", included: false })]));
     expect(draft.education).toHaveLength(1);
   });
+  it("cuts the name at the next labeled field when one header line merges several fields", () => {
+    const draft = parseResumePages(["姓名：李纳 年龄：22岁 政治面貌：中共党员\n电话：13800138000 邮箱：lin@example.com\n教育背景\n2020.09 - 2024.06 示例大学"]);
+    expect(draft.name.value).toBe("李纳");
+    expect(draft.name.source).toBe("姓名：李纳 年龄：22岁 政治面貌：中共党员");
+  });
 
   it("keeps the correct page for basic details continuing onto another page", () => {
     const draft = parseResumePages(["基本信息\n姓名：林青", "电话：13800138000\n教育背景\n2020.09 - 2024.06 示例大学"]);

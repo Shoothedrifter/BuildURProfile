@@ -7,6 +7,7 @@ import pytest
 from buildurprofile_agent.skills.anchored_formatter import (
     align_anchors, format_anchors, make_anchored_draft,
 )
+from buildurprofile_agent.skills.item_splitter import _facts
 
 
 def source(*lines: str) -> dict:
@@ -258,3 +259,29 @@ async def test_basic_name_survives_when_browser_anchor_contains_many_contact_lin
     draft = make_anchored_draft(raw, "resume-1", anchors, await format_anchors(raw, anchors, model))
     item = next(section for section in draft.sections if section.kind == "basicInfo").items[0]
     assert {fact.key for fact in item.facts} >= {"name", "email", "phone"}
+
+
+def test_facts_cut_name_at_next_labeled_field_on_a_merged_header_line():
+    # 浏览器 anchor 把「姓名行（值）」「纯邮箱行」「电话邮箱行」「姓名标签行」按 field 顺序拼在一起，
+    # 首行是姓名与年龄、政治面貌混排的文本，姓名必须锚定到「姓名：」行并截断到下一个键之前
+    text = ("李纳 年龄：22岁 政治面貌：中共党员\n"
+            "2684417753@example.com\n"
+            "电话： 13800138000 邮箱： 2684417753@example.com\n"
+            "姓名：李纳 年龄：22岁 政治面貌：中共党员")
+    facts = {fact["key"]: fact["value"] for fact in _facts("basicInfo", text)}
+    assert facts["name"] == "李纳"
+    assert facts["phone"] == "13800138000"
+
+
+def test_facts_phone_prefers_mobile_number_over_bare_email_digits():
+    text = "王芳\n1234567890@example.com\n电话： 13900139000 邮箱： 1234567890@example.com"
+    facts = {fact["key"]: fact["value"] for fact in _facts("basicInfo", text)}
+    assert facts["phone"] == "13900139000"
+    assert facts["name"] == "王芳"
+
+
+def test_facts_phone_fallback_skips_digits_followed_by_an_at_sign():
+    # 简历只有座机时，放宽匹配不得把邮箱本地部分的数字当成电话
+    text = "王芳\n1234567890@example.com\n电话： 0571-87654321"
+    facts = {fact["key"]: fact["value"] for fact in _facts("basicInfo", text)}
+    assert facts["phone"] == "0571-87654321"

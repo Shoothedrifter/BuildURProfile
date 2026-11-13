@@ -225,7 +225,10 @@ export function parseResumePages(pages: string[]): ResumeDraft {
   const explicitName = first.find((line) => /^姓名\s*[:：]\s*\S+/.test(line));
   const linkedNameLine = header.find((line) => /^[\p{Script=Han}]{2,4}(?=\s*https?:\/\/)/iu.test(line));
   const linkedName = linkedNameLine?.match(/^[\p{Script=Han}]{2,4}/u)?.[0];
-  const nameLine = explicitName?.replace(/^姓名\s*[:：]\s*/, "") ?? header.find((line) => /^[\p{Script=Han}]{2,3}$/u.test(line)) ??
+  const nameLine = explicitName
+    // 同一行还并列其他「键：值」时（如 姓名：李纳 年龄：22岁 …），截断到下一个键之前
+    ?.replace(/^姓名\s*[:：]\s*/, "").replace(/\s*[一-鿿A-Za-z]{1,6}\s*[:：].*$/u, "")
+    ?? header.find((line) => /^[\p{Script=Han}]{2,3}$/u.test(line)) ??
     linkedName ?? header.find((line) => /^[A-Za-z]+(?:[ -][A-Za-z]+){1,3}$/.test(line) && line.toUpperCase() !== "RESUME") ?? "";
   const name = explicitName ? { value: nameLine, source: explicitName, page: 1, included: true }
     : linkedName && nameLine === linkedName ? { value: linkedName, source: linkedNameLine!, page: 1, included: true }
