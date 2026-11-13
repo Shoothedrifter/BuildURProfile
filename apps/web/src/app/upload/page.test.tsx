@@ -12,6 +12,37 @@ beforeEach(() => {
   vi.mocked(resumeApi.upload).mockReset();
   vi.mocked(resumeApi.parse).mockReset();
   vi.mocked(resumeApi.status).mockReset();
+  // jsdom 未实现导航；用 spy 捕获跳转调用
+  const assign = vi.fn();
+  Object.defineProperty(window, "location", {
+    value: { ...window.location, assign }, writable: true
+  });
+  vi.stubGlobal("locationAssignSpy", assign);
+});
+
+it("从编辑器返回上传页时不因已完成的旧任务被强制跳回编辑器", async () => {
+  sessionStorage.setItem("burp-agent-resume-id", "resume-done");
+  vi.mocked(resumeApi.status).mockResolvedValue({ resumeId: "resume-done", status: "SUCCEEDED" });
+  const view = render(<UploadPage />);
+  // 已完成的旧任务只提供手动入口，不再自动导航
+  expect(await screen.findByRole("link", { name: /打开编辑器/ })).toBeInTheDocument();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect((globalThis as Record<string, unknown>).locationAssignSpy).not.toHaveBeenCalled();
+  view.unmount();
+});
+
+it("本次会话上传的简历解析成功后仍自动进入编辑器", async () => {
+  vi.mocked(resumeApi.upload).mockResolvedValue({ fileId: "file-1", pageCount: 2 });
+  vi.mocked(resumeApi.parse).mockResolvedValue({ resumeId: "resume-1", status: "QUEUED" });
+  vi.mocked(resumeApi.status).mockResolvedValue({ resumeId: "resume-1", status: "SUCCEEDED" });
+  const view = render(<UploadPage />);
+  fireEvent.change(screen.getByLabelText(/选择或拖入 PDF 简历/), {
+    target: { files: [new File(["%PDF-synthetic"], "synthetic.pdf", { type: "application/pdf" })] }
+  });
+  fireEvent.click(screen.getByRole("button", { name: "上传并解析简历" }));
+  await waitFor(() => expect((globalThis as Record<string, unknown>).locationAssignSpy)
+    .toHaveBeenCalledWith("/editor/resume-1"));
+  view.unmount();
 });
 
 it("discloses retention and OpenAI before uploading, then queues Agent parse", async () => {
@@ -19,8 +50,10 @@ it("discloses retention and OpenAI before uploading, then queues Agent parse", a
   vi.mocked(resumeApi.parse).mockResolvedValue({ resumeId: "resume-1", status: "QUEUED" });
   vi.mocked(resumeApi.status).mockResolvedValue({ resumeId: "resume-1", status: "RUNNING", stage: "classify_sections", progress: 45 });
   const view = render(<UploadPage />);
+  // 精简版披露仍须覆盖期限与供应商两个要点
   expect(screen.getByText(/30 天/)).toBeInTheDocument();
-  expect(screen.getByText(/OpenAI/)).toBeInTheDocument();
+  expect(screen.getByText(/模型供应商/)).toBeInTheDocument();
+  expect(screen.queryByText(/本机 OCR 只在你主动选择后处理无文字页/)).not.toBeInTheDocument();
   expect(screen.getByText(/仅 PDF · 单次 1 个文件 · ≤10MB · 1–20 页/)).toBeInTheDocument();
   expect(screen.getByText(/扫描版 PDF 可在普通解析失败后主动尝试本机 OCR/)).toBeInTheDocument();
   expect(screen.getAllByRole("img", { name: "BuildURProfile" })).toHaveLength(2);

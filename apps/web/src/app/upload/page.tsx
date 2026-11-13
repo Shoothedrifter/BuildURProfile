@@ -42,7 +42,12 @@ export default function UploadPage() {
   const [progress, setProgress] = useState<number | undefined>();
   const [error, setError] = useState("");
   const [ocrAvailable, setOcrAvailable] = useState(false);
+  const [doneResumeId, setDoneResumeId] = useState<string | null>(null);
   const sequence = useRef(0);
+  // 标记 resumeId 是否由本次页面会话的 start() 发起：
+  // 会话内解析成功才自动进入编辑器；从编辑器返回（sessionStorage 恢复的已完成任务）只给手动入口，
+  // 否则用户会被强制弹回编辑器、永远回不到上传页换新简历。
+  const sessionStarted = useRef(false);
 
   useEffect(() => {
     const id = sessionStorage.getItem(savedResumeKey);
@@ -66,7 +71,13 @@ export default function UploadPage() {
         }
         setOcrAvailable(Boolean(next.ocrAvailable));
         if (next.status === "SUCCEEDED") {
-          window.location.assign(`/editor/${encodeURIComponent(resumeId)}`);
+          if (sessionStarted.current) {
+            window.location.assign(`/editor/${encodeURIComponent(resumeId)}`);
+            return;
+          }
+          setBusy(false);
+          setStage(undefined);
+          setDoneResumeId(resumeId);
           return;
         }
         if (["FAILED", "CANCELLED", "EXPIRED"].includes(next.status)) {
@@ -107,15 +118,17 @@ export default function UploadPage() {
     if (next.size > 10_000_000) { setError(REJECT_COPY.FILE_TOO_LARGE); return; }
     if (resumeId) void resumeApi.cancel(resumeId).catch(() => {});
     sequence.current++;
+    sessionStarted.current = false;
     sessionStorage.removeItem(savedResumeKey);
     sessionStorage.removeItem(savedFileKey);
-    setFile(next); setFileId(null); setResumeId(null); setPages(null);
+    setFile(next); setFileId(null); setResumeId(null); setPages(null); setDoneResumeId(null);
     setStatus(""); setStage(undefined); setProgress(undefined); setError(""); setOcrAvailable(false);
   };
 
   const start = async (ocrRequested = false) => {
     if (!file && !fileId) return;
     if (resumeId) setResumeId(null);
+    sessionStarted.current = true;
     setBusy(true); setError("");
     try {
       let id = fileId;
@@ -192,8 +205,15 @@ export default function UploadPage() {
           <div className="proof-progress-fill" style={{ width: `${progress ?? 0}%` }} />
         </div>
       </div> : status ? <p role="status">{status}</p> : null}
+      {doneResumeId && <div className="proof-file-ready" role="status">
+        <div>
+          <strong>上次解析已完成</strong>
+          <span>可继续核对这份草稿，或选择新 PDF 重新上传</span>
+        </div>
+        <a className="proof-button proof-button--primary" href={`/editor/${encodeURIComponent(doneResumeId)}`}>打开编辑器 →</a>
+      </div>}
       {error && <p className="proof-inline-error" role="alert">{error}</p>}
-      <p className="proof-microcopy">上传后，原件和可编辑草稿在私有服务器保留 30 天；本机 OCR 只在你主动选择后处理无文字页，可能需要更久。系统按原浏览器解析器确定模块和条目，再将必要文字发送给当前配置的文本模型供应商（OpenAI 或智谱 GLM）整理标题与正文。你可以随时提前删除。简历仅用于生成网站。</p>
+      <p className="proof-microcopy">原件与草稿保留 30 天，可随时提前删除；必要文字仅发送给模型供应商整理，简历仅用于生成网站。</p>
     </section>
   </AgentChrome>;
 }
