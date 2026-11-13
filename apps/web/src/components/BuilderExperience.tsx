@@ -257,7 +257,8 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     onProjects={() => setProjectsOpen(true)}
     onSample={() => go("mock")}
     onSection={(section) => goLanding(section)}>
-    {phase !== "landing" && <><WorkflowProgress phase={phase} />{progressNumber > 0 && <div className="proof-step-shell" data-step={progressNumber} />}</>}
+    <WorkflowProgress phase={phase} />
+    {progressNumber > 0 && <div className="proof-step-shell" data-step={progressNumber} />}
 
     {phase === "upload" && <section className="proof-step-page">
       <StepHeader number={2} title="从你的简历开始" description="上传一份 PDF，我们帮你整理经历；你始终决定最终展示什么。" />
