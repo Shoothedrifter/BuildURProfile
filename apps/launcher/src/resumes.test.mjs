@@ -18,6 +18,63 @@ async function setup(t) {
  const request=(path,method='GET',body,extra={})=>dispatchWebRequest(new Request('http://test/api/resumes/'+path,{method,headers:{cookie,'x-csrf-token':csrf,'content-type':'application/pdf','x-file-name':'fixture.pdf',...extra},...(body?{body}: {})}),handler);
  return {root,db,repo,request,handler,advance:(ms=30*86400000)=>{time+=ms;}};
 }
+async function readyResume(t) {
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'history'}))).json();
+ const task=s.repo.queue.lease('worker');
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(file.fileId);
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ Object.assign(source,{fileId:file.fileId,uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:file.fileId,resumeId:parsed.resumeId,revision:1});
+ for(const section of draft.sections)for(const item of section.items)item.included=false;
+ s.repo.queue.complete(task.id,task.leaseToken,source,draft);
+ return {...s,resumeId:parsed.resumeId};
+}
+
+test('resume history is bounded, owner-only and restoring creates a new revision',async t=>{
+ const s=await readyResume(t),first=await(await s.request(s.resumeId)).json();
+ assert.match(first.cacheScope,/^[0-9a-f-]{36}$/);
+ assert.equal((await(await s.request(s.resumeId)).json()).cacheScope,first.cacheScope);
+ let draft=first.draft;
+ for(let index=0;index<12;index++){
+  draft.sections[0].items[0].title=`编辑 ${index}`;
+  draft=(await(await s.request(s.resumeId,'PATCH',JSON.stringify({revision:draft.revision,draft}))).json()).draft;
+ }
+ const versions=await(await s.request(s.resumeId+'/versions')).json();
+ assert.equal(versions.versions.length,11);
+ assert.deepEqual(versions.versions.map(v=>v.revision),[13,12,11,10,9,8,7,6,5,4,3]);
+ assert.equal((await s.request(s.resumeId+'/versions/2')).status,404);
+ const snapshot=await(await s.request(s.resumeId+'/versions/3')).json();
+ assert.equal(snapshot.draft.sections[0].items[0].title,'编辑 1');
+ const restored=await s.request(s.resumeId+'/restore','POST',JSON.stringify({expectedRevision:13,targetRevision:3}),{'content-type':'application/json'});
+ assert.equal(restored.status,200);
+ const body=await restored.json();assert.equal(body.revision,14);assert.equal(body.draft.sections[0].items[0].title,'编辑 1');
+ assert.equal((await s.request(s.resumeId+'/restore','POST',JSON.stringify({expectedRevision:13,targetRevision:3}),{'content-type':'application/json'})).status,409);
+ const other=await dispatchWebRequest(new Request('http://test/api/session'),s.handler);
+ const foreign={cookie:other.headers.get('set-cookie').split(';')[0],'x-csrf-token':(await other.json()).csrfToken};
+ assert.equal((await s.request(s.resumeId+'/versions','GET',null,foreign)).status,404);
+ assert.equal((await s.request(s.resumeId+'/restore','POST',JSON.stringify({expectedRevision:14,targetRevision:3}),{'content-type':'application/json',...foreign})).status,404);
+ await s.request(s.resumeId,'DELETE');
+ assert.equal(s.db.prepare('SELECT count(*) n FROM resume_versions').get().n,0);
+});
+
+test('history keeps referenced images until old revisions are trimmed',async t=>{
+ const s=await readyResume(t),upload=await s.request(s.resumeId+'/images','POST',png1x1,{'content-type':'image/png'});
+ const {imageId}=await upload.json();let draft=(await(await s.request(s.resumeId)).json()).draft;
+ draft.sections[0].items[0].supplements={text:'',links:[],images:[{imageId,caption:'历史图片'}]};
+ draft=(await(await s.request(s.resumeId,'PATCH',JSON.stringify({revision:1,draft}))).json()).draft;
+ draft.sections[0].items[0].supplements.images=[];
+ draft=(await(await s.request(s.resumeId,'PATCH',JSON.stringify({revision:2,draft}))).json()).draft;
+ assert.equal((await s.request(s.resumeId+'/images/'+imageId)).status,200);
+ assert.equal((await s.request(s.resumeId+'/images/'+imageId,'DELETE')).status,409);
+ assert.equal((await(await s.request(s.resumeId+'/images')).json()).images.some(image=>image.imageId===imageId),false);
+ for(let index=0;index<10;index++){
+  draft.sections[0].items[0].title=`裁剪 ${index}`;
+  draft=(await(await s.request(s.resumeId,'PATCH',JSON.stringify({revision:draft.revision,draft}))).json()).draft;
+ }
+ assert.equal((await s.request(s.resumeId+'/images/'+imageId)).status,404);
+});
 test('upload retains one private PDF, source remains after parse, ownership and deletion enforced',async t=>{
  const s=await setup(t),r=await s.request('upload','POST',pdf());assert.equal(r.status,201);const file=await r.json();
  assert.equal(file.pageCount,1);assert.equal(readdirSync(s.root).length,1);assert.equal(statSync(s.root).mode&0o777,0o700);assert.equal(statSync(join(s.root,readdirSync(s.root)[0])).mode&0o777,0o600);

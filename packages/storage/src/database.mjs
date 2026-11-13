@@ -173,6 +173,18 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
       CREATE INDEX showcase_media_created ON showcase_media(created_at);
       CREATE UNIQUE INDEX generation_project ON generations(project_id) WHERE project_id IS NOT NULL;`);
   });
+  applyMigration(db, 10, () => {
+    db.exec(`CREATE TABLE session_cache_scopes (
+        session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+        cache_scope TEXT NOT NULL
+      );
+      CREATE TABLE resume_versions (
+        resume_id TEXT NOT NULL REFERENCES resumes(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL, draft_json TEXT NOT NULL, created_at INTEGER NOT NULL,
+        PRIMARY KEY(resume_id, revision)
+      );
+      CREATE INDEX resume_versions_latest ON resume_versions(resume_id, revision DESC);`);
+  });
   return db;
 }
 

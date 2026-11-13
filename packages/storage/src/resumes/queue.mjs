@@ -4,6 +4,7 @@ import { transaction } from '../database.mjs';
 import { resumeError } from './files.mjs';
 import { validateResumeSource } from '../../../contracts/src/resume-source.ts';
 import { normalizeResumeDraft, validateResumeDraft, validateResumeDraftV2 } from '../../../contracts/src/resume-draft.ts';
+import { draftImageIds, historyImageIds, listVersions, readVersion, reclaimImages, restoreVersion, snapshotPrevious } from './versions.mjs';
 const STAGES = ['queued', 'validate_source', 'extract_layout', 'classify_sections', 'map_design_modules', 'split_items', 'format_items', 'verify_evidence', 'complete_draft'];
 const ERRORS = new Set(['PARSE_TIMEOUT', 'PARSE_FAILED', 'FILE_TYPE_INVALID', 'PDF_PAGE_LIMIT', 'PDF_ENCRYPTED', 'PDF_NO_TEXT']);
 const iso = value => new Date(value).toISOString().replace('.000Z', 'Z');
@@ -124,11 +125,34 @@ export function createResumeParseQueue({
     draft(owner, id) {
       const row = owned(owner, id);
       if (row.status !== 'SUCCEEDED' || !row.draft_json) throw resumeError(409, 'DRAFT_NOT_READY');
+      let session=db.prepare('SELECT cache_scope FROM session_cache_scopes WHERE session_id=?').get(owner);
+      if(!session){
+        db.prepare('INSERT OR IGNORE INTO session_cache_scopes(session_id,cache_scope) VALUES(?,?)').run(owner,randomUUID());
+        session=db.prepare('SELECT cache_scope FROM session_cache_scopes WHERE session_id=?').get(owner);
+      }
       return {
         draft: normalizeResumeDraft(JSON.parse(row.draft_json)),
         expiresAt: iso(liveFile(row.owner_session_id, row.file_id).expires_at),
-        revision: row.revision
+        revision: row.revision,
+        cacheScope: session.cache_scope
       };
+    },
+    versions(owner,id) {
+      const row=owned(owner,id);
+      if(row.status!=='SUCCEEDED'||!row.draft_json) throw resumeError(409,'DRAFT_NOT_READY');
+      return listVersions(db,row);
+    },
+    version(owner,id,revision) {
+      const row=owned(owner,id);
+      if(row.status!=='SUCCEEDED'||!row.draft_json) throw resumeError(409,'DRAFT_NOT_READY');
+      return {...readVersion(db,row,revision),expiresAt:iso(liveFile(owner,row.file_id).expires_at)};
+    },
+    restore(owner,id,input) {
+      return transaction(db,()=>{
+        const row=owned(owner,id);
+        if(row.status!=='SUCCEEDED'||!row.draft_json) throw resumeError(409,'DRAFT_NOT_READY');
+        return restoreVersion(db,row,input,sourceFor(row),now);
+      });
     },
     // 原文对照摘录：仅暴露条目核对所需字段，bbox/字号等私有布局细节不下发
     blocks(owner, id) {
@@ -162,8 +186,7 @@ export function createResumeParseQueue({
       const row = owned(owner, id);
       if (row.status !== 'SUCCEEDED' || !row.draft_json) throw resumeError(409, 'DRAFT_NOT_READY');
       const draft = JSON.parse(row.draft_json);
-      const referenced = new Set(draft.sections.flatMap(section => section.items.flatMap(item =>
-        (item.supplements?.images ?? []).map(image => image.imageId))));
+      const referenced = new Set([...draftImageIds(draft),...historyImageIds(db,id)]);
       return { images: db.prepare('SELECT id,item_id,content_type,length(data) size FROM resume_images WHERE resume_id=? ORDER BY created_at,rowid').all(id)
         .filter(image => !referenced.has(image.id))
         .map(image => ({ imageId: image.id, itemId: image.item_id, contentType: image.content_type, size: image.size })) };
@@ -171,7 +194,7 @@ export function createResumeParseQueue({
     deleteImage(owner, id, imageId) {
       return transaction(db,()=>{
         const row=owned(owner,id),draft=JSON.parse(row.draft_json ?? '{}');
-        if(draft.sections?.some(s=>s.items.some(i=>i.supplements?.images.some(m=>m.imageId===imageId)))) throw resumeError(409,'IMAGE_STILL_REFERENCED');
+        if(draftImageIds(draft).has(imageId)||historyImageIds(db,id).has(imageId)) throw resumeError(409,'IMAGE_STILL_REFERENCED');
         db.prepare('DELETE FROM resume_images WHERE id=? AND resume_id=?').run(imageId,id);
         return {ok:true};
       });
@@ -209,10 +232,11 @@ export function createResumeParseQueue({
           if (found !== imageIds.length) throw resumeError(400, 'INVALID_DRAFT');
         }
         const previous=JSON.parse(row.draft_json);
-        const removed=previous.sections.flatMap(s=>s.items.flatMap(i=>i.supplements?.images ?? [])).filter(m=>!imageIds.includes(m.imageId));
-        for(const image of removed) db.prepare('DELETE FROM resume_images WHERE id=? AND resume_id=?').run(image.imageId,id);
+        const removed=new Set([...draftImageIds(previous)].filter(imageId=>!imageIds.includes(imageId)));
+        const pruned=snapshotPrevious(db,row,now);
         clean.revision = revision + 1;
         db.prepare('UPDATE resumes SET draft_json=?,revision=?,updated_at=? WHERE id=?').run(JSON.stringify(clean), clean.revision, now(), id);
+        reclaimImages(db,id,new Set([...removed,...pruned]));
         return {
           draft: clean,
           revision: clean.revision

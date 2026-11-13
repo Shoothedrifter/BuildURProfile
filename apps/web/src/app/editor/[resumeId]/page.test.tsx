@@ -251,8 +251,10 @@ it("edits supplement text, links and images on an entry", async () => {
   expect(thumbnail).toHaveAttribute("src", "/api/resumes/resume-1/images/img_1");
   // 保存时补充内容进入草稿
   fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
-  await waitFor(() => expect(resumeApi.save).toHaveBeenCalled());
-  const savedItem = vi.mocked(resumeApi.save).mock.calls[0][1].sections[0].items[0];
+  await waitFor(() => expect(vi.mocked(resumeApi.save).mock.calls.some(([,saved])=>
+    saved.sections[0].items[0].supplements?.images.some(image=>image.imageId==='img_1'))).toBe(true));
+  const savedItem = vi.mocked(resumeApi.save).mock.calls.find(([,saved])=>
+    saved.sections[0].items[0].supplements?.images.some(image=>image.imageId==='img_1'))![1].sections[0].items[0];
   expect(savedItem.supplements).toEqual({ text: "主导开源项目", links: [],
     images: [{ imageId: "img_1", caption: "" }] });
 });
@@ -266,6 +268,7 @@ it("keeps the draft in place and offers retry when saving fails", async () => {
       revision: 2, expiresAt: "2026-12-09T00:00:00Z" }));
   render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
   await screen.findByRole("heading", { name: "基本信息" });
+  fireEvent.change(screen.getByRole('textbox',{name:'标题'}),{target:{value:'待保存的人工修改'}});
   fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog).toHaveTextContent(/保存失败/);
@@ -274,6 +277,17 @@ it("keeps the draft in place and offers retry when saving fails", async () => {
   await waitFor(() => expect(vi.mocked(resumeApi.save)).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   expect(screen.getByRole("status")).toHaveTextContent(/已保存/);
+});
+
+it('automatically saves a changed entry after the debounce window',async()=>{
+  vi.mocked(resumeApi.read).mockResolvedValue({draft:fixture as never,revision:1,expiresAt:'2026-12-09T00:00:00Z'});
+  vi.mocked(resumeApi.save).mockImplementation(async(_id,draft)=>({draft:{...draft,revision:draft.revision+1},revision:draft.revision+1,expiresAt:'2026-12-09T00:00:00Z'}));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  await screen.findByRole('heading',{name:'基本信息'});
+  fireEvent.change(screen.getByRole('textbox',{name:'标题'}),{target:{value:'自动保存的新标题'}});
+  await waitFor(()=>expect(vi.mocked(resumeApi.save)).toHaveBeenCalledTimes(1),{timeout:2000});
+  expect(vi.mocked(resumeApi.save).mock.calls[0][1].sections[0].items[0].title).toBe('自动保存的新标题');
+  expect(screen.getByRole('status')).toHaveTextContent(/已保存/);
 });
 
 it('requires explicit review, preserves confidence and retains PDF', async () => {

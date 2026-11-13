@@ -2,7 +2,8 @@ import type { ResumeDraftV2 } from "../../../../packages/contracts/src/resume-dr
 
 export type ResumeStatus = { resumeId: string; fileId?: string; status: string; stage?: string; progress?: number; errorCode?: string | null };
 export type PendingResumeImage = { imageId: string; itemId: string | null; contentType: string; size: number };
-export type StoredResume = { draft: ResumeDraftV2; revision: number; expiresAt: string };
+export type StoredResume = { draft: ResumeDraftV2; revision: number; expiresAt: string; cacheScope?: string };
+export type ResumeVersion = { revision:number; createdAt:number };
 // 原文对照摘录（服务端已裁剪：仅 blockId/page/readingOrder/text）
 export type SourceBlockExcerpt = { blockId: string; page: number; readingOrder: number; text: string };
 export type SourceBlocks = { blocks: SourceBlockExcerpt[] };
@@ -65,6 +66,15 @@ export const resumeApi = {
   },
   read(resumeId: string): Promise<StoredResume> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}`);
+  },
+  versions(resumeId:string):Promise<{versions:ResumeVersion[]}>{
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/versions`);
+  },
+  version(resumeId:string,revision:number):Promise<{draft:ResumeDraftV2;revision:number;expiresAt:string}>{
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/versions/${revision}`);
+  },
+  restore(resumeId:string,expectedRevision:number,targetRevision:number):Promise<{draft:ResumeDraftV2;revision:number}>{
+    return request(`/api/resumes/${encodeURIComponent(resumeId)}/restore`,'POST',{expectedRevision,targetRevision});
   },
   blocks(resumeId: string): Promise<SourceBlocks> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/blocks`);

@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { projectConfirmedResume, RESUME_MODULE_MAPPING } from "../../../../../../packages/contracts/src/resume-draft";
+import { projectConfirmedResumeV3, RESUME_MODULE_MAPPING } from "../../../../../../packages/contracts/src/resume-draft";
 import type { ResumeDraftItemV2, ResumeDraftSectionV2, ResumeDraftV2, ResumeModuleKind } from "../../../../../../packages/contracts/src/resume-draft";
 import { validHttpUrl } from "../../../../../../packages/contracts/src/resume-v2.mjs";
-import { resumeApi, type PendingResumeImage } from "../../../lib/resumeApi";
+import { resumeApi, type PendingResumeImage, type ResumeVersion } from "../../../lib/resumeApi";
+import { createResumeAutosave } from "../../../lib/resumeAutosave";
+import { applyLocalDelta, getLocalDelta, makeLocalDelta, putLocalDelta, removeLocalDelta, type ResumeLocalDelta } from "../../../lib/resumeLocalDraft";
 import { AgentChrome } from "../../../components/AgentChrome";
 import { ProofButton, ProofCard, StepHeader } from "../../../components/BuilderChrome";
 import { ConfirmDialog, EntryCard, ModuleCard, ModuleChecklist } from "../../../components/AgentEditor";
@@ -15,8 +17,20 @@ const labels: Record<ResumeModuleKind, string> = {
   workExperience: "实习 / 工作经历", projects: "项目经历", awards: "荣誉奖项",
   campusExperience: "校园经历", skills: "专业技能", other: "其他内容"
 };
+function normalizeEditorLinks(raw:ResumeDraftV2):ResumeDraftV2 {
+  const normalized=structuredClone(raw);
+  for(const section of normalized.sections)for(const item of section.items){
+    if(!item.supplements)continue;
+    item.supplements.links=item.supplements.links.filter(link=>link.url.trim()||link.label?.trim())
+      .map(link=>({...link,url:link.url.trim()}));
+    if(item.supplements.links.some(link=>!validHttpUrl(link.url)||[...link.url].length>2000||[...(link.label??'')].length>80))
+      throw new Error('INVALID_LINK');
+  }
+  return normalized;
+}
 
 type DialogState = null | { kind: "reparse" } | { kind: "removeResume" }
+  | { kind: "leave"; href:string }
   | { kind: "hideSection"; sectionKind: ResumeModuleKind }
   | { kind: "removeItem"; sectionKind: ResumeModuleKind; itemId: string }
   | { kind: "splitItem"; sectionKind: ResumeModuleKind; itemId: string }
@@ -38,6 +52,17 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState("");
+  const [saveStatus,setSaveStatus]=useState<'saved'|'dirty'|'saving'|'offline'|'conflict'|'invalid'>('saved');
+  const [versions,setVersions]=useState<ResumeVersion[]>([]);
+  const [historyOpen,setHistoryOpen]=useState(false);
+  const [historyPreview,setHistoryPreview]=useState<ResumeDraftV2|null>(null);
+  const [recoverableDelta,setRecoverableDelta]=useState<ResumeLocalDelta|null>(null);
+  const [localReady,setLocalReady]=useState(false);
+  const baseDraftRef=useRef<ResumeDraftV2|null>(null);
+  const cacheScopeRef=useRef('');
+  const autosaveRef=useRef<ReturnType<typeof createResumeAutosave<ResumeDraftV2>>|null>(null);
+  const immediateSaveRef=useRef(false);
+  const allowLeaveRef=useRef(false);
   const [expandedKind, setExpandedKind] = useState<ResumeModuleKind | null>("basicInfo");
   const [dialog, setDialog] = useState<DialogState>(null);
   const [splitBoundary, setSplitBoundary] = useState(1);
@@ -53,13 +78,40 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     .map((kind) => ({ kind: kind as ResumeModuleKind, label: labels[kind as ResumeModuleKind] }));
 
   useEffect(() => { void params.then(({ resumeId: id }) => setResumeId(id)); }, [params]);
+  useEffect(()=>{
+    if(!resumeId)return;
+    const controller=createResumeAutosave<ResumeDraftV2>({
+      save:next=>resumeApi.save(resumeId,normalizeEditorLinks(next)),
+      onStatus:status=>{if(mounted.current)setSaveStatus(status);},
+      onSaved:(result,sent)=>{
+        baseDraftRef.current=result.draft;
+        if(!mounted.current)return;
+        setSavedAt(new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));
+        setDraft(current=>{
+          if(!current)return result.draft;
+          const fingerprint=(value:ResumeDraftV2)=>JSON.stringify({...value,revision:0});
+          return fingerprint(current)===fingerprint(sent)?result.draft:{...current,revision:result.revision};
+        });
+        if(typeof resumeApi.versions==='function')void resumeApi.versions(resumeId).then(result=>{if(mounted.current)setVersions(result.versions);}).catch(()=>{});
+      }
+    });
+    autosaveRef.current=controller;
+    return()=>{controller.dispose();if(autosaveRef.current===controller)autosaveRef.current=null;};
+  },[resumeId]);
   useEffect(() => {
     if (!resumeId) return;
     let active = true;
     void resumeApi.read(resumeId).then((result) => {
       if (!active) return;
+      baseDraftRef.current=result.draft;cacheScopeRef.current=result.cacheScope ?? '';
+      autosaveRef.current?.initialize(result.draft);
       setDraft(result.draft); setExpiresAt(result.expiresAt);
+      if(result.cacheScope)void getLocalDelta(result.cacheScope,resumeId)
+        .then(local=>{if(active&&local)setRecoverableDelta(local);})
+        .catch(()=>{}).finally(()=>{if(active)setLocalReady(true);});
+      else setLocalReady(true);
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "草稿读取失败。"); });
+    if(typeof resumeApi.versions==='function')void resumeApi.versions(resumeId).then(result=>{if(active)setVersions(result.versions);}).catch(()=>{});
     void resumeApi.pendingImages(resumeId).then(result => {
       if (active) setPendingImages(result.images);
     }).catch(() => { /* 可以通过管理入口重试；不影响现有草稿。 */ });
@@ -72,6 +124,45 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     return () => { active = false; };
   }, [resumeId]);
 
+  useEffect(()=>{
+    if(!draft||!resumeId||!baseDraftRef.current)return;
+    autosaveRef.current?.update(draft);
+    if(immediateSaveRef.current){immediateSaveRef.current=false;void autosaveRef.current?.flush().catch(()=>{});}
+    if(!localReady||!cacheScopeRef.current||recoverableDelta)return;
+    const fingerprint=(value:ResumeDraftV2)=>JSON.stringify({...value,revision:0});
+    if(fingerprint(draft)===fingerprint(baseDraftRef.current)){
+      void removeLocalDelta(cacheScopeRef.current,resumeId).catch(()=>{});
+    }else{
+      const delta=makeLocalDelta(baseDraftRef.current,draft,cacheScopeRef.current,resumeId,expiresAt);
+      void putLocalDelta(delta).catch(()=>{});
+    }
+  },[draft,resumeId,expiresAt,localReady,recoverableDelta]);
+
+  useEffect(()=>{
+    const onBeforeUnload=(event:BeforeUnloadEvent)=>{
+      if(!allowLeaveRef.current&&['dirty','saving','offline','conflict','invalid'].includes(autosaveRef.current?.status()??'')){
+        event.preventDefault();event.returnValue='';
+      }
+    };
+    window.addEventListener('beforeunload',onBeforeUnload);
+    return()=>window.removeEventListener('beforeunload',onBeforeUnload);
+  },[]);
+
+  useEffect(()=>{
+    const onClick=(event:MouseEvent)=>{
+      const target=event.target;
+      if(!(target instanceof Element))return;
+      const anchor=target.closest('a[href]');
+      if(!anchor||anchor.getAttribute('href')?.startsWith('#')||anchor.getAttribute('target')==='_blank')return;
+      const href=(anchor as HTMLAnchorElement).href;
+      if(!href.startsWith(window.location.origin))return;
+      if(!['dirty','saving','offline','conflict','invalid'].includes(autosaveRef.current?.status()??''))return;
+      event.preventDefault();event.stopPropagation();setDialog({kind:'leave',href});
+    };
+    document.addEventListener('click',onClick,true);
+    return()=>document.removeEventListener('click',onClick,true);
+  },[]);
+
   const updateSection = (kind: ResumeModuleKind, change: (section: ResumeDraftSectionV2) => Partial<ResumeDraftSectionV2>) => {
     setDraft((previous) => previous ? { ...previous, sections: previous.sections.map((section) =>
       section.kind === kind ? { ...section, ...change(section) } : section) } : previous);
@@ -81,12 +172,17 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     updateSection(kind, (section) => ({ items: section.items.map((item) =>
       item.itemId === itemId ? change(item) : item) }));
 
-  const patchItem = (kind: ResumeModuleKind, itemId: string, patch: Partial<ResumeDraftItemV2>) =>
+  const patchItem = (kind: ResumeModuleKind, itemId: string, patch: Partial<ResumeDraftItemV2>) => {
+    const previous=draftRef.current?.sections.find(section=>section.kind===kind)?.items.find(item=>item.itemId===itemId)?.supplements;
+    if(patch.supplements && (JSON.stringify(previous?.images)!==JSON.stringify(patch.supplements.images)
+      || JSON.stringify(previous?.links)!==JSON.stringify(patch.supplements.links)
+        && patch.supplements.links.every(link=>validHttpUrl(link.url))))immediateSaveRef.current=true;
     updateSection(kind, (section) => ({
       visible: patch.included ? true : section.visible,
       items: section.items.map((entry) => entry.itemId === itemId ? { ...entry, ...patch,
         editedFields: [...new Set([...(entry.editedFields ?? []), ...Object.keys(patch)])] } : entry)
     }));
+  };
 
   const includeFact = (kind: ResumeModuleKind, itemId: string, factKey: string, included: boolean) =>
     updateSection(kind, (section) => ({
@@ -165,22 +261,20 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     if (uploading.current) { setError("请等待图片上传完成。"); return; }
     const pending = draft.sections.find(s => s.items.some(i => i.needsReview));
     if (continueToStyle && pending) { selectModule(pending.kind); setError("请先完成待核对条目。"); return; }
-    const normalized = structuredClone(draft);
-    for (const section of normalized.sections) for (const item of section.items) {
-      if (!item.supplements) continue;
-      item.supplements.links = item.supplements.links.filter(l => l.url.trim() || l.label?.trim()).map(l => ({...l,url:l.url.trim()}));
-      if (item.supplements.links.some(l => !validHttpUrl(l.url) || [...l.url].length>2000 || [...(l.label ?? "")].length>80)) {
-        selectModule(section.kind); setError(`「${item.title || labels[section.kind]}」的链接须为有效 HTTP(S) 地址。`); return;
-      }
+    let normalized:ResumeDraftV2;
+    try{normalized=normalizeEditorLinks(draft);}catch{
+      const section=draft.sections.find(section=>section.items.some(item=>item.supplements?.links.some(link=>!validHttpUrl(link.url))));
+      if(section)selectModule(section.kind);
+      setError('链接须为有效 HTTP(S) 地址。');return;
     }
     setBusy(true); setError("");
     try {
-      if (continueToStyle) projectConfirmedResume(normalized);
-      const saved = await resumeApi.save(resumeId, normalized);
-      setDraft(saved.draft);
-      setSavedAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
+      if (continueToStyle) projectConfirmedResumeV3(normalized);
+      setDraft(normalized);
+      await autosaveRef.current?.flush(normalized);
+      if(autosaveRef.current?.status()!=='saved')throw new Error('REVISION_CONFLICT');
       setDialog(null);
-      if (continueToStyle) window.location.assign(`/style/${encodeURIComponent(resumeId)}`);
+      if (continueToStyle){allowLeaveRef.current=true;window.location.assign(`/style/${encodeURIComponent(resumeId)}`);}
     } catch (cause) {
       // 保存失败走挽留弹窗：改动仍在页面上，可一键重试或继续编辑
       const detail = cause instanceof Error ? cause.message : "保存失败。";
@@ -206,6 +300,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       if(!mounted.current) { releaseImage(imageId); return; }
       const target = draftRef.current?.sections.find(section => section.items.some(entry => entry.itemId === itemId));
       if (!target) { await resumeApi.deleteImage(resumeId, imageId); return; }
+      immediateSaveRef.current=true;
       updateItem(target.kind, itemId, current => ({ ...current,
         editedFields: [...new Set([...(current.editedFields ?? []), 'supplements'])],
         supplements: { ...(current.supplements ?? { text: "", links: [], images: [] }),
@@ -222,6 +317,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     setBusy(true); setError("");
     try {
       await resumeApi.remove(resumeId);
+      if(cacheScopeRef.current)void removeLocalDelta(cacheScopeRef.current,resumeId).catch(()=>{});
       sessionStorage.removeItem("burp-agent-resume-id");
       sessionStorage.removeItem("burp-agent-file-id");
       window.location.assign("/upload");
@@ -256,7 +352,9 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     const count = draft?.sections.flatMap(section => section.items.flatMap(item => item.supplements?.images ?? [])).length ?? 0;
     if (!target || !item) { setError("请先选择要恢复的条目。"); return; }
     if ((item.supplements?.images.length ?? 0) >= 6 || count >= 24) { setError("每条最多 6 张、整份简历最多 24 张图片。"); return; }
-    updateItem(target.kind, itemId, current => ({...current, supplements: {
+    immediateSaveRef.current=true;
+    updateItem(target.kind, itemId, current => ({...current,
+      editedFields:[...new Set([...(current.editedFields??[]),'supplements'])],supplements: {
       ...(current.supplements ?? {text:"", links:[], images:[]}),
       images: [...(current.supplements?.images ?? []), {imageId, caption:""}]
     }}));
@@ -267,6 +365,40 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       await resumeApi.deleteImage(resumeId, imageId);
       setPendingImages(previous => previous.filter(image => image.imageId !== imageId));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "图片删除失败。"); }
+  };
+  const recoverLocal=()=>{
+    if(!draft||!recoverableDelta)return;
+    try{
+      setDraft(applyLocalDelta(draft,recoverableDelta,cacheScopeRef.current,resumeId,Date.now()));
+      setRecoverableDelta(null);setError('');
+    }catch(cause){setError(cause instanceof Error?cause.message:'本地草稿恢复失败。');}
+  };
+  const downloadLocalDelta=()=>{
+    if(!recoverableDelta)return;
+    const url=URL.createObjectURL(new Blob([JSON.stringify(recoverableDelta,null,2)],{type:'application/json'}));
+    const anchor=document.createElement('a');anchor.href=url;anchor.download='简历未保存修改.json';anchor.click();
+    setTimeout(()=>URL.revokeObjectURL(url),0);
+  };
+  const previewVersion=async(revision:number)=>{
+    try{setHistoryPreview((await resumeApi.version(resumeId,revision)).draft);setError('');}
+    catch(cause){setError(cause instanceof Error?cause.message:'历史版本读取失败。');}
+  };
+  const restoreHistory=async()=>{
+    if(!historyPreview||!draft)return;
+    setBusy(true);
+    try{
+      await autosaveRef.current?.flush(draft);
+      if(autosaveRef.current?.status()!=='saved')throw new Error('请先解决未保存修改。');
+      const expected=autosaveRef.current.latest()?.revision??draft.revision;
+      const restored=await resumeApi.restore(resumeId,expected,historyPreview.revision);
+      baseDraftRef.current=restored.draft;
+      autosaveRef.current?.initialize(restored.draft);
+      setDraft(restored.draft);setHistoryPreview(null);
+      setVersions((await resumeApi.versions(resumeId)).versions);
+      if(cacheScopeRef.current)void removeLocalDelta(cacheScopeRef.current,resumeId).catch(()=>{});
+      setError('');
+    }catch(cause){setError(cause instanceof Error?cause.message:'历史恢复失败。');}
+    finally{setBusy(false);}
   };
   const localImageIds = new Set(draft?.sections.flatMap(section => section.items.flatMap(item =>
     (item.supplements?.images ?? []).map(image => image.imageId))) ?? []);
@@ -310,12 +442,35 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       <StepHeader number={2} title="核对经历，把你的能力补充完整"
         description={`Agent 已按模块整理内容，只有主动勾选的内容会用于作品。原 PDF 与草稿保留至 ${expiresAt ? new Date(expiresAt).toLocaleString("zh-CN") : "上传 30 天后"} 自动删除。`} />
       <div className="proof-status-row">
-        <p role="status">{savedAt ? `已保存 ${savedAt}` : "尚未保存"}
+        <p role="status">{saveStatus==='saving'?'正在保存…':saveStatus==='dirty'?'待自动保存':saveStatus==='offline'?'保存失败：修改保存在本机，可重试':saveStatus==='invalid'?'链接地址无效，请修改后保存':saveStatus==='conflict'?'其他页面已更新：本机修改已保留':savedAt ? `已保存 ${savedAt}` : "尚未保存"}
           {pendingSections > 0 ? ` · 待确认 ${pendingSections} 个模块` : ""}</p>
         <ProofButton disabled={busy || !draft} onClick={() => void refreshPendingImages()}>管理未保存图片</ProofButton>
         <ProofButton disabled={busy || !draft} onClick={() => void save()}>保存草稿</ProofButton>
+        <ProofButton disabled={busy || !draft} onClick={()=>setHistoryOpen(value=>!value)}>版本历史</ProofButton>
         <ProofButton disabled={busy || !draft} onClick={() => setDialog({ kind: "reparse" })}>重新解析为新草稿</ProofButton>
       </div>
+      {recoverableDelta&&<section className="proof-card" aria-label="恢复本机草稿">
+        <h2>发现未保存的本机修改</h2>
+        <p>这份副本只适用于当前会话和原修订。若另一页面已保存新版本，请先下载差异留存。</p>
+        <ProofButton onClick={recoverLocal}>恢复本机修改</ProofButton>
+        <ProofButton onClick={downloadLocalDelta}>下载差异</ProofButton>
+        <ProofButton onClick={()=>{if(cacheScopeRef.current)void removeLocalDelta(cacheScopeRef.current,resumeId).catch(()=>{});setRecoverableDelta(null);}}>丢弃本机副本</ProofButton>
+      </section>}
+      {historyOpen&&<section className="proof-card" aria-label="简历版本历史">
+        <h2>简历版本历史</h2>
+        <p>当前版本与最近 10 个已保存版本；恢复会创建新版本。</p>
+        <ul>{versions.map(version=><li key={version.revision}>
+          版本 {version.revision} · {new Date(version.createdAt).toLocaleString('zh-CN')}
+          {version.revision!==draft?.revision&&<ProofButton onClick={()=>void previewVersion(version.revision)}>查看版本 {version.revision}</ProofButton>}
+        </li>)}</ul>
+        {historyPreview&&<div aria-label={`版本 ${historyPreview.revision} 预览`}>
+          <h3>版本 {historyPreview.revision}</h3>
+          {historyPreview.sections.filter(section=>section.items.length).map(section=><p key={section.kind}>
+            {labels[section.kind]}：{section.items.map(item=>item.title||item.details.slice(0,40)).join('、')}
+          </p>)}
+          <ProofButton disabled={busy} onClick={()=>void restoreHistory()}>恢复版本 {historyPreview.revision}</ProofButton>
+        </div>}
+      </section>}
       {draft && recoverableImages.length > 0 && <section className="proof-card" aria-label="未保存图片">
         <h2>未保存图片</h2>
         <p>这些上传尚未进入已保存草稿，仍会占用图片额度。可恢复到条目或删除；请保留其他编辑页面仍在使用的图片。</p>
@@ -365,7 +520,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
                 editedFields:[...new Set([...(current.editedFields ?? []),`fact:${factKey}`])],
                 facts: current.facts.map((fact) => fact.key === factKey ? { ...fact, label: nextLabel } : fact) }))}
               onUploadImage={(file) => { void uploadSupplementImage(section.kind, item.itemId, file); }}
-              onRemoveImage={(imageId)=>{updateItem(section.kind,item.itemId,current=>({...current,
+              onRemoveImage={(imageId)=>{immediateSaveRef.current=true;updateItem(section.kind,item.itemId,current=>({...current,
                 editedFields:[...new Set([...(current.editedFields ?? []),'supplements'])],
                 supplements:{...(current.supplements ?? {text:"",links:[],images:[]}),images:(current.supplements?.images ?? []).filter(m=>m.imageId!==imageId)}}));releaseImage(imageId);}}
               imageUrl={(imageId) => resumeApi.imageUrl(resumeId, imageId)}
@@ -435,5 +590,9 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       confirmLabel="重试保存" busy={busy}
       onConfirm={() => { if (dialog?.kind === "saveFailed") void save(dialog.retryStyle); }}
       onClose={() => setDialog(null)} />
+    <ConfirmDialog open={dialog?.kind==='leave'} title="离开当前编辑页"
+      description="尚有未保存修改。本机副本会保留到原 PDF 到期；离开前可继续编辑并重试保存。"
+      confirmLabel="保留副本并离开" onConfirm={()=>{if(dialog?.kind==='leave'){allowLeaveRef.current=true;window.location.assign(dialog.href);}}}
+      onClose={()=>setDialog(null)} />
   </AgentChrome>;
 }

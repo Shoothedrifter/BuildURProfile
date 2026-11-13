@@ -94,7 +94,7 @@ test('successful v3 task creates exactly one unpaid project and retains media be
  assert.throws(()=>s.service.readShowcaseMedia('owner',id));
 });
 
-test('removing saved images releases private upload quota and unsaved uploads can be cancelled',t=>{
+test('history protects saved images until pruning while unsaved uploads can be cancelled',t=>{
  const s=setup(t),item=s.draft.sections[0].items[0];
  const a=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
  s.queue.deleteImage('owner',s.draft.resumeId,a);
@@ -104,7 +104,13 @@ test('removing saved images releases private upload quota and unsaved uploads ca
  const saved=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});
  assert.throws(()=>s.queue.deleteImage('owner',s.draft.resumeId,b));
  saved.draft.sections[0].items[0].supplements.images=[];
- s.queue.patch('owner',s.draft.resumeId,{revision:saved.revision,draft:saved.draft});
+ let latest=s.queue.patch('owner',s.draft.resumeId,{revision:saved.revision,draft:saved.draft});
+ assert.equal(s.queue.readImage('owner',s.draft.resumeId,b).contentType,'image/png');
+ assert.throws(()=>s.queue.deleteImage('owner',s.draft.resumeId,b));
+ for(let index=0;index<10;index++){
+  latest.draft.sections[0].items[0].title=`修订 ${index}`;
+  latest=s.queue.patch('owner',s.draft.resumeId,{revision:latest.revision,draft:latest.draft});
+ }
  assert.throws(()=>s.queue.readImage('owner',s.draft.resumeId,b));
 });
 test('upload budget checks total bytes/count and selected copies reject corrupt legacy image bytes',t=>{

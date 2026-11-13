@@ -16,6 +16,9 @@ export async function handleResumeRoutes({req,res,parts,sessionId,repository,sen
  if(parts.length===4&&parts[3]==='status'&&req.method==='GET'){sendJson(res,200,queue.status(sessionId,parts[2]));return true;}
  if(parts.length===4&&parts[3]==='blocks'&&req.method==='GET'){sendJson(res,200,queue.blocks(sessionId,parts[2]));return true;}
  if(parts.length===4&&parts[3]==='cancel'&&req.method==='POST'){sendJson(res,200,queue.cancel(sessionId,parts[2]));return true;}
+ if(parts.length===4&&parts[3]==='versions'&&req.method==='GET'){sendJson(res,200,queue.versions(sessionId,parts[2]));return true;}
+ if(parts.length===5&&parts[3]==='versions'&&req.method==='GET'){sendJson(res,200,queue.version(sessionId,parts[2],Number(parts[4])));return true;}
+ if(parts.length===4&&parts[3]==='restore'&&req.method==='POST'){sendJson(res,200,queue.restore(sessionId,parts[2],await bodyJson(req,4096)));return true;}
  if(parts.length===3&&req.method==='GET'){sendJson(res,200,queue.draft(sessionId,parts[2]));return true;}
  if(parts.length===3&&req.method==='PATCH'){sendJson(res,200,queue.patch(sessionId,parts[2],await bodyJson(req,16*1024*1024)));return true;}
 
