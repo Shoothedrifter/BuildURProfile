@@ -1,8 +1,8 @@
-import type { ResumeDraftV1 } from "../../../../packages/contracts/src/resume-draft";
+import type { ResumeDraftV2 } from "../../../../packages/contracts/src/resume-draft";
 
 export type ResumeStatus = { resumeId: string; fileId?: string; status: string; stage?: string; progress?: number; errorCode?: string | null };
 export type PendingResumeImage = { imageId: string; itemId: string | null; contentType: string; size: number };
-export type StoredResume = { draft: ResumeDraftV1; revision: number; expiresAt: string };
+export type StoredResume = { draft: ResumeDraftV2; revision: number; expiresAt: string };
 // 原文对照摘录（服务端已裁剪：仅 blockId/page/readingOrder/text）
 export type SourceBlockExcerpt = { blockId: string; page: number; readingOrder: number; text: string };
 export type SourceBlocks = { blocks: SourceBlockExcerpt[] };
@@ -88,7 +88,7 @@ export const resumeApi = {
   deleteImage(resumeId: string, imageId: string): Promise<{ok: boolean}> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}/images/${encodeURIComponent(imageId)}`, "DELETE");
   },
-  save(resumeId: string, draft: ResumeDraftV1): Promise<StoredResume> {
+  save(resumeId: string, draft: ResumeDraftV2): Promise<StoredResume> {
     return request(`/api/resumes/${encodeURIComponent(resumeId)}`, "PATCH", { revision: draft.revision, draft });
   },
   cancel(resumeId: string): Promise<{ status: string }> {

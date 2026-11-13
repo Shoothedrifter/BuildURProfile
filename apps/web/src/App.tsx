@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { DesignConfig, JobRole, ResumeContent } from "../../../packages/contracts/src/config";
-import type { ResumeDraftV1 } from "../../../packages/contracts/src/resume-draft";
+import type { ResumeDraftV2 } from "../../../packages/contracts/src/resume-draft";
 import { projectConfirmedResume } from "../../../packages/contracts/src/resume-draft";
 import type { AvatarStyleId, GenerationStatus } from "./lib/generationApi";
 import type { Offer, OwnedProject } from "./lib/paymentApi";
@@ -64,7 +64,7 @@ export default function App() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<ResumeDraft | null>(null);
-  const [agentDraft, setAgentDraft] = useState<ResumeDraftV1 | null>(null);
+  const [agentDraft, setAgentDraft] = useState<ResumeDraftV2 | null>(null);
   const [role, setRole] = useState<JobRole>("frontend-creative-developer");
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [generated, setGenerated] = useState<DesignConfig | null>(null);

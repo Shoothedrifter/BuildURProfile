@@ -194,6 +194,25 @@ class ResumeSourceV1(StrictModel):
         return self
 
 
+class PdfBlockV2(PdfBlock):
+    sourceType: Literal['pdf', 'ocr']
+    ocrConfidence: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode='after')
+    def valid_provenance(self):
+        if self.sourceType == 'ocr' and self.ocrConfidence is None:
+            raise ValueError('OCR block needs confidence')
+        if self.sourceType == 'pdf' and self.ocrConfidence is not None:
+            raise ValueError('PDF block cannot carry OCR confidence')
+        return self
+
+
+class ResumeSourceV2(ResumeSourceV1):
+    version: Literal['resume-source-v2']
+    extractionVersion: Literal['pdf-layout-v2']
+    blocks: list[PdfBlockV2] = Field(min_length=1, max_length=5000)
+
+
 class DraftFact(StrictModel):
     key: ResumeId
     label: str = Field(max_length=100)
@@ -278,6 +297,38 @@ class ResumeDraftV1(StrictModel):
         items = [i.itemId for s in self.sections for i in s.items]
         if len(items) != len(set(items)) or any(len({i.order for i in s.items}) != len(s.items) for s in self.sections):
             raise ValueError('Duplicate item ID/order')
+        return self
+
+
+class ResumeDraftItemV2(ResumeDraftItem):
+    editedFields: list[str]
+    derivedFromItemId: ResumeId | None = None
+
+    @model_validator(mode='after')
+    def valid_edit_fields(self):
+        import re
+        if len(set(self.editedFields)) != len(self.editedFields) or any(
+            not re.fullmatch(r'(title|details|included|supplements|needsReview|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})', field)
+            for field in self.editedFields
+        ):
+            raise ValueError('Invalid edit fields')
+        return self
+
+
+class ResumeDraftSectionV2(ResumeDraftSection):
+    items: list[ResumeDraftItemV2] = Field(max_length=100)
+
+
+class ResumeDraftV2(ResumeDraftV1):
+    version: Literal['resume-draft-v2']
+    sections: list[ResumeDraftSectionV2] = Field(min_length=10, max_length=10)
+
+    @model_validator(mode='after')
+    def contiguous_orders(self):
+        if sorted(section.order for section in self.sections) != list(range(10)):
+            raise ValueError('Noncontiguous section order')
+        if any(sorted(item.order for item in section.items) != list(range(len(section.items))) for section in self.sections):
+            raise ValueError('Noncontiguous item order')
         return self
 
 

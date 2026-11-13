@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { transaction } from '../database.mjs';
 import { resumeError } from './files.mjs';
 import { validateResumeSource } from '../../../contracts/src/resume-source.ts';
-import { validateResumeDraft } from '../../../contracts/src/resume-draft.ts';
+import { normalizeResumeDraft, validateResumeDraft, validateResumeDraftV2 } from '../../../contracts/src/resume-draft.ts';
 const STAGES = ['queued', 'validate_source', 'extract_layout', 'classify_sections', 'map_design_modules', 'split_items', 'format_items', 'verify_evidence', 'complete_draft'];
 const ERRORS = new Set(['PARSE_TIMEOUT', 'PARSE_FAILED', 'FILE_TYPE_INVALID', 'PDF_PAGE_LIMIT', 'PDF_ENCRYPTED', 'PDF_NO_TEXT']);
 const iso = value => new Date(value).toISOString().replace('.000Z', 'Z');
@@ -125,7 +125,7 @@ export function createResumeParseQueue({
       const row = owned(owner, id);
       if (row.status !== 'SUCCEEDED' || !row.draft_json) throw resumeError(409, 'DRAFT_NOT_READY');
       return {
-        draft: JSON.parse(row.draft_json),
+        draft: normalizeResumeDraft(JSON.parse(row.draft_json)),
         expiresAt: iso(liveFile(row.owner_session_id, row.file_id).expires_at),
         revision: row.revision
       };
@@ -194,7 +194,9 @@ export function createResumeParseQueue({
         if (revision !== row.revision || draft?.revision !== revision) throw resumeError(409, 'REVISION_CONFLICT');
         let clean;
         try {
-          clean = validateResumeDraft(draft, sourceFor(row));
+          clean = draft?.version === 'resume-draft-v2'
+            ? validateResumeDraftV2(draft, sourceFor(row))
+            : normalizeResumeDraft(validateResumeDraft(draft, sourceFor(row)));
         } catch {
           throw resumeError(400, 'INVALID_DRAFT');
         }
@@ -293,7 +295,7 @@ export function createResumeParseQueue({
         db.prepare('DELETE FROM resume_blocks WHERE resume_id=?').run(task.resume_id);
         const insert = db.prepare('INSERT INTO resume_blocks(resume_id,block_id,block_json) VALUES(?,?,?)');
         for (const block of cleanSource.blocks) insert.run(task.resume_id, block.blockId, JSON.stringify(block));
-        db.prepare("UPDATE resumes SET draft_json=?,revision=1,status='SUCCEEDED',updated_at=? WHERE id=?").run(JSON.stringify(cleanDraft), now(), task.resume_id);
+        db.prepare("UPDATE resumes SET draft_json=?,revision=1,status='SUCCEEDED',updated_at=? WHERE id=?").run(JSON.stringify(normalizeResumeDraft(cleanDraft)), now(), task.resume_id);
         db.prepare("UPDATE resume_parse_tasks SET status='SUCCEEDED',stage='complete_draft',progress=100,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(now(), id);
         return {
           ok: true

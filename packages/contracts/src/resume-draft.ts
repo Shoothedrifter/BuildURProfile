@@ -1,5 +1,6 @@
 import { resumeV1View, resumeDisplayContent, validHttpUrl } from './resume-v2.mjs';
 import schema from '../schema/resume-draft.v1.json' with { type: 'json' };
+import schemaV2 from '../schema/resume-draft.v2.json' with { type: 'json' };
 import { cleanStructuredResume } from './validation.mjs';
 import type { ResumeContent, StructuredResumeV1, StructuredResumeV2 } from './config';
 import { validateResumeSource, validateSchema } from './resume-source.ts';
@@ -11,6 +12,42 @@ export type ItemSupplements = { text: string; links: { label?: string; url: stri
 export type ResumeDraftItem = { itemId: string; order: number; title: string; details: string; facts: DraftFact[]; sourceBlockIds: string[]; confidence: number; segmentationConfidence: number; needsReview: boolean; included: boolean; origin: 'agent' | 'user'; supplements?: ItemSupplements };
 export type ResumeDraftSection = { id: ResumeModuleKind; kind: ResumeModuleKind; mappedDesignModule: string; order: number; visible: boolean; items: ResumeDraftItem[] };
 export type ResumeDraftV1 = { version: 'resume-draft-v1'; resumeId: string; fileId: string; revision: number; sections: ResumeDraftSection[] };
+export type ResumeDraftItemV2 = ResumeDraftItem & { editedFields: string[]; derivedFromItemId?: string };
+export type ResumeDraftSectionV2 = Omit<ResumeDraftSection, 'items'> & { items: ResumeDraftItemV2[] };
+export type ResumeDraftV2 = Omit<ResumeDraftV1, 'version' | 'sections'> & { version: 'resume-draft-v2'; sections: ResumeDraftSectionV2[] };
+const editableField = /^(title|details|included|supplements|needsReview|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})$/;
+export function normalizeResumeDraft(raw: unknown): ResumeDraftV2 {
+  if ((raw as {version?: string})?.version === 'resume-draft-v2') {
+    validateSchema(raw, schemaV2);
+    return structuredClone(raw as ResumeDraftV2);
+  }
+  const draft = validateShape(raw);
+  return { ...draft, version: 'resume-draft-v2', sections: draft.sections.map(section => ({
+    ...section, items: section.items.map(item => ({ ...item, editedFields: [] }))
+  })) };
+}
+export function validateResumeDraftV2(raw: unknown, rawSource: unknown): ResumeDraftV2 {
+  validateSchema(raw, schemaV2);
+  const draft = raw as ResumeDraftV2;
+  const source = validateResumeSource(rawSource);
+  const unique = (values: unknown[]) => new Set(values).size === values.length;
+  const allIds = draft.sections.flatMap(section => section.items.map(item => item.itemId));
+  const sourceIds = new Set(source.blocks.map(block => block.blockId));
+  if (draft.fileId !== source.fileId || !unique(draft.sections.map(section => section.kind))
+      || !unique(allIds) || draft.sections.some(section => section.id !== section.kind
+        || section.mappedDesignModule !== RESUME_MODULE_MAPPING[section.kind]
+        || !unique(section.items.map(item => item.order))
+        || section.items.some(item => item.origin === 'agent' && !item.sourceBlockIds.length
+          || !unique(item.sourceBlockIds) || item.sourceBlockIds.some(id => !sourceIds.has(id))
+          || !unique(item.facts.map(fact => fact.key)) || !unique(item.editedFields)
+          || item.editedFields.some(field => !editableField.test(field))))
+      || !unique(draft.sections.map(section => section.order))
+      || draft.sections.some(section => section.order < 0 || section.order > 9
+        || section.items.some(item => item.order < 0 || item.order >= section.items.length))) {
+    throw new Error('Invalid draft v2');
+  }
+  return structuredClone(draft);
+}
 function validateShape(raw: unknown): ResumeDraftV1 {
   validateSchema(raw, schema);
   const draft = raw as ResumeDraftV1;
@@ -33,8 +70,13 @@ export function validateResumeDraft(raw: unknown, rawSource: unknown): ResumeDra
   return draft;
 }
 /** Explicit allowlist projection. Private provenance and hidden values never enter generation. */
-export function projectConfirmedResume(raw: ResumeDraftV1): ResumeContent {
-  const draft = validateShape(raw);
+export function projectConfirmedResume(raw: ResumeDraftV1 | ResumeDraftV2): ResumeContent {
+  if (raw.version === 'resume-draft-v2') validateSchema(raw, schemaV2);
+  const draft = raw.version === 'resume-draft-v2'
+    ? validateShape({ ...raw, version: 'resume-draft-v1', sections: raw.sections.map(section => ({
+        ...section, items: section.items.map(({ editedFields: _editedFields, derivedFromItemId: _derivedFromItemId, ...item }) => item)
+      })) })
+    : validateShape(raw);
   if (draft.sections.some(s => s.items.some(i => i.needsReview))) throw new Error('请先完成待核对条目。');
   const sections = (Object.keys(RESUME_MODULE_MAPPING) as ResumeModuleKind[]).flatMap(kind => {
     const s = draft.sections.find(s => s.kind === kind)!;

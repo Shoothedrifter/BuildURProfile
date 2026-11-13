@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { projectConfirmedResume, RESUME_MODULE_MAPPING } from "../../../../../../packages/contracts/src/resume-draft";
-import type { ResumeDraftItem, ResumeDraftSection, ResumeDraftV1, ResumeModuleKind } from "../../../../../../packages/contracts/src/resume-draft";
+import type { ResumeDraftItemV2, ResumeDraftSectionV2, ResumeDraftV2, ResumeModuleKind } from "../../../../../../packages/contracts/src/resume-draft";
 import { validHttpUrl } from "../../../../../../packages/contracts/src/resume-v2.mjs";
 import { resumeApi, type PendingResumeImage } from "../../../lib/resumeApi";
 import { AgentChrome } from "../../../components/AgentChrome";
@@ -22,7 +22,7 @@ type DialogState = null | { kind: "reparse" } | { kind: "removeResume" }
 
 export default function ResumeEditorPage({ params }: { params: Promise<{ resumeId: string }> }) {
   const [resumeId, setResumeId] = useState("");
-  const [draft, setDraft] = useState<ResumeDraftV1 | null>(null);
+  const [draft, setDraft] = useState<ResumeDraftV2 | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [pendingImages, setPendingImages] = useState<PendingResumeImage[]>([]);
@@ -66,16 +66,16 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     return () => { active = false; };
   }, [resumeId]);
 
-  const updateSection = (kind: ResumeModuleKind, change: (section: ResumeDraftSection) => Partial<ResumeDraftSection>) => {
+  const updateSection = (kind: ResumeModuleKind, change: (section: ResumeDraftSectionV2) => Partial<ResumeDraftSectionV2>) => {
     setDraft((previous) => previous ? { ...previous, sections: previous.sections.map((section) =>
       section.kind === kind ? { ...section, ...change(section) } : section) } : previous);
     setError("");
   };
-  const updateItem = (kind: ResumeModuleKind, itemId: string, change: (item: ResumeDraftItem) => ResumeDraftItem) =>
+  const updateItem = (kind: ResumeModuleKind, itemId: string, change: (item: ResumeDraftItemV2) => ResumeDraftItemV2) =>
     updateSection(kind, (section) => ({ items: section.items.map((item) =>
       item.itemId === itemId ? change(item) : item) }));
 
-  const patchItem = (kind: ResumeModuleKind, itemId: string, patch: Partial<ResumeDraftItem>) =>
+  const patchItem = (kind: ResumeModuleKind, itemId: string, patch: Partial<ResumeDraftItemV2>) =>
     updateSection(kind, (section) => ({
       visible: patch.included ? true : section.visible,
       items: section.items.map((entry) => entry.itemId === itemId ? { ...entry, ...patch } : entry)
@@ -97,7 +97,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         label: ({ name: "姓名", email: "邮箱", phone: "电话" } as Record<string, string>)[key],
         value: "", included: false })) : [],
       sourceBlockIds: [], confidence: 1, segmentationConfidence: 1, needsReview: false,
-      included: false, origin: "user" as const
+      included: false, origin: "user" as const, editedFields: []
     }] }));
   };
 

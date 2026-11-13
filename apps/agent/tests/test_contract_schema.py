@@ -84,3 +84,34 @@ def test_v2_enrichment_boundary_and_legacy_isolation():
     raw['sections'][0]['items'][0]['sourceBlockIds'] = ['private']
     with pytest.raises(ValueError):
         StructuredResumeV2.model_validate(raw)
+
+
+def test_private_resume_draft_v2_schema_and_edit_markers():
+    from buildurprofile_agent.contracts import ResumeDraftV2
+    import pytest
+    raw = json.loads((ROOT.parent / 'fixtures/resume-draft.v1.json').read_text())
+    raw['version'] = 'resume-draft-v2'
+    for section in raw['sections']:
+        for item in section['items']:
+            item['editedFields'] = []
+    assert json.loads((ROOT / 'resume-draft.v2.json').read_text()) == ResumeDraftV2.model_json_schema()
+    assert ResumeDraftV2.model_validate(raw).version == 'resume-draft-v2'
+    raw['sections'][0]['items'][0]['editedFields'] = ['sourceBlockIds']
+    with pytest.raises(ValueError):
+        ResumeDraftV2.model_validate(raw)
+
+
+def test_private_resume_source_v2_records_ocr_provenance():
+    from buildurprofile_agent.contracts import ResumeSourceV2
+    import pytest
+    raw = json.loads((ROOT.parent / 'fixtures/resume-source.v1.json').read_text())
+    raw['version'] = 'resume-source-v2'
+    raw['extractionVersion'] = 'pdf-layout-v2'
+    for block in raw['blocks']:
+        block['sourceType'] = 'pdf'
+    assert json.loads((ROOT / 'resume-source.v2.json').read_text()) == ResumeSourceV2.model_json_schema()
+    assert ResumeSourceV2.model_validate(raw).blocks[0].sourceType == 'pdf'
+    raw['blocks'][0]['sourceType'] = 'ocr'
+    raw['blocks'][0]['ocrConfidence'] = 1.1
+    with pytest.raises(ValueError):
+        ResumeSourceV2.model_validate(raw)

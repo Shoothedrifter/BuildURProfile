@@ -4,6 +4,26 @@ import * as contracts from '../../../../packages/contracts/src/resume-draft';
 import fixture from '../../../../packages/contracts/fixtures/resume-draft.v1.json';
 import source from '../../../../packages/contracts/fixtures/resume-source.v1.json';
 
+it('normalizes legacy drafts into editable v2 without changing item text or order', () => {
+  const reordered = structuredClone(fixture);
+  [reordered.sections[0], reordered.sections[5]] = [reordered.sections[5], reordered.sections[0]];
+  const normalized = contracts.normalizeResumeDraft(reordered);
+  expect(normalized.version).toBe('resume-draft-v2');
+  expect(normalized.sections.map(section => section.kind)).toEqual(reordered.sections.map(section => section.kind));
+  expect(normalized.sections[0].items.every(item => item.editedFields.length === 0)).toBe(true);
+  expect(normalized.sections[5].items[0].title).toBe(reordered.sections[5].items[0].title);
+  expect(contracts.validateResumeDraftV2(normalized, source)).toEqual(normalized);
+});
+
+it('rejects noncontiguous order, duplicate IDs and forged edit fields in v2', () => {
+  const draft = contracts.normalizeResumeDraft(fixture);
+  draft.sections[0].order = 99;
+  expect(() => contracts.validateResumeDraftV2(draft, source)).toThrow();
+  draft.sections[0].order = 0;
+  draft.sections[0].items[0].editedFields = ['sourceBlockIds'];
+  expect(() => contracts.validateResumeDraftV2(draft, source)).toThrow();
+});
+
 describe('private resume contracts', () => {
   it('accepts ten modules and projects only selected source-free content', () => {
     const draft = contracts.validateResumeDraft(fixture, source);

@@ -153,7 +153,7 @@ test('complete persists validated source and draft atomically; edits use revisio
  assert.throws(()=>s.repo.queue.complete(task.id,task.leaseToken,source,draft));assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_blocks').get().n,0);
  s.db.exec('DROP TRIGGER reject_resume_complete');s.repo.queue.complete(task.id,task.leaseToken,source,draft);
  assert.equal((await(await s.request(parsed.resumeId+'/status')).json()).status,'SUCCEEDED');
- const saved=await(await s.request(parsed.resumeId)).json();assert.deepEqual(saved.draft,draft);assert.equal(saved.expiresAt,source.expiresAt);
+ const saved=await(await s.request(parsed.resumeId)).json();assert.equal(saved.draft.version,'resume-draft-v2');assert.deepEqual(saved.draft.sections[0].items[0].editedFields,[]);assert.equal(saved.draft.sections[0].items[0].title,draft.sections[0].items[0].title);assert.equal(saved.expiresAt,source.expiresAt);
  assert.equal((await(await s.request(parsed.resumeId+'/status')).json()).expiresAt,source.expiresAt);
  draft.sections[0].items[0].title='User edit';
  const update=await s.request(parsed.resumeId,'PATCH',JSON.stringify({revision:1,draft}));assert.equal(update.status,200);assert.equal((await update.json()).revision,2);
