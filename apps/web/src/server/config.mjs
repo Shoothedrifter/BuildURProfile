@@ -1,9 +1,14 @@
 import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, parse } from "node:path";
+import { fileURLToPath } from "node:url";
 
-function resolveRepoRoot() {
-  const cwd = process.cwd();
-  return existsSync(join(cwd, "packages/contracts/package.json")) ? cwd : resolve(cwd, "../..");
+export function resolveRepoRoot() {
+  let directory = dirname(fileURLToPath(import.meta.url));
+  while (directory !== parse(directory).root) {
+    if (existsSync(join(directory, "packages/contracts/package.json"))) return directory;
+    directory = dirname(directory);
+  }
+  throw new Error("Cannot locate the project root for sandbox configuration.");
 }
 
 const sandboxFile = join(resolveRepoRoot(), ".alipay-sandbox.json");
@@ -65,6 +70,7 @@ export function paymentConfig(env = process.env) {
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.pathname !== "/" || base.search || base.hash) {
     throw new ConfigError("PUBLIC_BASE_URL must be an HTTP(S) origin without path, credentials, query, or hash.");
   }
+  if (["0.0.0.0", "[::]"].includes(base.hostname)) throw new ConfigError("PUBLIC_BASE_URL must use a reachable host, not an unspecified bind address.");
   if (mode === "production" && base.protocol !== "https:") throw new ConfigError("Production PUBLIC_BASE_URL must use HTTPS.");
   let notifyUrl;
   if (env.ALIPAY_NOTIFY_URL?.trim()) {

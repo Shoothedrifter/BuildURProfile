@@ -28,7 +28,7 @@ function publicProject(project, db) {
 }
 export function createPaymentService(db, { gateway, paymentConfig, configurationError = null, now = () => Date.now() }) {
   function markDeliveryFailure(projectId, kind) {
-    requirePaid(db, projectId);
+    if (kind === "share") requirePaid(db, projectId);
     db.prepare(`INSERT INTO deliveries(project_id,kind,status,error) VALUES(?,?,'FAILED','DELIVERY_FAILED')
       ON CONFLICT(project_id,kind) DO UPDATE SET
         status=CASE WHEN deliveries.status='DELIVERED' THEN 'DELIVERED' ELSE 'FAILED' END,
@@ -70,7 +70,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     });
   }
   async function checkout(sessionId, projectId, action) {
-    if (action !== "share" && action !== "export") throw new ServiceError(400, "未知交付类型。");
+    if (action !== "share") throw new ServiceError(400, "仅分享发布需要结账，导出免费。");
     ownedProject(db, sessionId, projectId);
     if (db.prepare("SELECT 1 FROM entitlements WHERE project_id=? AND status='ACTIVE'").get(projectId)) {
       db.prepare("UPDATE projects SET pending_action=? WHERE id=?").run(action, projectId);
@@ -224,7 +224,6 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   }
   function issueDownload(sessionId, projectId) {
     const project = ownedProject(db, sessionId, projectId);
-    requirePaid(db, projectId);
     const value = token(), expiry = now() + DOWNLOAD_TTL;
     db.prepare("INSERT INTO downloads(token,project_id,revision,expires_at) VALUES(?,?,?,?)")
       .run(value, projectId, project.revision, expiry);
@@ -238,7 +237,6 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   function getDownload(sessionId, value) {
     const record = db.prepare("SELECT downloads.*,projects.config_json,projects.owner_session_id,projects.deleted_at FROM downloads JOIN projects ON projects.id=downloads.project_id WHERE downloads.token=?").get(value);
     if (!record || record.owner_session_id !== sessionId || record.deleted_at != null || record.expires_at <= now()) notFound();
-    requirePaid(db, record.project_id);
     return { projectId: record.project_id, config: JSON.parse(record.config_json) };
   }
   function markDownload(projectId, value) {

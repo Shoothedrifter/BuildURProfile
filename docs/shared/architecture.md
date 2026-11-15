@@ -10,7 +10,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
   ├─ ↕ 服务令牌 + 有效任务租约（/_internal/agent/*）
   │    Python Agent（apps/agent）：LangGraph → 版本化 Skills → 可选外部图像 API
   │      ↓ DesignConfig + 成图资产 ID
-  └─ 预览与编辑 → 用户主动请求 → 核实支付 → 正式分享 / 作品集导出
+  └─ 预览与编辑 → 免费导出；或用户主动请求 → 核实支付 → 正式分享
 ```
 
 | 模块 | 所有权与依赖 |

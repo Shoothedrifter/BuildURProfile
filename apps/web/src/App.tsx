@@ -463,13 +463,19 @@ export default function App() {
       setResultError("Wibi 肖像仅供本机预览，不能用于付费分享或导出。");
       return;
     }
-    setPaymentIntent(action);
-    setPhase("delivery");
-    window.scrollTo({ top: 0, behavior: "instant" });
+    if (action === "share") {
+      setPaymentIntent(action);
+      setPhase("delivery");
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
     setExporting(true);
     setResultError("");
     try {
       const project = await saveProject();
+      if (action === "export") {
+        await deliver(project.id, action, generated);
+        return;
+      }
       const checked = !project.paid && project.pendingAmountFen ? await paymentApi.reconcile(project.id) : project;
       setProjectPaid(checked.paid);
       if (checked.paid) {

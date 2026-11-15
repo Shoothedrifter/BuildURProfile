@@ -444,7 +444,7 @@ describe("showcase builder", () => {
     expect(after.content.profile.name).toBe("Edited Person");
     expect(after.marquee.speed).toBeGreaterThan(before.marquee.speed);
     expect(after.stackedCards.scaleStep).toBeGreaterThan(before.stackedCards.scaleStep);
-    fireEvent.click(screen.getByRole("button", { name: /分享链接 \/ 导出/ }));
+    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.objectContaining({ profile: expect.objectContaining({ name: "Edited Person" }) }),
       marquee: expect.objectContaining({ speed: after.marquee.speed }),
@@ -456,7 +456,17 @@ describe("showcase builder", () => {
     expect(paymentApi.export).not.toHaveBeenCalled();
   });
 
-  it("uses one paid project for both publishing and ZIP delivery without another checkout", async () => {
+  it("exports an unpaid project without starting checkout", async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    render(<App />);
+    await reachResult();
+    fireEvent.click(screen.getByRole("button", { name: /免费导出 ZIP/ }));
+    await waitFor(() => expect(paymentApi.export).toHaveBeenCalled());
+    expect(paymentApi.checkout).not.toHaveBeenCalled();
+    click.mockRestore();
+  });
+
+  it("uses one paid project for publishing and free ZIP delivery without another checkout", async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     const paid = { id: "paid-project", config: rawConfig as DesignConfig, revision: 1,
       paid: true, pendingAction: null, pendingAmountFen: null };

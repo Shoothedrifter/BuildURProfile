@@ -121,7 +121,7 @@ export function createRequestHandler({ db, service, generationService = null, po
         sendJson(res, 200, { configured: Boolean(paymentConfig), mode: paymentConfig?.mode ?? null,
           configurationError, priceFen: priceFen ?? null,
           priceYuan: priceFen ? (priceFen / 100).toFixed(2) : null,
-          service: "作品正式托管分享与静态网站导出，一次解锁同一项目两项能力",
+          service: "一次付款解锁当前项目的发布与分享，静态网站导出免费",
           shareDays: 7 }); return;
       }
       if (parts[0] === "api") {

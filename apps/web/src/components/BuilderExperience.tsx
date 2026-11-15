@@ -284,7 +284,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
         <div className="proof-three-grid">
           <ProofCard><strong>01 / 上传与核对</strong><p>提取简历模块，补充项目过程、成果链接与图片。</p></ProofCard>
           <ProofCard><strong>02 / 找到你的表达</strong><p>选择模板或完成偏好测评，让风格与专业相契合。</p></ProofCard>
-          <ProofCard><strong>03 / 让作品被看见</strong><p>免费预览编辑，确认满意后解锁分享和导出。</p></ProofCard>
+          <ProofCard><strong>03 / 让作品被看见</strong><p>免费预览编辑和导出，确认满意后付费发布分享。</p></ProofCard>
         </div>
       </section>
       <section className="proof-landing-section" id="about" aria-labelledby="roles-title">
@@ -297,7 +297,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       </section>
       <section className="proof-landing-section" aria-labelledby="faq-title">
         <h2 id="faq-title">开始之前，你可能想知道</h2>
-        <ProofCard className="proof-faq"><strong>什么时候需要付费？</strong><p>生成、预览与编辑免费。点击分享链接或导出时，为当前项目支付一次费用，解锁该项目的发布与导出资格。</p></ProofCard>
+        <ProofCard className="proof-faq"><strong>什么时候需要付费？</strong><p>生成、预览、编辑和导出免费。发布分享时为当前项目支付一次费用，解锁该项目的分享资格。</p></ProofCard>
       </section>
     </div>}
 
@@ -498,16 +498,16 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       {error && <p className="proof-inline-error" role="alert">{error}</p>}
       {resultError && <p className="proof-inline-error" role="alert">{resultError}</p>}
       {!generated.heroArtwork && <ProofCard className="proof-publish-card">
-        <div><p>FREE PREVIEW / NOT PUBLISHED</p><h2>分享或带走你的作品集</h2><span>正式分享与静态 ZIP 使用同一项目的一次付款解锁。</span></div>
+        <div><p>FREE PREVIEW / NOT PUBLISHED</p><h2>分享或带走你的作品集</h2><span>发布分享按项目一次付费，静态 ZIP 免费导出。</span></div>
         <div className="proof-publish-actions">
           <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>{share ? "更新分享链接 →" : "发布并分享 →"}</ProofButton>
-          <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>{exporting ? "正在准备…" : "分享链接 / 导出 →"}</ProofButton>
+          <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>{exporting ? "正在准备…" : "免费导出 ZIP →"}</ProofButton>
         </div>
       </ProofCard>}
     </section>}
 
     {phase === "delivery" && generated && <section className="proof-step-page">
-      <StepHeader number={6} title="让对的人，看见你的作品" description="确认作品后，按项目解锁发布与导出。一次解锁，用于当前项目。" />
+      <StepHeader number={6} title="让对的人，看见你的作品" description="按项目一次付费解锁发布与分享，导出免费。" />
       <div className="proof-delivery-layout">
         <ProofCard className="proof-delivery-summary">
           <h2>{generated.content.profile.name || "你的"} Showcase</h2>
@@ -524,7 +524,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <h2>解锁当前项目</h2>
           <p>单项目一次付费 · {offer?.shareDays ?? 7} 天分享链接</p>
           <strong className="proof-price">{quotedAmountYuan || offer?.priceYuan ? `¥${quotedAmountYuan ?? offer?.priceYuan}` : "服务端尚未配置价格"}</strong>
-          <p>{offer?.service || "正式托管分享与静态作品集导出，一次解锁当前项目两项能力。"}</p>
+          <p>{offer?.service || "一次付款解锁当前项目的发布与分享，静态网站导出免费。"}</p>
           <p>付款前将明确展示实际金额。此权益仅适用于当前项目，不代表解锁全部项目。</p>
           {offer?.mode === "sandbox" && <p className="proof-note">沙箱测试：普通支付宝无法支付沙箱订单，请使用对应沙箱买家账号。</p>}
           {offer?.configurationError && <p className="proof-inline-error" role="alert">支付配置：{offer.configurationError}</p>}
@@ -534,15 +534,15 @@ export function BuilderExperience(props: BuilderExperienceProps) {
             </ProofButton>
             <ProofButton disabled={exporting || !paymentIntent} onClick={props.onCheckEntitlement}>{exporting ? "正在检查…" : "检查已有权益"}</ProofButton>
           </div>
-          <span className="proof-microcopy">支付渠道：支付宝 · 只有服务端确认权益后才能分享或导出</span>
+          <span className="proof-microcopy">支付渠道：支付宝 · 服务端确认权益后才能发布分享</span>
         </ProofCard>
       </div>
       <section className="proof-status-section" aria-labelledby="delivery-status-title">
         <h2 id="delivery-status-title">支付与交付状态</h2>
         <div className="proof-three-grid">
           <ProofCard className={!share && !deliveryUnlocked ? "is-current" : ""}><strong>等待支付</strong><p>请在支付宝完成支付。取消付款可返回预览继续编辑。</p></ProofCard>
-          <ProofCard className={exporting ? "is-current" : ""}><strong>已支付 · 正在发布</strong><p>正在处理网页或导出。失败可重试，无需重复付款。</p></ProofCard>
-          <ProofCard className={share || deliveryUnlocked ? "is-current" : ""}><strong>已解锁 · 交付完成</strong><p>分享链接与导出由服务端权益控制。</p></ProofCard>
+          <ProofCard className={exporting ? "is-current" : ""}><strong>已支付 · 正在发布</strong><p>发布失败可重试，无需重复付款。</p></ProofCard>
+          <ProofCard className={share || deliveryUnlocked ? "is-current" : ""}><strong>已解锁 · 交付完成</strong><p>分享链接由服务端权益控制；导出免费。</p></ProofCard>
         </div>
       </section>
       {share && <ProofCard className="proof-share-card">

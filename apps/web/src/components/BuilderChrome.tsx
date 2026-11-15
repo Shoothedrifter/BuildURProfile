@@ -109,7 +109,7 @@ export function ProjectsDialog({ open, projects, onClose, onSelect, onDelete }: 
           return <li key={project.id}>
             <div>
               <strong>{name}</strong>
-              <span>{project.paid ? "已解锁分享与导出" : "未付款 · 可继续编辑"}</span>
+              <span>{project.paid ? "已解锁发布分享" : "未付款 · 可编辑和免费导出"}</span>
             </div>
             <div className="proof-project-actions">
               <ProofButton disabled={Boolean(deletingId)} onClick={() => { close(); onSelect(project); }}>继续编辑 →</ProofButton>
