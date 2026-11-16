@@ -115,7 +115,7 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     onPatchItem({ supplements: { ...supplements, ...patch } });
   return <article className="proof-confirm-entry" aria-label={`${label}条目 ${index + 1}`}
     onDragOver={event => event.preventDefault()} onDrop={event => {event.preventDefault(); onDrop?.();}}>
-    <div className="proof-entry-top">
+    <div className="proof-entry-top proof-entry-top--tools">
       <div className="proof-entry-tools">
         <span draggable role="button" tabIndex={0} aria-label={`拖动条目 ${index + 1}`}
           onDragStart={onDragStart} onKeyDown={event => {
