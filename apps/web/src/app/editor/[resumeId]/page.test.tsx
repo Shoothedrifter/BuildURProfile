@@ -144,6 +144,25 @@ it("explains missing contact selection beside the confirm action", async () => {
   expect(screen.queryByText(/请在基本信息中勾选姓名，以及邮箱或电话，再继续。/)).not.toBeInTheDocument();
 });
 
+it("uses the module switch for every entry while preserving field-level privacy controls", async () => {
+  const draft = structuredClone(fixture);
+  const basic = draft.sections.find((section) => section.kind === "basicInfo")!;
+  basic.visible = true;
+  basic.items[0].included = false;
+  basic.items[0].facts[0].included = true;
+  basic.items[0].facts[1].included = true;
+  basic.items[0].facts[2].included = false;
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: draft as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+
+  await screen.findByRole("heading", { name: "基本信息" });
+  expect(screen.queryByText("展示此条")).not.toBeInTheDocument();
+  expect(screen.getAllByRole("checkbox", { name: "展示" })).toHaveLength(3);
+  expect(screen.queryByText(/请在基本信息中勾选姓名，以及邮箱或电话，再继续。/)).not.toBeInTheDocument();
+});
+
 it("shows all ten modules, a private PDF preview, and saves manual additions", async () => {
   vi.mocked(resumeApi.read).mockResolvedValue({ draft: fixture as never, revision: 1,
     expiresAt: "2026-12-09T00:00:00Z" });

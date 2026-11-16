@@ -152,3 +152,27 @@ it('projects selected Agent experience into the existing showcase fields', () =>
   expect(content.projects[0]).toMatchObject({ title: '示例项目', description: '合成说明' });
   expect(JSON.stringify(content)).not.toContain('sourceBlockIds');
 });
+
+it('projects every item in a visible module without exposing unchecked facts', () => {
+  const draft = structuredClone(fixture);
+  const projects = draft.sections.find(section => section.kind === 'projects')!;
+  projects.visible = true;
+  projects.items = [{
+    ...draft.sections[0].items[0],
+    itemId: 'project-auto-included',
+    order: 0,
+    title: '模块控制展示的项目',
+    details: '这个条目没有单独勾选。',
+    facts: [{ key: 'private-note', label: '私密字段', value: '不应公开的字段', included: false }],
+    sourceBlockIds: ['block_1'],
+    included: false
+  }];
+
+  const visible = contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source));
+  expect(JSON.stringify(visible)).toContain('模块控制展示的项目');
+  expect(JSON.stringify(visible)).not.toContain('不应公开的字段');
+
+  projects.visible = false;
+  const hidden = contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source));
+  expect(JSON.stringify(hidden)).not.toContain('模块控制展示的项目');
+});

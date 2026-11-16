@@ -81,7 +81,7 @@ export function projectConfirmedResume(raw: ResumeDraftV1 | ResumeDraftV2): Resu
   const sections = (Object.keys(RESUME_MODULE_MAPPING) as ResumeModuleKind[]).flatMap(kind => {
     const s = draft.sections.find(s => s.kind === kind)!;
     if (!s.visible) return [];
-    const items = [...s.items].sort((a,b) => a.order-b.order).filter(i => i.included).map(i => {
+    const items = [...s.items].sort((a,b) => a.order-b.order).map(i => {
       const hidden = i.facts.filter(f => !f.included && f.value).map(f => f.value);
       const safe = (text: string) => hidden.some(v => text.includes(v)) ? '' : text;
       const supplement = {text:i.supplements?.text ?? '', links:(i.supplements?.links ?? []).map(l=>({label:l.label ?? '',url:l.url})),images:i.supplements?.images ?? []};

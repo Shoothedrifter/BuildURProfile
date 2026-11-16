@@ -730,6 +730,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-entry-top { display: flex; justify-content: space-between; gap: 16px; color: var(--proof-muted); font-size: 12px; }
 .proof-entry-top label { display: inline-flex; align-items: center; gap: 8px; color: var(--proof-ink); font-size: 13px; font-weight: 700; }
 .proof-entry-top input { accent-color: var(--proof-ink); }
+.proof-entry-top--tools { justify-content: flex-end; }
 .proof-confirm-help { position: sticky; top: 20px; display: grid; gap: 14px; }
 .proof-confirm-help ul { margin: 0; padding-left: 20px; display: grid; gap: 5px; color: var(--proof-muted); font-size: 15px; }
 .proof-empty-module { box-shadow: none; border-style: dashed; display: grid; gap: 10px; }
