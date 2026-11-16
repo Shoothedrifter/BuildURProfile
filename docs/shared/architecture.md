@@ -10,7 +10,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
   ├─ ↕ 服务令牌 + 有效任务租约（/_internal/agent/*）
   │    Python Agent（apps/agent）：简历解析图 → OpenAI 文本模型；生成图 → 可选图像 API
   │      ↓ DesignConfig + 成图资产 ID
-  └─ 预览与编辑 → 用户主动请求 → 核实支付 → 正式分享 / 作品集导出
+  └─ 预览与编辑 → 免费导出；或用户主动请求 → 核实支付 → 正式分享
 ```
 
 | 模块 | 所有权与依赖 |
@@ -71,4 +71,4 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 生成入队在同一事务中复制已选图片到 `showcase_media` 并写 `generation_media`；生成 brief/config/checkpoint 仅含 ID。无肖像 v3 生成成功后，以任务为幂等来源创建未付款项目并关联 `project_media`。浏览器恢复成功任务时读取项目当前配置与权益，交接后清除旧任务指针，避免覆盖后续编辑。Wibi 肖像继续仅供本机演示，不自动保存为可付费交付项目。
 
-作品图片按项目生命周期保留，删除原简历不影响作品。属主通过 `/api/showcase-media/:id` 预览；分享通过 `/api/shares/:token/media/:id` 读取，并校验令牌、付款、项目和快照引用。旧分享快照可保留更新前的图片；撤销、过期、删项目后即时拒绝。导出 ZIP 包含 `index.html` 和 `assets/*`，不依赖私有 PDF 路由。未形成项目的复制品最多保留 30 天；清理为有界批次，有效运行租约在到期边界完成前受保护，废弃排队任务到期转失败。项目删除或旧分享失效后，按引用关系释放无主作品图片。
+作品图片按项目生命周期保留，删除原简历不影响作品。属主通过 `/api/showcase-media/:id` 预览；分享通过 `/api/shares/:token/media/:id` 读取，并校验令牌、付款、项目和快照引用。旧分享快照可保留更新前的图片；撤销、过期、删项目后即时拒绝。导出的单文件 HTML 内嵌作品图片，不依赖私有 PDF 路由。未形成项目的复制品最多保留 30 天；清理为有界批次，有效运行租约在到期边界完成前受保护，废弃排队任务到期转失败。项目删除或旧分享失效后，按引用关系释放无主作品图片。

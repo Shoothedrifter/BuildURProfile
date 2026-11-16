@@ -7,7 +7,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ServiceError } from "./service.mjs";
-import { buildStaticZip } from "./export.mjs";
+import { buildStaticHtml } from "./export.mjs";
 import { handleGenerationRoutes } from "./routes/generations.mjs";
 import { handleInternalAgentRoutes, validateAgentToken } from "./routes/internal-agent.mjs";
 
@@ -81,7 +81,7 @@ function parseRoute(path) {
 
 export function createRequestHandler({ db, service, generationService = null, resumeRepository = null, portraitEnabled = true, agentToken = null,
   agentStyleLoader, paymentConfig, priceFen, configurationError = null,
-  secret = loadSessionSecret(), zipBuilder = buildStaticZip }) {
+  secret = loadSessionSecret(), htmlBuilder = buildStaticHtml }) {
   const configuredAgentToken = validateAgentToken(agentToken);
   return async (req, res) => {
     try {
@@ -131,7 +131,7 @@ export function createRequestHandler({ db, service, generationService = null, re
         sendJson(res, 200, { configured: Boolean(paymentConfig), mode: paymentConfig?.mode ?? null,
           configurationError, priceFen: priceFen ?? null,
           priceYuan: priceFen ? (priceFen / 100).toFixed(2) : null,
-          service: "作品正式托管分享与静态网站导出，一次解锁同一项目两项能力",
+          service: "一次付款解锁当前项目的发布与分享，静态网站导出免费",
           shareDays: 7 }); return;
       }
       if (parts[0] === "api") {
@@ -177,15 +177,17 @@ export function createRequestHandler({ db, service, generationService = null, re
         }
         if (parts[1] === "downloads" && parts[2] && req.method === "GET") {
           const download = service.getDownload(sessionId, parts[2]);
-          let zip;
-          try { zip = zipBuilder(download.config, id => service.readProjectMedia(sessionId, id)); }
+          const format = url.searchParams.get("format") ?? "html";
+          if (format !== "html") throw new ServiceError(400, "导出格式无效。");
+          let file;
+          try { file = Buffer.from(htmlBuilder(download.config, undefined, undefined, id => service.readProjectMedia(sessionId, id))); }
           catch (error) {
             try { service.markDeliveryFailure(download.projectId, "export"); } catch { /* Keep packaging error. */ }
             throw error;
           }
-          res.writeHead(200, { "content-type": "application/zip", "content-disposition": "attachment; filename=buildurprofile-site.zip",
-            "content-length": zip.length, "cache-control": "no-store", "x-content-type-options": "nosniff" });
-          res.end(zip, () => {
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-disposition": "attachment; filename=buildurprofile-site.html",
+            "content-length": file.length, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+          res.end(file, () => {
             try { service.markDownload(download.projectId, parts[2]); }
             catch { /* The paid owner can retry if delivery status could not be saved. */ }
           }); return;

@@ -7,9 +7,8 @@ import { generateKeyPairSync } from "node:crypto";
 import { bindPaymentEnvironment, openDatabase } from "../../web/src/server/database.mjs";
 import { createPaymentService } from "../../web/src/server/service.mjs";
 import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
-import { zipSingleHtml } from "../../web/src/server/export.mjs";
 import { createAlipayGateway } from "../../web/src/server/gateway.mjs";
-import { loadSandboxPaymentEnv, paymentConfig } from "../../web/src/server/config.mjs";
+import { loadSandboxPaymentEnv, paymentConfig, resolveRepoRoot } from "../../web/src/server/config.mjs";
 
 const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json", import.meta.url)));
 let db, gateway, service, time;
@@ -29,11 +28,34 @@ afterEach(() => db.close());
 
 test("concurrent checkout reuses one pending order and a server price snapshot", async () => {
   const id = setupProject();
-  const [a, b] = await Promise.all([service.checkout("owner", id, "share"), service.checkout("owner", id, "export")]);
+  const [a, b] = await Promise.all([service.checkout("owner", id, "share"), service.checkout("owner", id, "share")]);
   assert.equal(a.outTradeNo, b.outTradeNo);
   assert.equal(a.amountYuan, "1.99");
   assert.equal(db.prepare("SELECT count(*) AS count FROM orders").get().count, 1);
   assert.equal(db.prepare("SELECT amount_fen FROM orders").get().amount_fen, 199);
+});
+
+test("free export does not create an order or alter an existing legacy export order", async () => {
+  const id = setupProject();
+  const order = await service.checkout("owner", id, "share");
+  db.prepare("UPDATE projects SET pending_action='export' WHERE id=?").run(id);
+  const download = service.issueDownload("owner", id);
+  assert.equal(service.getDownload("owner", download.token).projectId, id);
+  assert.throws(() => service.getDownload("other", download.token), /无权访问/);
+  assert.throws(() => service.publish("owner", id), /请先完成/);
+  await assert.rejects(service.checkout("owner", id, "export"), /导出免费/);
+  assert.equal(db.prepare("SELECT status FROM orders WHERE out_trade_no=?").get(order.outTradeNo).status, "PENDING");
+  assert.equal(db.prepare("SELECT count(*) AS count FROM orders").get().count, 1);
+  assert.equal(service.getProject("owner", id).pendingAction, "export");
+});
+
+test("new configured price is 2.99 while existing pending order keeps its amount", async () => {
+  const id = setupProject();
+  const previous = await service.checkout("owner", id, "share");
+  const updated = createPaymentService(db, { gateway, paymentConfig: { ...merchant, priceFen: 299 }, now: () => time });
+  assert.equal((await updated.checkout("owner", id, "share")).amountYuan, "1.99");
+  assert.equal((await updated.checkout("owner", setupProject(), "share")).amountYuan, "2.99");
+  assert.equal(db.prepare("SELECT amount_fen FROM orders WHERE out_trade_no=?").get(previous.outTradeNo).amount_fen, 199);
 });
 
 test("only the owner can delete a project and its content leaves the project list", () => {
@@ -73,7 +95,7 @@ test("a pending order from another payment environment cannot be reused", async 
   const id = setupProject();
   const order = await service.checkout("owner", id, "share");
   db.prepare("UPDATE orders SET payment_env='production' WHERE out_trade_no=?").run(order.outTradeNo);
-  await assert.rejects(service.checkout("owner", id, "export"), /另一支付环境/);
+  await assert.rejects(service.checkout("owner", id, "share"), /另一支付环境/);
 });
 
 test("bad signature, wrong amount, wrong merchant, and unknown order cannot grant access", async () => {
@@ -85,15 +107,15 @@ test("bad signature, wrong amount, wrong merchant, and unknown order cannot gran
   await assert.rejects(service.notify(paidNotice(order, { app_id: "other" })), /商户身份不一致/);
   await assert.rejects(service.notify(paidNotice(order, { out_trade_no: "missing" })), /订单不存在/);
   assert.throws(() => service.publish("owner", id), /请先完成/);
-  assert.throws(() => service.issueDownload("owner", id), /请先完成/);
+  assert.ok(service.issueDownload("owner", id).token);
 });
 
-test("verified success is idempotent and one project unlocks both deliveries", async () => {
+test("verified success is idempotent and unlocks sharing", async () => {
   const id = setupProject(), order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order));
   await service.notify(paidNotice(order));
   assert.equal(db.prepare("SELECT count(*) AS count FROM entitlements").get().count, 1);
-  const second = await service.checkout("owner", id, "export");
+  const second = await service.checkout("owner", id, "share");
   assert.equal(second.alreadyPaid, true);
   assert.ok(service.publish("owner", id).token);
   assert.ok(service.issueDownload("owner", id).token);
@@ -120,7 +142,7 @@ test("refund-related notifications cannot grant a new payment entitlement", asyn
 });
 
 test("query recovery grants only signed paid status, never a return redirect or unknown status", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "export");
+  const id = setupProject(), order = await service.checkout("owner", id, "share");
   gateway.query = async () => ({ code: "10000", out_trade_no: order.outTradeNo, total_amount: "1.99", trade_status: "WAIT_BUYER_PAY" });
   assert.equal((await service.reconcile("owner", id)).paid, false);
   gateway.query = async () => ({ code: "10000", out_trade_no: order.outTradeNo, total_amount: "1.99", trade_status: "TRADE_SUCCESS", trade_no: "query-1" });
@@ -155,7 +177,7 @@ test("query recovery checks an older closed order even after a newer pending che
   const id = setupProject(), older = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(older, { trade_status: "TRADE_CLOSED" }));
   time += 1;
-  const newer = await service.checkout("owner", id, "export");
+  const newer = await service.checkout("owner", id, "share");
   assert.notEqual(newer.outTradeNo, older.outTradeNo);
   gateway.query = async (outTradeNo) => ({ code: "10000", out_trade_no: outTradeNo, total_amount: "1.99",
     trade_status: outTradeNo === older.outTradeNo ? "TRADE_SUCCESS" : "WAIT_BUYER_PAY",
@@ -235,12 +257,6 @@ test("HTTP handler serves healthz, readyz, and offer endpoints", async () => {
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
 
-test("offline ZIP stores a real index.html", () => {
-  const zip = zipSingleHtml("<html>offline</html>");
-  assert.equal(zip.readUInt32LE(0), 0x04034b50);
-  assert.ok(zip.includes(Buffer.from("<html>offline</html>")));
-});
-
 test("official SDK generates sandbox page-pay POST form with frozen amount and product code", () => {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
     privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
@@ -254,6 +270,14 @@ test("official SDK generates sandbox page-pay POST form with frozen amount and p
   assert.match(form, /1\.99/);
   assert.match(form, /BURPTEST123/);
   assert.doesNotMatch(form, /BEGIN PRIVATE KEY/);
+});
+
+test("checkout rejects unspecified bind addresses as public origins", () => {
+  const base = { PAYMENT_ENV: "sandbox", PAYMENT_PRICE_FEN: "299", PUBLIC_BASE_URL: "http://0.0.0.0:5173",
+    ALIPAY_APP_ID: "app", ALIPAY_PRIVATE_KEY: "key", ALIPAY_PUBLIC_KEY: "key", ALIPAY_SELLER_ID: "seller" };
+  assert.throws(() => paymentConfig(base), /reachable host/);
+  assert.throws(() => paymentConfig({ ...base, PUBLIC_BASE_URL: "http://[::]:5173" }), /reachable host/);
+  assert.equal(paymentConfig({ ...base, PUBLIC_BASE_URL: "http://127.0.0.1:5173" }).publicBaseUrl, "http://127.0.0.1:5173");
 });
 
 test("production checkout rejects missing price, HTTP origin, or an incorrect notification path", () => {
@@ -287,6 +311,17 @@ test("sandbox loader maps one protected app record without exposing credentials 
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test("sandbox project root is independent of the current working directory", () => {
+  const original = process.cwd();
+  const expected = resolveRepoRoot();
+  try {
+    process.chdir(tmpdir());
+    assert.equal(resolveRepoRoot(), expected);
+  } finally {
+    process.chdir(original);
+  }
+});
+
 test("official SDK signs a sandbox page form with the Skill's PKCS#1 key format", () => {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
     privateKeyEncoding: { type: "pkcs1", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
@@ -315,7 +350,7 @@ test("a paid entitlement survives database close and reopen", async () => {
     try {
       const restored = createPaymentService(reopened, { gateway, paymentConfig: merchant, now: () => time });
       assert.equal(restored.getProject("owner", id).paid, true);
-      assert.equal((await restored.checkout("owner", id, "export")).alreadyPaid, true);
+      assert.equal((await restored.checkout("owner", id, "share")).alreadyPaid, true);
     } finally { reopened.close(); }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
@@ -350,7 +385,14 @@ test("HTTP flow protects publication and download, then delivers both after veri
     assert.equal(projectResponse.status, 201);
     const project = await projectResponse.json();
     assert.equal((await post(`/api/projects/${project.id}/publish`)).status, 402);
-    assert.equal((await post(`/api/projects/${project.id}/export`)).status, 402);
+    const freeDownload = await (await post(`/api/projects/${project.id}/export`)).json();
+    const htmlResponse = await fetch(`${base}${freeDownload.url}?format=html`, { headers: { cookie } });
+    assert.equal(htmlResponse.status, 200);
+    assert.match(htmlResponse.headers.get("content-type"), /^text\/html/);
+    assert.match(await htmlResponse.text(), /buildurprofile-config/);
+    assert.equal((await fetch(`${base}${freeDownload.url}?format=html`)).status, 401);
+    assert.equal((await fetch(`${base}${freeDownload.url}?format=invalid`, { headers: { cookie } })).status, 400);
+    assert.equal((await post(`/api/projects/${project.id}/checkout`, { action: "export" })).status, 400);
     const checkout = await (await post(`/api/projects/${project.id}/checkout`, { action: "share" })).json();
     assert.equal(checkout.amountYuan, "1.99");
     const notification = await fetch(`${base}/api/payment/notify`, { method: "POST",
@@ -362,12 +404,12 @@ test("HTTP flow protects publication and download, then delivers both after veri
     assert.equal((await publicRead.json()).config.content.profile.name, config.content.profile.name);
     const download = await (await post(`/api/projects/${project.id}/export`)).json();
     assert.equal((await fetch(`${base}${download.url}`)).status, 401);
-    const zipResponse = await fetch(`${base}${download.url}`, { headers: { cookie } });
-    assert.equal(zipResponse.status, 200);
-    assert.equal(zipResponse.headers.get("content-type"), "application/zip");
-    const bytes = Buffer.from(await zipResponse.arrayBuffer());
-    assert.equal(bytes.readUInt32LE(0), 0x04034b50);
-    assert.ok(bytes.includes(Buffer.from("BuildURProfile Showcase")));
+    const response = await fetch(`${base}${download.url}`, { headers: { cookie } });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /^text\/html/);
+    assert.match(response.headers.get("content-disposition"), /buildurprofile-site\.html/);
+    assert.match(await response.text(), /BuildURProfile Showcase/);
+    assert.equal((await fetch(`${base}${download.url}?format=zip`, { headers: { cookie } })).status, 400);
     assert.equal(db.prepare("SELECT count(*) AS count FROM deliveries WHERE project_id=? AND status='DELIVERED'").get(project.id).count, 2);
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
@@ -398,13 +440,13 @@ test("HTTP project deletion requires CSRF and the owning session", async () => {
 });
 
 test("a packaging failure leaves the paid entitlement and a retry can deliver", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "export");
+  const id = setupProject(), order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order));
   const download = service.issueDownload("owner", id);
   assert.equal(db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='export'").get(id).status, "PENDING");
   let fail = true;
   const server = createPaymentHttpServer({ db, service, paymentConfig: merchant, priceFen: 199,
-    secret: Buffer.alloc(32, 3), zipBuilder: () => { if (fail) throw new Error("packaging failure"); return zipSingleHtml("<html>retry</html>"); } });
+    secret: Buffer.alloc(32, 3), htmlBuilder: () => { if (fail) throw new Error("packaging failure"); return "<html>retry</html>"; } });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const base = `http://127.0.0.1:${server.address().port}`;

@@ -20,7 +20,14 @@
     "test:agent": "node scripts/test-python-agent.mjs && node --test apps/launcher/src/internal-agent.test.mjs apps/launcher/src/generations.test.mjs",
     "test": "vitest run --config vitest.config.ts",
     "build": "tsc --noEmit && next build apps/web --webpack",
-    "build:tunnel": "NEXT_PUBLIC_APP_MODE=tunnel tsc --noEmit && NEXT_PUBLIC_APP_MODE=tunnel next build apps/web --webpack"
+    "build:tunnel": "NEXT_PUBLIC_APP_MODE=tunnel tsc --noEmit && NEXT_PUBLIC_APP_MODE=tunnel next build apps/web --webpack",
+    "predev": "node scripts/build-export.mjs",
+    "predev:server": "node scripts/build-export.mjs",
+    "prestart": "node scripts/build-export.mjs",
+    "pretest": "node scripts/build-export.mjs",
+    "pretest:payment": "node scripts/build-export.mjs",
+    "prebuild": "node scripts/build-export.mjs",
+    "prebuild:tunnel": "node scripts/build-export.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.3.5",

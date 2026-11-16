@@ -154,6 +154,6 @@ it('updates derived marquee labels in the live preview and portable export after
   expect(edited().marquee.items).toEqual(['新标签','保留标签']);
   expect(screen.queryByText('旧标签')).not.toBeInTheDocument();
   expect(screen.getAllByText('新标签').length).toBeGreaterThan(0);
-  const html=buildStaticHtml(edited());
+  const html=buildStaticHtml(edited(),undefined,undefined,()=>({mime:'image/png',bytes:Buffer.from([1,2,3])}));
   expect(html).toContain('新标签');expect(html).not.toContain('旧标签');
 });

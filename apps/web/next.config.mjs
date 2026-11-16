@@ -1,5 +1,8 @@
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  // URLs may contain share/download credentials, and browser errors may
+  // include the current hash. Do not forward either to server logs.
+  logging: { incomingRequests: false, browserToTerminal: false },
   transpilePackages: [
     "@buildurprofile/contracts",
     "@buildurprofile/skills",

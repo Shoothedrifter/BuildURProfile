@@ -375,9 +375,9 @@ test("HTTP generation endpoints require CSRF and do not expose another session's
   } finally { await new Promise((resolve) => server.close(resolve)); db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("paid project config refuses preview-only hero artwork", () => {
+test("project config refuses an unembedded private hero asset URL", () => {
   const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json", import.meta.url)));
-  assert.throws(() => cleanConfig({ ...config, heroArtwork: { assetUrl: "/api/hero-assets/x", styleId: "retro-flat-anime-head", alt: "avatar" } }), /肖像|仅供预览/);
+  assert.throws(() => cleanConfig({ ...config, heroArtwork: { assetUrl: "/api/hero-assets/x", styleId: "retro-flat-anime-head", alt: "avatar" } }), /肖像/);
 });
 
 test("local generation allows repeated portrait tests and removes expired photo files", () => {

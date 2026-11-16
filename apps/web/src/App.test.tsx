@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesignConfig } from "../../../packages/contracts/src/config";
 import App from "./App";
@@ -359,7 +361,7 @@ describe("showcase builder", () => {
     expect(screen.queryByAltText("待生成的肖像照片预览")).not.toBeInTheDocument();
   });
 
-  it("adds generated portrait to hero and hides paid delivery", async () => {
+  it("adds generated portrait to hero and offers delivery", async () => {
     vi.mocked(generationApi.generatePortfolio).mockImplementationOnce(async (brief) => ({
       config: { ...styleToConfig(scoreAnswers(brief.answers), brief.role), content: "content" in brief ? brief.content : ({} as DesignConfig["content"]) },
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" }
@@ -371,8 +373,7 @@ describe("showcase builder", () => {
     answerAll();
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     expect(await screen.findByAltText("动画肖像")).toHaveAttribute("src", "/api/hero-assets/12345678-1234-1234-1234-123456789012");
-    expect(screen.queryByRole("button", { name: /发布并分享/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/仅供本机预览/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /导出文件/ })).toBeInTheDocument();
   });
 
   it("lets a failed avatar request fall back to a text-only preview", async () => {
@@ -410,6 +411,28 @@ describe("showcase builder", () => {
       fireEvent(window, new Event("hashchange"));
       expect(await screen.findByRole("heading", { name: "Second Person" })).toBeInTheDocument();
     } finally {
+      window.history.replaceState(null, "", originalHash || window.location.pathname);
+    }
+  });
+  it("hydrates a shared link without a server/client mismatch", async () => {
+    const originalHash = window.location.hash;
+    const container = document.createElement("div");
+    const errors: unknown[] = [];
+    vi.mocked(paymentApi.readShare).mockResolvedValueOnce({ config: rawConfig as DesignConfig, expiresAt: Date.now() + 1000 });
+    try {
+      window.history.replaceState(null, "", window.location.pathname);
+      container.innerHTML = renderToString(<App />);
+      document.body.appendChild(container);
+      window.history.replaceState(null, "", `#share=${"a".repeat(43)}`);
+      let root: ReturnType<typeof hydrateRoot>;
+      await act(async () => {
+        root = hydrateRoot(container, <App />, { onRecoverableError: (error) => errors.push(error) });
+      });
+      expect(errors).toEqual([]);
+      expect(await within(container).findByRole("heading", { name: /Alex Morgan/i })).toBeInTheDocument();
+      await act(async () => root!.unmount());
+    } finally {
+      container.remove();
       window.history.replaceState(null, "", originalHash || window.location.pathname);
     }
   });
@@ -494,7 +517,7 @@ describe("showcase builder", () => {
     expect(after.content.profile.name).toBe("Edited Person");
     expect(after.marquee.speed).toBeGreaterThan(before.marquee.speed);
     expect(after.stackedCards.scaleStep).toBeGreaterThan(before.stackedCards.scaleStep);
-    fireEvent.click(screen.getByRole("button", { name: /分享链接 \/ 导出/ }));
+    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.objectContaining({ profile: expect.objectContaining({ name: "Edited Person" }) }),
       marquee: expect.objectContaining({ speed: after.marquee.speed }),
@@ -506,7 +529,29 @@ describe("showcase builder", () => {
     expect(paymentApi.export).not.toHaveBeenCalled();
   });
 
-  it("uses one paid project for both publishing and ZIP delivery without another checkout", async () => {
+  it("exports an unpaid project without starting checkout", async () => {
+    let filename = "";
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { filename = this.download; });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, blob: async () => new Blob(["<html></html>"]) } as Response);
+    const createUrl = URL.createObjectURL;
+    const revokeUrl = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:export");
+    URL.revokeObjectURL = vi.fn();
+    try {
+      render(<App />);
+      await reachResult();
+      fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
+      await waitFor(() => expect(filename).toBe("buildurprofile-site.html"));
+      expect(fetchMock).toHaveBeenCalledWith("/api/downloads/test", { credentials: "same-origin" });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(paymentApi.checkout).not.toHaveBeenCalled();
+    } finally {
+      click.mockRestore(); fetchMock.mockRestore();
+      URL.createObjectURL = createUrl; URL.revokeObjectURL = revokeUrl;
+    }
+  });
+
+  it("uses one paid project for publishing and free HTML delivery without another checkout", async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     const paid = { id: "paid-project", config: rawConfig as DesignConfig, revision: 1,
       paid: true, pendingAction: null, pendingAmountFen: null };
@@ -517,7 +562,7 @@ describe("showcase builder", () => {
     await reachResult();
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("paid-project"));
-    fireEvent.click(screen.getByRole("button", { name: /导出静态网站 ZIP/ }));
+    fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalledWith("paid-project"));
     expect(paymentApi.checkout).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));

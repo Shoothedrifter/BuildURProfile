@@ -31,3 +31,6 @@ docs/CVs/
 apps/web/public/export/
 docs/PRD/
 .playwright-mcp
+/.alipay-sandbox.json
+
+apps/web/.export/

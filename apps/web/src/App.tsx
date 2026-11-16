@@ -54,10 +54,7 @@ function isRenderableConfig(value: DesignConfig | null | undefined): value is De
 
 export default function App() {
   const avatarDemo = isAvatarDemoEnabled();
-  const [shareView, setShareView] = useState<{ requested: boolean; config: DesignConfig | null; loading: boolean }>(() => {
-    const hasShareHash = typeof window !== "undefined" && window.location.hash.startsWith("#share=");
-    return { requested: hasShareHash, config: null, loading: hasShareHash };
-  });
+  const [shareView, setShareView] = useState<{ requested: boolean; config: DesignConfig | null; loading: boolean }>({ requested: false, config: null, loading: false });
   const [phase, setPhase] = useState<WorkflowPhase>("landing");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
@@ -68,7 +65,7 @@ export default function App() {
   const [role, setRole] = useState<JobRole>("frontend-creative-developer");
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [generated, setGenerated] = useState<DesignConfig | null>(null);
-  const [isTouch, setIsTouch] = useState(touchInput);
+  const [isTouch, setIsTouch] = useState(false);
   const [share, setShare] = useState<{ id: string; url: string; expiresAt: number } | null>(null);
   const [savedShares, setSavedShares] = useState<Array<{ id: string; url: string; expiresAt: number }>>([]);
   const [projects, setProjects] = useState<OwnedProject[]>([]);
@@ -218,6 +215,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setIsTouch(touchInput());
     const onTouch = () => setIsTouch(true);
     window.addEventListener("touchstart", onTouch, { passive: true, once: true });
     return () => window.removeEventListener("touchstart", onTouch);
@@ -449,7 +447,6 @@ export default function App() {
 
   const saveProject = async (): Promise<OwnedProject> => {
     if (!generated) throw new Error("请先生成作品。");
-    if (generated.heroArtwork) throw new Error("Wibi 肖像仅供本机预览，不能用于付费分享或导出。");
     const published = toPublishedConfig(await inlineConfigImages(generated));
     const current = projectId ? await paymentApi.project(projectId) : null;
     const project = current
@@ -482,28 +479,35 @@ export default function App() {
       await syncShares(id);
     } else {
       const download = await paymentApi.export(id);
-      const link = document.createElement("a");
-      link.href = download.url;
-      link.download = "buildurprofile-site.zip";
-      document.body.append(link);
-      link.click();
-      link.remove();
+      const response = await fetch(download.url, { credentials: "same-origin" });
+      if (!response.ok) throw new Error("导出文件生成失败，请重试。");
+      const url = URL.createObjectURL(await response.blob());
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "buildurprofile-site.html";
+        document.body.append(link);
+        link.click();
+        link.remove();
+      } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
     }
   };
 
   const requestDelivery = async (action: DeliveryAction) => {
     if (!generated || exporting) return;
-    if (generated.heroArtwork) {
-      setResultError("Wibi 肖像仅供本机预览，不能用于付费分享或导出。");
-      return;
+    if (action === "share") {
+      setPaymentIntent(action);
+      setPhase("delivery");
+      window.scrollTo({ top: 0, behavior: "instant" });
     }
-    setPaymentIntent(action);
-    setPhase("delivery");
-    window.scrollTo({ top: 0, behavior: "instant" });
     setExporting(true);
     setResultError("");
     try {
       const project = await saveProject();
+      if (action === "export") {
+        await deliver(project.id, action, generated);
+        return;
+      }
       const checked = !project.paid && project.pendingAmountFen ? await paymentApi.reconcile(project.id) : project;
       setProjectPaid(checked.paid);
       if (checked.paid) {

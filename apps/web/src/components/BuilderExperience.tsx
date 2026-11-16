@@ -134,7 +134,7 @@ function AvatarPicker({ enabled, photoDataUrl, photoName, avatarStyle, generatin
         </button>)}
       </div>
       {photoDataUrl && <ProofButton variant="quiet" aria-busy={generating || undefined} onClick={onClear}>移除照片</ProofButton>}
-      <p className="proof-microcopy">图片生成会把照片发送给配置的图像供应商；Wibi Style 当前仅供个人非商业预览。</p>
+      <p className="proof-microcopy">图片生成会把照片发送给配置的图像供应商。</p>
     </> : <>
       <span className="proof-avatar-placeholder" aria-hidden="true">◯</span>
       <p className="proof-muted">当前部署未启用头像生成，可跳过并在生成后继续编辑。</p>
@@ -433,11 +433,10 @@ export function BuilderExperience(props: BuilderExperienceProps) {
 
     {phase === "result" && generated && <section className="proof-step-page">
       <StepHeader number={5} title="你的经历，正在成为一件作品" description="预览真实的表达效果，调整内容和风格。满意之后，再决定发布。" />
-      {generated.heroArtwork && <p className="proof-note">Wibi Style 头像仅供本机预览，暂不支持付费分享或 ZIP 导出。</p>}
-      {!generated.heroArtwork && <div className="proof-result-next">
+      <div className="proof-result-next">
         <div><p>STEP 5 / DELIVERY</p><strong>作品已生成。下一步选择分享或导出。</strong></div>
         <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>下一步：前往分享与付费 →</ProofButton>
-      </div>}
+      </div>
       {avatarDemo && <details className="proof-regenerate">
         <summary>更换头像或风格 →</summary>
         <AvatarPicker enabled photoDataUrl={photoDataUrl} photoName={photoName} avatarStyle={avatarStyle} generating={generatingAvatar}
@@ -462,17 +461,17 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       {isTouch && <p className="proof-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
       {error && <p className="proof-inline-error" role="alert">{error}</p>}
       {resultError && <p className="proof-inline-error" role="alert">{resultError}</p>}
-      {!generated.heroArtwork && <ProofCard className="proof-publish-card">
-        <div><p>FREE PREVIEW / NOT PUBLISHED</p><h2>分享或带走你的作品集</h2><span>正式分享与静态 ZIP 使用同一项目的一次付款解锁。</span></div>
+      <ProofCard className="proof-publish-card">
+        <div><p>FREE PREVIEW / NOT PUBLISHED</p><h2>分享或带走你的作品集</h2><span>发布分享按项目一次付费，单文件 HTML 免费导出。</span></div>
         <div className="proof-publish-actions">
           <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>{share ? "更新分享链接 →" : "发布并分享 →"}</ProofButton>
-          <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>{exporting ? "正在准备…" : "分享链接 / 导出 →"}</ProofButton>
+          <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>{exporting ? "正在准备…" : "导出文件 →"}</ProofButton>
         </div>
-      </ProofCard>}
+      </ProofCard>
     </section>}
 
     {phase === "delivery" && generated && <section className="proof-step-page">
-      <StepHeader number={6} title="让对的人，看见你的作品" description="确认作品后，按项目解锁发布与导出。一次解锁，用于当前项目。" />
+      <StepHeader number={6} title="让对的人，看见你的作品" description="按项目一次付费解锁发布与分享，导出免费。" />
       <div className="proof-delivery-layout">
         <ProofCard className="proof-delivery-summary">
           <h2>{generated.content.profile.name || "你的"} Showcase</h2>
@@ -482,14 +481,14 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <ProofButton onClick={() => go("result")}>返回预览，继续编辑</ProofButton>
           {deliveryUnlocked && <div className="proof-unlock-actions">
             <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>重新发布分享链接</ProofButton>
-            <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>导出静态网站 ZIP</ProofButton>
+            <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>导出文件</ProofButton>
           </div>}
         </ProofCard>
         <ProofCard className="proof-unlock-card">
           <h2>解锁当前项目</h2>
           <p>单项目一次付费 · {offer?.shareDays ?? 7} 天分享链接</p>
           <strong className="proof-price">{quotedAmountYuan || offer?.priceYuan ? `¥${quotedAmountYuan ?? offer?.priceYuan}` : "服务端尚未配置价格"}</strong>
-          <p>{offer?.service || "正式托管分享与静态作品集导出，一次解锁当前项目两项能力。"}</p>
+          <p>{offer?.service || "一次付款解锁当前项目的发布与分享，静态网站导出免费。"}</p>
           <p>付款前将明确展示实际金额。此权益仅适用于当前项目，不代表解锁全部项目。</p>
           {offer?.mode === "sandbox" && <p className="proof-note">沙箱测试：普通支付宝无法支付沙箱订单，请使用对应沙箱买家账号。</p>}
           {offer?.configurationError && <p className="proof-inline-error" role="alert">支付配置：{offer.configurationError}</p>}
@@ -499,15 +498,15 @@ export function BuilderExperience(props: BuilderExperienceProps) {
             </ProofButton>
             <ProofButton disabled={exporting || !paymentIntent} onClick={props.onCheckEntitlement}>{exporting ? "正在检查…" : "检查已有权益"}</ProofButton>
           </div>
-          <span className="proof-microcopy">支付渠道：支付宝 · 只有服务端确认权益后才能分享或导出</span>
+          <span className="proof-microcopy">支付渠道：支付宝 · 服务端确认权益后才能发布分享</span>
         </ProofCard>
       </div>
       <section className="proof-status-section" aria-labelledby="delivery-status-title">
         <h2 id="delivery-status-title">支付与交付状态</h2>
         <div className="proof-three-grid">
           <ProofCard className={!share && !deliveryUnlocked ? "is-current" : ""}><strong>等待支付</strong><p>请在支付宝完成支付。取消付款可返回预览继续编辑。</p></ProofCard>
-          <ProofCard className={exporting ? "is-current" : ""}><strong>已支付 · 正在发布</strong><p>正在处理网页或导出。失败可重试，无需重复付款。</p></ProofCard>
-          <ProofCard className={share || deliveryUnlocked ? "is-current" : ""}><strong>已解锁 · 交付完成</strong><p>分享链接与导出由服务端权益控制。</p></ProofCard>
+          <ProofCard className={exporting ? "is-current" : ""}><strong>已支付 · 正在发布</strong><p>发布失败可重试，无需重复付款。</p></ProofCard>
+          <ProofCard className={share || deliveryUnlocked ? "is-current" : ""}><strong>已解锁 · 交付完成</strong><p>分享链接由服务端权益控制；导出免费。</p></ProofCard>
         </div>
       </section>
       {share && <ProofCard className="proof-share-card">

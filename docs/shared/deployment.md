@@ -48,7 +48,25 @@ docker compose -f compose.agent.yml up --build
 - Compose 挂载 `app_data` 和独立 `agent_checkpoints` 卷。两端实际环境文件不打包进镜像。
 - `compose.tunnel.yml` 是 FRP 穿透配置，与应用编排不同；启动应用须显式选择 `compose.agent.yml`。
 
-生产容器默认关闭 Wibi 肖像。开放条件见[Agent 上线门槛](../agent/README.md)。
+当前检出版本的生产容器默认关闭肖像演示；自有肖像 Skill 的部署配置以相应分支为准。
+
+### 单机生产部署
+
+在服务器上安装 Docker Engine 与 Compose 插件，将仓库部署文件复制到服务器；不复制开发环境的 `.env`、沙箱凭据或 `data/`。使用下列样例分别准备仓库根目录 `.env`、`.env.api` 和 `.env.agent`；已有文件逐项合并，不覆盖。限制这些文件的读取权限，例如 `chmod 600 .env .env.api .env.agent`。
+
+- `.env`：从 `deploy/.env.compose.example` 设置独立随机 `AGENT_SERVICE_TOKEN`。
+- `.env.api`：从 `apps/launcher/.env.example` 配置 `PAYMENT_ENV=production`、生产售价、生产应用和商户参数，`PUBLIC_BASE_URL=https://域名`，`ALIPAY_NOTIFY_URL=https://域名/api/payment/notify`。私钥由部署者自行安全注入，不能提交或发送到聊天。
+- `.env.agent`：从 `apps/agent/.env.example` 设置所需供应商参数；无肖像作品仍需要运行 Agent。
+
+使用独立 Compose 项目名隔离生产卷，切勿复用沙箱卷或沙箱数据库：
+
+```sh
+docker compose -p buildurprofile-production -f compose.agent.yml config --quiet
+docker compose -p buildurprofile-production -f compose.agent.yml up -d --build
+docker compose -p buildurprofile-production -f compose.agent.yml ps
+```
+
+Web 监听宿主机 `127.0.0.1:8787`，Agent 不发布端口。由服务器上的 Nginx 负责 HTTPS 和反向代理至 `http://127.0.0.1:8787`，并在转发前拒绝 `/_internal/agent/` 和 `/api/_internal/agent/` 及其子路径；支付宝通知路径 `/api/payment/notify` 必须允许 POST 且不重定向。应用数据卷和 checkpoint 卷均需备份；不要使用 `down -v` 删除生产卷。确认 `/healthz` 和 `/readyz` 正常，以及公网内部接口不可访问。支付宝回调和真实付款仍须在域名及生产凭据就绪后按[支付上线验收](../api/payment.md)逐项验证。
 
 ## 独立服务与公网部署
 

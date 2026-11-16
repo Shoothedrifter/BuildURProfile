@@ -4,13 +4,13 @@
 
 ## 用户流程与边界
 
-PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块和条目 → Agent 对齐来源并逐条排版 → `/editor/:resumeId` 对照原 PDF 核对、排序和补充内容 → `/style/:resumeId` 选择职业并完成测评 → 仅提交确认内容与答案 → Python Agent `python-agent-v4` 生成配置 → 编辑与预览 → 付费分享或导出个人作品集网页。
+PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块和条目 → Agent 对齐来源并逐条排版 → `/editor/:resumeId` 对照原 PDF 核对、排序和补充内容 → `/style/:resumeId` 选择职业并完成测评 → 仅提交确认内容与答案 → Python Agent `python-agent-v4` 生成配置 → 编辑与预览 → 免费导出个人作品集网页或付费发布分享。
 
 - 新流程的原 PDF、来源块、私有草稿和最近 10 版历史从上传起在受会话保护的服务端保留 30 天，可提前删除；Agent 仅向当前配置的 OpenAI 或智谱 GLM 文本供应商发送逐条格式化必需的文字。扫描件普通解析失败后可主动选择本机 OCR；混合 PDF 成功解析后可对无文字页创建独立 OCR 候选，核对后补空应用。OCR 所需的系统组件见[部署说明](../shared/deployment.md)。
 - 首页保留明确标注的“浏览器解析（兼容）”入口；该旧路径的 PDF 与候选内容仍只留在浏览器内存。新流程模型失败时不会回退到旧路径并假称 AI 解析成功。
 - 确认页覆盖基本信息、求职意向、自我评价、教育、实习/工作、项目、奖项、校园、技能和其他内容。浏览器解析产出带来源、页码和展示选择的 `ResumeCandidateV2`，工作与校园经历是两个独立数组；识别结果可选择展示或调整分类，个人细节与期待薪资默认关闭。确认后生成 `resume-v1` 结构化内容，来源页码和原文不会进入生成 brief。
 - **产品本体 vs. 交付产物**：`apps/web` 是生成器产品本体（全栈应用），不部署到 GitHub Pages；用户生成的**个人作品集页面（Showcase）**才是最终交付产物。
-- 肖像是可选的本机 demo；照片在主动提交前只留在浏览器。提交时须说明会交给图像供应商处理。Wibi 产物的使用限制见[Agent](../agent/README.md)。
+- 肖像是可选内容；照片在主动提交前只留在浏览器。提交时须说明会交给图像供应商处理。
 
 ## 代码入口
 
@@ -21,7 +21,7 @@ PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块�
 | `src/app/upload/page.tsx`、`src/app/editor/[resumeId]/page.tsx`、`src/app/style/[resumeId]/page.tsx` | Agent 上传、十模块核对与风格选择 |
 | `src/app/api/[[...slug]]/route.ts` | 统一 API 与内部 Agent 协议 Route Handler |
 | `src/app/healthz/route.ts`、`src/app/readyz/route.ts` | 健康与 Agent 就绪探针路由 |
-| `src/server/` | 服务端核心实现（配置、会话/CSRF、项目与支付服务、生成与内部桥接路由、作品集 ZIP 打包） |
+| `src/server/` | 服务端核心实现（配置、会话/CSRF、项目与支付服务、生成与内部桥接路由、作品集单文件 HTML 导出） |
 | `src/App.tsx` | 页面阶段、字段确认、异步任务与支付返回后的动作恢复 |
 | `src/components/BuilderExperience.tsx`、`BuilderChrome.tsx` | 六屏制作流程、暖色描边导航、进度、资料模块和交付状态 |
 | `src/ShowcasePage.tsx`、`src/components/` | 固定作品骨架、跑马灯、堆叠卡片和编辑面板 |
