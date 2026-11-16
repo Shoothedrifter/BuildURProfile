@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+from typing import Any
 
 from openai import APIConnectionError, APITimeoutError, APIStatusError, AsyncOpenAI
+
+log = logging.getLogger(__name__)
 
 # provider → API key 环境变量名（openai 走默认 OPENAI_API_KEY）
 KEY_ENV_BY_PROVIDER = {"zai": "ZAI_API_KEY", "siliconflow": "SILICONFLOW_API_KEY"}
@@ -18,7 +22,8 @@ BASE_URL_BY_PROVIDER = {
 
 class ResumeTextModelError(ValueError):
     def __init__(self, *, reason: str, retryable: bool = False):
-        super().__init__("PARSE_FAILED: text model request failed")
+        # 消息携带 reason，便于测试与日志直接断言错误码
+        super().__init__(f"PARSE_FAILED: {reason}")
         self.reason = reason
         self.retryable = retryable
 
@@ -87,3 +92,50 @@ class OpenAIResumeTextModel:
             raise ResumeTextModelError(reason="NETWORK_ERROR", retryable=True) from None
         except Exception:
             raise ResumeTextModelError(reason="INVALID_OUTPUT") from None
+
+
+class FallbackTextModel:
+    """按序尝试候选文本模型：任何候选失败即切换下一个，全部失败抛最后一个错误。"""
+
+    def __init__(self, models: list[Any]):
+        self.models = list(models)
+
+    async def generate_json(self, name: str, schema: dict, prompt: str) -> dict:
+        last_error: ResumeTextModelError | None = None
+        for index, model in enumerate(self.models):
+            try:
+                return await model.generate_json(name, schema, prompt)
+            except ResumeTextModelError as error:
+                last_error = error
+                log.info("resume text fallback switch candidate=%d provider=%s code=%s",
+                         index, getattr(model, "provider", "custom"), error.reason)
+        if last_error is None:
+            raise ResumeTextModelError(reason="CONFIG_MISSING")
+        raise last_error
+
+
+def parse_fallback_candidates(raw: str) -> list[OpenAIResumeTextModel]:
+    """解析 "provider:model,provider:model" 为有序候选链；缺 key 的候选跳过并记日志。"""
+    models: list[OpenAIResumeTextModel] = []
+    for item in raw.split(","):
+        provider, sep, model = item.partition(":")
+        # openai 未列入 KEY_ENV_BY_PROVIDER，与构造器一致走默认 OPENAI_API_KEY
+        if not sep or not model or (provider != "openai" and provider not in KEY_ENV_BY_PROVIDER):
+            raise ResumeTextModelError(reason="CONFIG_INVALID")
+        key_var = KEY_ENV_BY_PROVIDER.get(provider, "OPENAI_API_KEY")
+        if not os.getenv(key_var):
+            log.warning("resume text fallback skip candidate provider=%s code=NO_KEY", provider)
+            continue
+        models.append(OpenAIResumeTextModel(provider=provider, model=model))
+    return models
+
+
+def build_text_model() -> Any:
+    """按 env 构造文本模型：声明了 fallback 链则用链，否则维持单模型现状。"""
+    raw = os.getenv("RESUME_TEXT_FALLBACKS", "")
+    if raw:
+        candidates = parse_fallback_candidates(raw)
+        if candidates:
+            return FallbackTextModel(candidates)
+        raise ResumeTextModelError(reason="CONFIG_MISSING")
+    return OpenAIResumeTextModel()

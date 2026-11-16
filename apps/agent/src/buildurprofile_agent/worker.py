@@ -15,7 +15,7 @@ from .graph import SUPPORTED_WORKFLOWS, build_generation_graph, task_input
 from .graphs.resume_parse import WORKFLOW_VERSION as RESUME_WORKFLOW_VERSION, OCR_WORKFLOW_VERSION, build_resume_parse_graph
 from .skills.ocr import OcrError
 from .providers.base import ImageProviderError
-from .providers.text_model import OpenAIResumeTextModel, ResumeTextModelError
+from .providers.text_model import ResumeTextModelError, build_text_model
 from .skills.registry import SkillRegistry, default_registry
 from .transport.node_api import AgentTask, CancelRequested, LeaseLost, NodeAgentClient, ResumeParseTask
 
@@ -197,7 +197,7 @@ async def resume_worker_loop(client: NodeAgentClient, checkpointer: Any,
                              worker_id: str | None = None, poll_seconds: float = 2.0,
                              text_model: Any = None) -> None:
     registry = registry or default_registry()
-    text_model = text_model or OpenAIResumeTextModel()
+    text_model = text_model or build_text_model()
     worker_id = worker_id or f"resume_{socket.gethostname().split('.')[0]}_{uuid.uuid4().hex[:8]}"
     if len(worker_id) > 100 or not all(c.isalnum() or c in "_-" for c in worker_id):
         raise ValueError("Invalid AGENT_WORKER_ID")
