@@ -51,10 +51,7 @@ function isRenderableConfig(value: DesignConfig | null | undefined): value is De
 
 export default function App() {
   const avatarDemo = isAvatarDemoEnabled();
-  const [shareView, setShareView] = useState<{ requested: boolean; config: DesignConfig | null; loading: boolean }>(() => {
-    const hasShareHash = typeof window !== "undefined" && window.location.hash.startsWith("#share=");
-    return { requested: hasShareHash, config: null, loading: hasShareHash };
-  });
+  const [shareView, setShareView] = useState<{ requested: boolean; config: DesignConfig | null; loading: boolean }>({ requested: false, config: null, loading: false });
   const [phase, setPhase] = useState<WorkflowPhase>("landing");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
@@ -64,7 +61,7 @@ export default function App() {
   const [role, setRole] = useState<JobRole>("frontend-creative-developer");
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [generated, setGenerated] = useState<DesignConfig | null>(null);
-  const [isTouch, setIsTouch] = useState(touchInput);
+  const [isTouch, setIsTouch] = useState(false);
   const [share, setShare] = useState<{ id: string; url: string; expiresAt: number } | null>(null);
   const [savedShares, setSavedShares] = useState<Array<{ id: string; url: string; expiresAt: number }>>([]);
   const [projects, setProjects] = useState<OwnedProject[]>([]);
@@ -194,6 +191,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setIsTouch(touchInput());
     const onTouch = () => setIsTouch(true);
     window.addEventListener("touchstart", onTouch, { passive: true, once: true });
     return () => window.removeEventListener("touchstart", onTouch);
@@ -435,7 +433,7 @@ export default function App() {
     })));
   };
 
-  const deliver = async (id: string, action: DeliveryAction, config: DesignConfig, format: "html" | "zip" = "zip") => {
+  const deliver = async (id: string, action: DeliveryAction, config: DesignConfig) => {
     if (action === "share") {
       const next = await paymentApi.publish(id);
       setShare({
@@ -447,13 +445,13 @@ export default function App() {
       await syncShares(id);
     } else {
       const download = await paymentApi.export(id);
-      const response = await fetch(`${download.url}?format=${format}`, { credentials: "same-origin" });
+      const response = await fetch(download.url, { credentials: "same-origin" });
       if (!response.ok) throw new Error("导出文件生成失败，请重试。");
       const url = URL.createObjectURL(await response.blob());
       try {
         const link = document.createElement("a");
         link.href = url;
-        link.download = `buildurprofile-site.${format}`;
+        link.download = "buildurprofile-site.html";
         document.body.append(link);
         link.click();
         link.remove();
@@ -461,7 +459,7 @@ export default function App() {
     }
   };
 
-  const requestDelivery = async (action: DeliveryAction, format: "html" | "zip" = "zip") => {
+  const requestDelivery = async (action: DeliveryAction) => {
     if (!generated || exporting) return;
     if (action === "share") {
       setPaymentIntent(action);
@@ -473,13 +471,13 @@ export default function App() {
     try {
       const project = await saveProject();
       if (action === "export") {
-        await deliver(project.id, action, generated, format);
+        await deliver(project.id, action, generated);
         return;
       }
       const checked = !project.paid && project.pendingAmountFen ? await paymentApi.reconcile(project.id) : project;
       setProjectPaid(checked.paid);
       if (checked.paid) {
-        await deliver(project.id, action, generated, format);
+        await deliver(project.id, action, generated);
       } else {
         const currentOffer = await paymentApi.offer();
         setOffer(currentOffer);
@@ -695,7 +693,7 @@ export default function App() {
     onGenerate={() => void generate()}
     onRunAvatarGeneration={() => { if (generated) void runAvatarGeneration(generated, true); }}
     onEditGenerated={editGenerated}
-    onRequestDelivery={(action, format) => void requestDelivery(action, format)}
+    onRequestDelivery={(action) => void requestDelivery(action)}
     onStartPayment={() => void startPayment()}
     onCheckEntitlement={() => void checkEntitlement()}
     onResumeProject={resumeProject}

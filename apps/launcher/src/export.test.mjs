@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM, VirtualConsole } from "jsdom";
-import { buildStaticHtml, buildStaticZip } from "../../web/src/server/export.mjs";
+import { buildStaticHtml } from "../../web/src/server/export.mjs";
 import { cleanConfig } from "../../../packages/contracts/src/validation.mjs";
 
 test("offline export runs the shared showcase with embedded portrait and safe confirmed content", async () => {
@@ -29,6 +29,5 @@ test("offline export runs the shared showcase with embedded portrait and safe co
     next.click();
     await new Promise((resolve) => setTimeout(resolve, 30));
     assert.ok(dom.window.document.body.textContent.includes(cleaned.content.projects[1].title));
-    assert.deepEqual(buildStaticZip(cleaned).subarray(40, 40 + Buffer.byteLength(html)), Buffer.from(html));
   } finally { dom.window.close(); }
 });

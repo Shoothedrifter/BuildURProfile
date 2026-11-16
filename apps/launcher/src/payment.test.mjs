@@ -7,7 +7,6 @@ import { generateKeyPairSync } from "node:crypto";
 import { bindPaymentEnvironment, openDatabase } from "../../web/src/server/database.mjs";
 import { createPaymentService } from "../../web/src/server/service.mjs";
 import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
-import { zipSingleHtml } from "../../web/src/server/export.mjs";
 import { createAlipayGateway } from "../../web/src/server/gateway.mjs";
 import { loadSandboxPaymentEnv, paymentConfig, resolveRepoRoot } from "../../web/src/server/config.mjs";
 
@@ -258,12 +257,6 @@ test("HTTP handler serves healthz, readyz, and offer endpoints", async () => {
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
 
-test("offline ZIP stores a real index.html", () => {
-  const zip = zipSingleHtml("<html>offline</html>");
-  assert.equal(zip.readUInt32LE(0), 0x04034b50);
-  assert.ok(zip.includes(Buffer.from("<html>offline</html>")));
-});
-
 test("official SDK generates sandbox page-pay POST form with frozen amount and product code", () => {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
     privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
@@ -411,12 +404,12 @@ test("HTTP flow protects publication and download, then delivers both after veri
     assert.equal((await publicRead.json()).config.content.profile.name, config.content.profile.name);
     const download = await (await post(`/api/projects/${project.id}/export`)).json();
     assert.equal((await fetch(`${base}${download.url}`)).status, 401);
-    const zipResponse = await fetch(`${base}${download.url}`, { headers: { cookie } });
-    assert.equal(zipResponse.status, 200);
-    assert.equal(zipResponse.headers.get("content-type"), "application/zip");
-    const bytes = Buffer.from(await zipResponse.arrayBuffer());
-    assert.equal(bytes.readUInt32LE(0), 0x04034b50);
-    assert.ok(bytes.includes(Buffer.from("BuildURProfile Showcase")));
+    const response = await fetch(`${base}${download.url}`, { headers: { cookie } });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /^text\/html/);
+    assert.match(response.headers.get("content-disposition"), /buildurprofile-site\.html/);
+    assert.match(await response.text(), /BuildURProfile Showcase/);
+    assert.equal((await fetch(`${base}${download.url}?format=zip`, { headers: { cookie } })).status, 400);
     assert.equal(db.prepare("SELECT count(*) AS count FROM deliveries WHERE project_id=? AND status='DELIVERED'").get(project.id).count, 2);
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
@@ -453,7 +446,7 @@ test("a packaging failure leaves the paid entitlement and a retry can deliver", 
   assert.equal(db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='export'").get(id).status, "PENDING");
   let fail = true;
   const server = createPaymentHttpServer({ db, service, paymentConfig: merchant, priceFen: 199,
-    secret: Buffer.alloc(32, 3), zipBuilder: () => { if (fail) throw new Error("packaging failure"); return zipSingleHtml("<html>retry</html>"); } });
+    secret: Buffer.alloc(32, 3), htmlBuilder: () => { if (fail) throw new Error("packaging failure"); return "<html>retry</html>"; } });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const base = `http://127.0.0.1:${server.address().port}`;

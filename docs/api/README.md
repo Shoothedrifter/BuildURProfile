@@ -14,9 +14,9 @@
 | `config.mjs`、`gateway.mjs` | 支付配置校验、沙箱凭据读取与官方支付宝 SDK |
 | `routes/generations.mjs` | 浏览器生成任务与资产路由 |
 | `routes/internal-agent.mjs` | 服务令牌与租约保护的 Python Agent 私有协议 |
-| `export.mjs` | 用户作品集（Showcase）单文件 HTML 与 ZIP 打包 |
+| `export.mjs` | 用户作品集（Showcase）单文件 HTML 导出 |
 
-创建下载令牌后，`GET /api/downloads/{token}?format=html` 返回单文件 HTML；`format=zip` 或省略参数返回包含 `index.html` 的 ZIP。两者均须为项目所属会话，无需支付。导出脚本在开发、测试和构建前由 `scripts/build-export.mjs` 从共享展示组件生成。
+创建下载令牌后，`GET /api/downloads/{token}` 返回单文件 HTML；请求须来自项目所属会话，无需支付。导出脚本在开发、测试和构建前由 `scripts/build-export.mjs` 从共享展示组件生成。
 
 `database.mjs`、`generations.mjs` 是存储模块的导出入口。实际数据库迁移、任务队列、确认内容清洗及资产文件管理位于 `packages/storage/src/`。
 

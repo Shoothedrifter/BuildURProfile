@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesignConfig } from "../../../packages/contracts/src/config";
 import App from "./App";
@@ -362,6 +364,28 @@ describe("showcase builder", () => {
       window.history.replaceState(null, "", originalHash || window.location.pathname);
     }
   });
+  it("hydrates a shared link without a server/client mismatch", async () => {
+    const originalHash = window.location.hash;
+    const container = document.createElement("div");
+    const errors: unknown[] = [];
+    vi.mocked(paymentApi.readShare).mockResolvedValueOnce({ config: rawConfig as DesignConfig, expiresAt: Date.now() + 1000 });
+    try {
+      window.history.replaceState(null, "", window.location.pathname);
+      container.innerHTML = renderToString(<App />);
+      document.body.appendChild(container);
+      window.history.replaceState(null, "", `#share=${"a".repeat(43)}`);
+      let root: ReturnType<typeof hydrateRoot>;
+      await act(async () => {
+        root = hydrateRoot(container, <App />, { onRecoverableError: (error) => errors.push(error) });
+      });
+      expect(errors).toEqual([]);
+      expect(await within(container).findByRole("heading", { name: /Alex Morgan/i })).toBeInTheDocument();
+      await act(async () => root!.unmount());
+    } finally {
+      container.remove();
+      window.history.replaceState(null, "", originalHash || window.location.pathname);
+    }
+  });
   it("does not describe a text PDF as unselectable when its sections are unrecognized", async () => {
     vi.mocked(extractPdfText).mockResolvedValueOnce({ pages: ["RESUME\n一些无法自动分类的正文"], text: "RESUME\n一些无法自动分类的正文" });
     render(<App />);
@@ -456,17 +480,28 @@ describe("showcase builder", () => {
   });
 
   it("exports an unpaid project without starting checkout", async () => {
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    render(<App />);
-    await reachResult();
-    fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
-    fireEvent.click(screen.getByRole("button", { name: /下载单个 HTML/ }));
-    await waitFor(() => expect(paymentApi.export).toHaveBeenCalled());
-    expect(paymentApi.checkout).not.toHaveBeenCalled();
-    click.mockRestore();
+    let filename = "";
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { filename = this.download; });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, blob: async () => new Blob(["<html></html>"]) } as Response);
+    const createUrl = URL.createObjectURL;
+    const revokeUrl = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:export");
+    URL.revokeObjectURL = vi.fn();
+    try {
+      render(<App />);
+      await reachResult();
+      fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
+      await waitFor(() => expect(filename).toBe("buildurprofile-site.html"));
+      expect(fetchMock).toHaveBeenCalledWith("/api/downloads/test", { credentials: "same-origin" });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(paymentApi.checkout).not.toHaveBeenCalled();
+    } finally {
+      click.mockRestore(); fetchMock.mockRestore();
+      URL.createObjectURL = createUrl; URL.revokeObjectURL = revokeUrl;
+    }
   });
 
-  it("uses one paid project for publishing and free ZIP delivery without another checkout", async () => {
+  it("uses one paid project for publishing and free HTML delivery without another checkout", async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     const paid = { id: "paid-project", config: rawConfig as DesignConfig, revision: 1,
       paid: true, pendingAction: null, pendingAmountFen: null };
@@ -478,7 +513,6 @@ describe("showcase builder", () => {
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("paid-project"));
     fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
-    fireEvent.click(screen.getByRole("button", { name: /下载 ZIP 网站包/ }));
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalledWith("paid-project"));
     expect(paymentApi.checkout).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));

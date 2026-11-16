@@ -3,7 +3,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ServiceError } from "./service.mjs";
-import { buildStaticZip, buildStaticHtml } from "./export.mjs";
+import { buildStaticHtml } from "./export.mjs";
 import { handleGenerationRoutes } from "./routes/generations.mjs";
 import { handleInternalAgentRoutes, validateAgentToken } from "./routes/internal-agent.mjs";
 
@@ -77,7 +77,7 @@ function parseRoute(path) {
 
 export function createRequestHandler({ db, service, generationService = null, portraitEnabled = true, agentToken = null,
   agentStyleLoader, paymentConfig, priceFen, configurationError = null,
-  secret = loadSessionSecret(), zipBuilder = buildStaticZip }) {
+  secret = loadSessionSecret(), htmlBuilder = buildStaticHtml }) {
   const configuredAgentToken = validateAgentToken(agentToken);
   return async (req, res) => {
     try {
@@ -166,15 +166,15 @@ export function createRequestHandler({ db, service, generationService = null, po
         }
         if (parts[1] === "downloads" && parts[2] && req.method === "GET") {
           const download = service.getDownload(sessionId, parts[2]);
-          const format = url.searchParams.get("format") ?? "zip";
-          if (!["html", "zip"].includes(format)) throw new ServiceError(400, "导出格式无效。");
+          const format = url.searchParams.get("format") ?? "html";
+          if (format !== "html") throw new ServiceError(400, "导出格式无效。");
           let file;
-          try { file = format === "html" ? Buffer.from(buildStaticHtml(download.config)) : zipBuilder(download.config); }
+          try { file = Buffer.from(htmlBuilder(download.config)); }
           catch (error) {
             try { service.markDeliveryFailure(download.projectId, "export"); } catch { /* Keep packaging error. */ }
             throw error;
           }
-          res.writeHead(200, { "content-type": format === "html" ? "text/html; charset=utf-8" : "application/zip", "content-disposition": `attachment; filename=buildurprofile-site.${format}`,
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-disposition": "attachment; filename=buildurprofile-site.html",
             "content-length": file.length, "cache-control": "no-store", "x-content-type-options": "nosniff" });
           res.end(file, () => {
             try { service.markDownload(download.projectId, parts[2]); }
