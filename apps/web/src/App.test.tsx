@@ -309,7 +309,7 @@ describe("showcase builder", () => {
     expect(screen.queryByAltText("待生成的肖像照片预览")).not.toBeInTheDocument();
   });
 
-  it("adds generated portrait to hero and hides paid delivery", async () => {
+  it("adds generated portrait to hero and offers delivery", async () => {
     vi.mocked(generationApi.generatePortfolio).mockImplementationOnce(async (brief) => ({
       config: { ...styleToConfig(scoreAnswers(brief.answers), brief.role), content: brief.content },
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" }
@@ -321,8 +321,7 @@ describe("showcase builder", () => {
     answerAll();
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     expect(await screen.findByAltText("动画肖像")).toHaveAttribute("src", "/api/hero-assets/12345678-1234-1234-1234-123456789012");
-    expect(screen.queryByRole("button", { name: /发布并分享/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/仅供本机预览/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /导出文件/ })).toBeInTheDocument();
   });
 
   it("lets a failed avatar request fall back to a text-only preview", async () => {
@@ -460,7 +459,8 @@ describe("showcase builder", () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     render(<App />);
     await reachResult();
-    fireEvent.click(screen.getByRole("button", { name: /免费导出 ZIP/ }));
+    fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
+    fireEvent.click(screen.getByRole("button", { name: /下载单个 HTML/ }));
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalled());
     expect(paymentApi.checkout).not.toHaveBeenCalled();
     click.mockRestore();
@@ -477,7 +477,8 @@ describe("showcase builder", () => {
     await reachResult();
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("paid-project"));
-    fireEvent.click(screen.getByRole("button", { name: /导出静态网站 ZIP/ }));
+    fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
+    fireEvent.click(screen.getByRole("button", { name: /下载 ZIP 网站包/ }));
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalledWith("paid-project"));
     expect(paymentApi.checkout).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));

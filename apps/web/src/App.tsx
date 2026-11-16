@@ -415,7 +415,6 @@ export default function App() {
 
   const saveProject = async (): Promise<OwnedProject> => {
     if (!generated) throw new Error("请先生成作品。");
-    if (generated.heroArtwork) throw new Error("Wibi 肖像仅供本机预览，不能用于付费分享或导出。");
     const published = toPublishedConfig(await inlineConfigImages(generated));
     const current = projectId ? await paymentApi.project(projectId) : null;
     const project = current
@@ -436,7 +435,7 @@ export default function App() {
     })));
   };
 
-  const deliver = async (id: string, action: DeliveryAction, config: DesignConfig) => {
+  const deliver = async (id: string, action: DeliveryAction, config: DesignConfig, format: "html" | "zip" = "zip") => {
     if (action === "share") {
       const next = await paymentApi.publish(id);
       setShare({
@@ -448,21 +447,22 @@ export default function App() {
       await syncShares(id);
     } else {
       const download = await paymentApi.export(id);
-      const link = document.createElement("a");
-      link.href = download.url;
-      link.download = "buildurprofile-site.zip";
-      document.body.append(link);
-      link.click();
-      link.remove();
+      const response = await fetch(`${download.url}?format=${format}`, { credentials: "same-origin" });
+      if (!response.ok) throw new Error("导出文件生成失败，请重试。");
+      const url = URL.createObjectURL(await response.blob());
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `buildurprofile-site.${format}`;
+        document.body.append(link);
+        link.click();
+        link.remove();
+      } finally { window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
     }
   };
 
-  const requestDelivery = async (action: DeliveryAction) => {
+  const requestDelivery = async (action: DeliveryAction, format: "html" | "zip" = "zip") => {
     if (!generated || exporting) return;
-    if (generated.heroArtwork) {
-      setResultError("Wibi 肖像仅供本机预览，不能用于付费分享或导出。");
-      return;
-    }
     if (action === "share") {
       setPaymentIntent(action);
       setPhase("delivery");
@@ -473,13 +473,13 @@ export default function App() {
     try {
       const project = await saveProject();
       if (action === "export") {
-        await deliver(project.id, action, generated);
+        await deliver(project.id, action, generated, format);
         return;
       }
       const checked = !project.paid && project.pendingAmountFen ? await paymentApi.reconcile(project.id) : project;
       setProjectPaid(checked.paid);
       if (checked.paid) {
-        await deliver(project.id, action, generated);
+        await deliver(project.id, action, generated, format);
       } else {
         const currentOffer = await paymentApi.offer();
         setOffer(currentOffer);
@@ -695,7 +695,7 @@ export default function App() {
     onGenerate={() => void generate()}
     onRunAvatarGeneration={() => { if (generated) void runAvatarGeneration(generated, true); }}
     onEditGenerated={editGenerated}
-    onRequestDelivery={(action) => void requestDelivery(action)}
+    onRequestDelivery={(action, format) => void requestDelivery(action, format)}
     onStartPayment={() => void startPayment()}
     onCheckEntitlement={() => void checkEntitlement()}
     onResumeProject={resumeProject}

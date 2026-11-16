@@ -392,7 +392,13 @@ test("HTTP flow protects publication and download, then delivers both after veri
     assert.equal(projectResponse.status, 201);
     const project = await projectResponse.json();
     assert.equal((await post(`/api/projects/${project.id}/publish`)).status, 402);
-    assert.equal((await post(`/api/projects/${project.id}/export`)).status, 200);
+    const freeDownload = await (await post(`/api/projects/${project.id}/export`)).json();
+    const htmlResponse = await fetch(`${base}${freeDownload.url}?format=html`, { headers: { cookie } });
+    assert.equal(htmlResponse.status, 200);
+    assert.match(htmlResponse.headers.get("content-type"), /^text\/html/);
+    assert.match(await htmlResponse.text(), /buildurprofile-config/);
+    assert.equal((await fetch(`${base}${freeDownload.url}?format=html`)).status, 401);
+    assert.equal((await fetch(`${base}${freeDownload.url}?format=invalid`, { headers: { cookie } })).status, 400);
     assert.equal((await post(`/api/projects/${project.id}/checkout`, { action: "export" })).status, 400);
     const checkout = await (await post(`/api/projects/${project.id}/checkout`, { action: "share" })).json();
     assert.equal(checkout.amountYuan, "1.99");

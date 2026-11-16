@@ -47,7 +47,7 @@ docker compose -f compose.agent.yml up --build
 - Compose 挂载 `app_data` 和独立 `agent_checkpoints` 卷。两端实际环境文件不打包进镜像。
 - `compose.tunnel.yml` 是 FRP 穿透配置，与应用编排不同；启动应用须显式选择 `compose.agent.yml`。
 
-生产容器默认关闭 Wibi 肖像。开放条件见[Agent 上线门槛](../agent/README.md)。
+当前检出版本的生产容器默认关闭肖像演示；自有肖像 Skill 的部署配置以相应分支为准。
 
 ### 单机生产部署
 

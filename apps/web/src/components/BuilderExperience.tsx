@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import type { DesignConfig, JobRole } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
@@ -149,7 +149,7 @@ function AvatarPicker({ enabled, photoDataUrl, photoName, avatarStyle, generatin
         </button>)}
       </div>
       {photoDataUrl && <ProofButton variant="quiet" aria-busy={generating || undefined} onClick={onClear}>移除照片</ProofButton>}
-      <p className="proof-microcopy">图片生成会把照片发送给配置的图像供应商；Wibi Style 当前仅供个人非商业预览。</p>
+      <p className="proof-microcopy">图片生成会把照片发送给配置的图像供应商。</p>
     </> : <>
       <span className="proof-avatar-placeholder" aria-hidden="true">◯</span>
       <p className="proof-muted">当前部署未启用头像生成，可跳过并在生成后继续编辑。</p>
@@ -200,7 +200,7 @@ export type BuilderExperienceProps = {
   onGenerate: () => void;
   onRunAvatarGeneration: () => void;
   onEditGenerated: (update: (current: DesignConfig) => DesignConfig) => void;
-  onRequestDelivery: (action: DeliveryAction) => void;
+  onRequestDelivery: (action: DeliveryAction, format?: "html" | "zip") => void;
   onStartPayment: () => void;
   onCheckEntitlement: () => void;
   onResumeProject: (project: OwnedProject) => void;
@@ -213,6 +213,20 @@ export type BuilderExperienceProps = {
 
 export function BuilderExperience(props: BuilderExperienceProps) {
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = exportDialog.current;
+    if (!dialog) return;
+    if (exportOpen && !dialog.open) {
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+    }
+    if (!exportOpen && dialog.open) {
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    }
+  }, [exportOpen]);
   const [confirmModule, setConfirmModule] = useState<ConfirmModule>("basic");
   const [selectedPreset, setSelectedPreset] = useState<StylePresetId | null>(null);
   const {
@@ -241,6 +255,17 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     props.onApplyAnswers(preset.answers);
   };
   const isPresetSelected = (presetId: StylePresetId) => selectedPreset === presetId && Object.keys(answers).length === 8;
+  const exportChooser = <dialog ref={exportDialog} className="proof-dialog" aria-labelledby="export-dialog-title" onCancel={() => setExportOpen(false)} onClose={() => setExportOpen(false)}>
+    <h2 id="export-dialog-title">选择导出格式</h2>
+    <p>免费下载完整作品集，可在断网时打开。</p>
+    <div className="proof-actions">
+      <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("export", "html")}>下载单个 HTML</ProofButton>
+      <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("export", "zip")}>下载 ZIP 网站包</ProofButton>
+      <ProofButton disabled={exporting} onClick={() => setExportOpen(false)}>取消</ProofButton>
+    </div>
+    {exporting && <p role="status">正在准备导出…</p>}
+    {resultError && <p role="alert">{resultError}</p>}
+  </dialog>;
   const hasVisibleError = Boolean(error);
   const deliveryUnlocked = projectPaid || Boolean(projects.find((project) => project.id === projectId)?.paid);
 
@@ -276,7 +301,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <p>设计师用页面展示审美与叙事，开发者用交互展示技术与创意。把静态经历，变成可探索的能力证明。</p>
           <ProofButton variant="primary" onClick={() => go("upload")}>免费开始制作 →</ProofButton>
           <ProofButton onClick={() => go("mock")}>浏览作品集样例</ProofButton>
-          <small>免费生成、预览和编辑<br />满意后，按项目解锁发布与导出。</small>
+          <small>免费生成、预览和编辑<br />满意后，按项目解锁发布分享。</small>
         </div>
       </section>
       <section className="proof-landing-section" id="process" aria-labelledby="process-title">
@@ -467,12 +492,12 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </section>}
 
     {phase === "result" && generated && <section className="proof-step-page">
+      {exportChooser}
       <StepHeader number={5} title="你的经历，正在成为一件作品" description="预览真实的表达效果，调整内容和风格。满意之后，再决定发布。" />
-      {generated.heroArtwork && <p className="proof-note">Wibi Style 头像仅供本机预览，暂不支持付费分享或 ZIP 导出。</p>}
-      {!generated.heroArtwork && <div className="proof-result-next">
+      <div className="proof-result-next">
         <div><p>STEP 5 / DELIVERY</p><strong>作品已生成。下一步选择分享或导出。</strong></div>
         <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>下一步：前往分享与付费 →</ProofButton>
-      </div>}
+      </div>
       {avatarDemo && <details className="proof-regenerate">
         <summary>更换头像或风格 →</summary>
         <AvatarPicker enabled photoDataUrl={photoDataUrl} photoName={photoName} avatarStyle={avatarStyle} generating={generatingAvatar}
@@ -497,16 +522,17 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       {isTouch && <p className="proof-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
       {error && <p className="proof-inline-error" role="alert">{error}</p>}
       {resultError && <p className="proof-inline-error" role="alert">{resultError}</p>}
-      {!generated.heroArtwork && <ProofCard className="proof-publish-card">
-        <div><p>FREE PREVIEW / NOT PUBLISHED</p><h2>分享或带走你的作品集</h2><span>发布分享按项目一次付费，静态 ZIP 免费导出。</span></div>
+      <ProofCard className="proof-publish-card">
+        <div><p>FREE PREVIEW / NOT PUBLISHED</p><h2>分享或带走你的作品集</h2><span>发布分享按项目一次付费，HTML 和 ZIP 免费导出。</span></div>
         <div className="proof-publish-actions">
           <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>{share ? "更新分享链接 →" : "发布并分享 →"}</ProofButton>
-          <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>{exporting ? "正在准备…" : "免费导出 ZIP →"}</ProofButton>
+          <ProofButton variant="primary" disabled={exporting} onClick={() => setExportOpen(true)}>{exporting ? "正在准备…" : "导出文件 →"}</ProofButton>
         </div>
-      </ProofCard>}
+      </ProofCard>
     </section>}
 
     {phase === "delivery" && generated && <section className="proof-step-page">
+      {exportChooser}
       <StepHeader number={6} title="让对的人，看见你的作品" description="按项目一次付费解锁发布与分享，导出免费。" />
       <div className="proof-delivery-layout">
         <ProofCard className="proof-delivery-summary">
@@ -517,7 +543,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <ProofButton onClick={() => go("result")}>返回预览，继续编辑</ProofButton>
           {deliveryUnlocked && <div className="proof-unlock-actions">
             <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>重新发布分享链接</ProofButton>
-            <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>导出静态网站 ZIP</ProofButton>
+            <ProofButton variant="primary" disabled={exporting} onClick={() => setExportOpen(true)}>导出文件</ProofButton>
           </div>}
         </ProofCard>
         <ProofCard className="proof-unlock-card">

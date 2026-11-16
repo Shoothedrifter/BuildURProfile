@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
 function escapeHtml(text) {
   return String(text ?? "")
     .replace(/&/g, "&amp;")
@@ -6,35 +9,22 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
-const DEFAULT_CSS = `:root{color-scheme:dark light;--bg:#080d18;--surface:#111b2c;--text:#f1f6ff;--muted:#a7b6ca;--accent:#4de0d2;--line:#2b4354}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.6}
-.showcase-wrap{max-width:1120px;margin:0 auto;padding:48px 24px}.hero h1{font-size:clamp(36px,6vw,72px);margin:0 0 12px}.project-card{border:1px solid var(--line);background:var(--surface);padding:24px;border-radius:12px;margin:16px 0}
-.project-detail{margin-top:12px}.project-detail summary{cursor:pointer;color:var(--accent)}`;
+function exportAssets() {
+  const root = existsSync(join(process.cwd(), "packages/contracts/package.json")) ? process.cwd() : resolve(process.cwd(), "../..");
+  return {
+    javascript: readFileSync(join(root, "apps/web/.export/showcase.js"), "utf8"),
+    css: readFileSync(join(root, "apps/web/src/styles.css"), "utf8").replace(/^@import "tailwindcss";\s*/m, "")
+  };
+}
 
-const DEFAULT_JS = `(() => {
-  const root = document.getElementById("root");
-  const raw = document.getElementById("buildurprofile-config")?.textContent;
-  if (!root || !raw) return;
-  const config = JSON.parse(raw);
-  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  let active = 0;
-  const projects = Array.isArray(config?.content?.projects) ? config.content.projects : [];
-  function render() {
-    const p = projects[active];
-    root.innerHTML = \`<main class="showcase-wrap" data-skin="\${esc(config.skin)}">
-      <section class="hero"><h1>\${esc(config?.content?.profile?.name)}</h1><p>\${esc(config?.content?.profile?.role)}</p><p>\${esc(config?.content?.profile?.intro)}</p></section>
-      \${p ? \`<article class="project-card"><h3>\${esc(p.title)}</h3><p>\${esc(p.category)} · \${esc(p.year)}</p><details class="project-detail"><summary>完整项目说明</summary><div>\${esc(p.description)}</div></details></article>\` : ""}
-      \${projects.length > 1 ? \`<div><button type="button" aria-label="Previous project" id="prev-btn">←</button><button type="button" aria-label="Next project" id="next-btn">→</button></div>\` : ""}
-    </main>\`;
-    document.getElementById("prev-btn")?.addEventListener("click", () => { active = (active - 1 + projects.length) % projects.length; render(); });
-    document.getElementById("next-btn")?.addEventListener("click", () => { active = (active + 1) % projects.length; render(); });
+export function buildStaticHtml(config, javascript, css) {
+  if (javascript === undefined || css === undefined) {
+    const assets = exportAssets();
+    javascript ??= assets.javascript; css ??= assets.css;
   }
-  render();
-})();`;
-
-export function buildStaticHtml(config, javascript = DEFAULT_JS, css = DEFAULT_CSS) {
   if (/<\/style/i.test(css)) throw new Error("Invalid export stylesheet.");
   const images = [
+    config.heroArtwork?.assetUrl,
     ...config.content.projects.map((project) => project.image),
     ...(config.marquee.items ?? []).map((item) => typeof item === "string" ? undefined : item.image)
   ];

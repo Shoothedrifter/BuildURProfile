@@ -10,6 +10,7 @@ describe("publication asset preparation", () => {
     const config = rawConfig as DesignConfig;
     const withImages: DesignConfig = {
       ...config,
+      heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "own", alt: "portrait" },
       marquee: { ...config.marquee, items: [{ label: "Logo", image: "https://example.test/logo.png" }] },
       content: { ...config.content, projects: [{ ...config.content.projects[0], image: "blob:project-art" }] }
     };
@@ -17,6 +18,7 @@ describe("publication asset preparation", () => {
       ok: true, blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" })
     })));
     const embedded = await inlineConfigImages(withImages);
+    expect(embedded.heroArtwork?.assetUrl).toBe("data:image/png;base64,AQID");
     expect(embedded.content.projects[0].image).toBe("data:image/png;base64,AQID");
     expect(embedded.marquee.items?.[0]).toEqual({ label: "Logo", image: "data:image/png;base64,AQID" });
     expect(withImages.content.projects[0].image).toBe("blob:project-art");

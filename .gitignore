@@ -30,3 +30,5 @@ docs/CVs/
 apps/web/public/export/
 docs/PRD/
 /.alipay-sandbox.json
+
+apps/web/.export/

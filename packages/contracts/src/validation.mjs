@@ -38,7 +38,6 @@ export function cleanStructuredResume(resume) {
 }
 
 export function cleanConfig(config) {
-  if (config?.heroArtwork) throw new ServiceError(403, "Wibi 肖像仅供本机预览，不能用于付费分享或导出。");
   if (!config || typeof config !== "object" || Array.isArray(config) ||
     !config.styleVector || !config.skin || !config.marquee || !config.stackedCards ||
     !config.content?.profile || !config.content?.expertise || !Array.isArray(config.content?.projects)) {
@@ -69,6 +68,8 @@ export function cleanConfig(config) {
       stickyTop: Number(config.stackedCards.stickyTop), layout: text(config.stackedCards.layout),
       cardRadius: Number(config.stackedCards.cardRadius), enableTilt: Boolean(config.stackedCards.enableTilt),
       autoPlay: Boolean(config.stackedCards.autoPlay) },
+    ...(config.heroArtwork ? { heroArtwork: { assetUrl: imageText(config.heroArtwork.assetUrl),
+      styleId: text(config.heroArtwork.styleId), alt: text(config.heroArtwork.alt) } } : {}),
     content: {
       profile: Object.fromEntries(["name", "role", "location", "availability", "intro", "summary", "email"]
         .map((key) => [key, text(profile[key])])),
@@ -94,6 +95,7 @@ export function cleanConfig(config) {
     !Number.isFinite(clone.marquee.speed) || !Number.isFinite(clone.stackedCards.scaleStep)) {
     throw new ServiceError(400, "Design Config 参数无效。");
   }
+  if (clone.heroArtwork && !/^data:image\/(png|jpeg|webp|gif);base64,/i.test(clone.heroArtwork.assetUrl)) throw new ServiceError(400, "肖像图片需要先在浏览器内嵌入。");
   for (const project of clone.content.projects) {
     if (project?.image && !/^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,/i.test(project.image)) {
       throw new ServiceError(400, "项目图片需要先在浏览器内嵌入。");
