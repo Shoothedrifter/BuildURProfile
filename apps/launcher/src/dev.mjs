@@ -3,25 +3,21 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { applyAgentEnvFile, readAgentEnvFile } from "./agent-env.mjs";
+import { sanitizeWebEnv } from "./web-env.mjs";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
 const token = process.env.AGENT_SERVICE_TOKEN || randomBytes(32).toString("hex");
 const webPort = process.env.VITE_PORT || process.env.PORT || "5173";
 const host = process.env.SERVER_HOST || "127.0.0.1";
 
-const webEnv = {
+// web 子进程 env：剔除 Agent 专用的供应商密钥/模型变量，规则集中在 web-env.mjs
+const webEnv = sanitizeWebEnv({
   ...process.env,
   AGENT_SERVICE_TOKEN: token,
   AVATAR_DEMO_ENABLED: "1",
   SERVER_HOST: host,
   SERVER_PORT: webPort
-};
-delete webEnv.OPENAI_API_KEY;
-delete webEnv.OPENAI_IMAGE_MODEL;
-delete webEnv.RESUME_TEXT_MODEL;
-delete webEnv.ZAI_API_KEY;
-delete webEnv.CLOUDFLARE_API_TOKEN;
-delete webEnv.CLOUDFLARE_ACCOUNT_ID;
+});
 
 const agentEnv = {
   ...process.env,
