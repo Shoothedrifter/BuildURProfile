@@ -153,6 +153,51 @@ it('projects selected Agent experience into the existing showcase fields', () =>
   expect(JSON.stringify(content)).not.toContain('sourceBlockIds');
 });
 
+describe('sourceText projection', () => {
+  it('projects item sourceText into v3 resume entries and project cards', () => {
+    const draft = contracts.normalizeResumeDraft(fixture);
+    const projects = draft.sections.find(section => section.kind === 'projects')!;
+    projects.items = [{ ...draft.sections[0].items[0], itemId: 'project_source', order: 0,
+      title: '作品', details: '总结正文', facts: [], sourceText: '原文A' }];
+    const content = contracts.projectConfirmedResumeV3(draft);
+    if (content.resume?.version !== 'resume-v3') throw new Error('v3 required');
+    const entry = content.resume.sections.flatMap(section => section.items).find(i => i.itemId === 'project_source')!;
+    expect(entry.sourceText).toBe('原文A');
+    expect(content.projects[0].sourceText).toBe('原文A');
+  });
+  it('rejects sourceText containing an unchecked fact value', () => {
+    const draft = contracts.normalizeResumeDraft(fixture);
+    const projects = draft.sections.find(section => section.kind === 'projects')!;
+    projects.items = [{ ...draft.sections[0].items[0], itemId: 'project_leak', order: 0,
+      title: '作品', details: '总结', facts: [{ key: 'phone', label: 'phone', value: '秘密电话', included: false }],
+      sourceText: '详情原文里出现了秘密电话字样' }];
+    expect(() => contracts.projectConfirmedResumeV3(draft)).toThrow('详情原文包含未勾选字段，请删改后再试。');
+  });
+  it('projects legacy v1 drafts without sourceText as empty strings', () => {
+    const draft = structuredClone(fixture);
+    draft.sections[4].items = [{ ...draft.sections[0].items[0], itemId: 'item_work', order: 0,
+      title: '示例公司', details: '前端开发', facts: [], sourceBlockIds: ['block_1'] }];
+    const content = contracts.projectConfirmedResume(contracts.validateResumeDraft(draft, source));
+    if (content.resume?.version !== 'resume-v2') throw new Error('v2 required');
+    expect(content.resume.sections.find(s => s.kind === 'workExperience')!.items[0].sourceText).toBe('');
+    expect(content.resume.sections.find(s => s.kind === 'basicInfo')!.items[0].sourceText).toBe('');
+  });
+  it('accepts sourceText as an edited field marker in v2 drafts', () => {
+    const draft = contracts.normalizeResumeDraft(fixture);
+    draft.sections[0].items[0].editedFields = ['sourceText'];
+    expect(() => contracts.validateResumeDraftV2(draft, source)).not.toThrow();
+  });
+  it('rejects oversized sourceText across many items at the 256 KiB envelope', () => {
+    const draft = contracts.normalizeResumeDraft(fixture);
+    const projects = draft.sections.find(section => section.kind === 'projects')!;
+    projects.items = Array.from({ length: 40 }, (_, n) => ({ ...draft.sections[0].items[0],
+      itemId: `project_${n}`, order: n, title: '项目', details: '', facts: [], sourceText: '原文'.repeat(3000) }));
+    const before = JSON.stringify(draft);
+    expect(() => contracts.projectConfirmedResumeV3(draft)).toThrow('生成内容超过 256 KiB，请精简展示内容；草稿内容未被截断。');
+    expect(JSON.stringify(draft)).toBe(before);
+  });
+});
+
 it('projects every item in a visible module without exposing unchecked facts', () => {
   const draft = structuredClone(fixture);
   const projects = draft.sections.find(section => section.kind === 'projects')!;

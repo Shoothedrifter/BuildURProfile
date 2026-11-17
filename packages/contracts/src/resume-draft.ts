@@ -9,13 +9,14 @@ export type ResumeModuleKind = keyof typeof RESUME_MODULE_MAPPING;
 export type DraftFact = { key: string; label: string; value: string; included: boolean };
 // 条目补充内容：用户手写的补充文字、相关链接与上传图片（可选字段，历史草稿没有）
 export type ItemSupplements = { text: string; links: { label?: string; url: string }[]; images: { imageId: string; caption: string }[] };
-export type ResumeDraftItem = { itemId: string; order: number; title: string; details: string; facts: DraftFact[]; sourceBlockIds: string[]; confidence: number; segmentationConfidence: number; needsReview: boolean; included: boolean; origin: 'agent' | 'user'; supplements?: ItemSupplements };
+// sourceText：条目对应的简历原文摘录（可选），作品集详情展开按需展示，旧草稿无此键
+export type ResumeDraftItem = { itemId: string; order: number; title: string; details: string; facts: DraftFact[]; sourceBlockIds: string[]; confidence: number; segmentationConfidence: number; needsReview: boolean; included: boolean; origin: 'agent' | 'user'; supplements?: ItemSupplements; sourceText?: string };
 export type ResumeDraftSection = { id: ResumeModuleKind; kind: ResumeModuleKind; mappedDesignModule: string; order: number; visible: boolean; items: ResumeDraftItem[] };
 export type ResumeDraftV1 = { version: 'resume-draft-v1'; resumeId: string; fileId: string; revision: number; sections: ResumeDraftSection[] };
 export type ResumeDraftItemV2 = ResumeDraftItem & { editedFields: string[]; derivedFromItemId?: string };
 export type ResumeDraftSectionV2 = Omit<ResumeDraftSection, 'items'> & { items: ResumeDraftItemV2[] };
 export type ResumeDraftV2 = Omit<ResumeDraftV1, 'version' | 'sections'> & { version: 'resume-draft-v2'; sections: ResumeDraftSectionV2[] };
-const editableField = /^(title|details|included|supplements|needsReview|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})$/;
+const editableField = /^(title|details|sourceText|included|supplements|needsReview|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})$/;
 export function normalizeResumeDraft(raw: unknown): ResumeDraftV2 {
   if ((raw as {version?: string})?.version === 'resume-draft-v2') {
     validateSchema(raw, schemaV2);
@@ -86,7 +87,9 @@ export function projectConfirmedResume(raw: ResumeDraftV1 | ResumeDraftV2): Resu
       const safe = (text: string) => hidden.some(v => text.includes(v)) ? '' : text;
       const supplement = {text:i.supplements?.text ?? '', links:(i.supplements?.links ?? []).map(l=>({label:l.label ?? '',url:l.url})),images:i.supplements?.images ?? []};
       if (hidden.some(v => [supplement.text,...supplement.links.flatMap(l=>[l.label,l.url,decodeURIComponent(l.url)]),...supplement.images.map(m=>m.caption)].some(t=>t.includes(v)))) throw new Error('补充内容包含未勾选字段，请移除后重试。');
-      return {itemId:i.itemId,title: ['basicInfo','jobIntent'].includes(kind)?'':safe(i.title),details:['basicInfo','jobIntent'].includes(kind)?'':safe(i.details), facts:i.facts.filter(f=>f.included).map(({key,label,value})=>({key,label,value})),supplement};
+      // 详情原文同样不得携带未勾选字段的值；基本信息/求职意向固定投影为空串
+      if (!['basicInfo','jobIntent'].includes(kind) && hidden.some(v => (i.sourceText ?? '').includes(v))) throw new Error('详情原文包含未勾选字段，请删改后再试。');
+      return {itemId:i.itemId,title: ['basicInfo','jobIntent'].includes(kind)?'':safe(i.title),details:['basicInfo','jobIntent'].includes(kind)?'':safe(i.details), facts:i.facts.filter(f=>f.included).map(({key,label,value})=>({key,label,value})),supplement,sourceText:['basicInfo','jobIntent'].includes(kind)?'':(i.sourceText ?? '')};
     });
     return items.length ? [{kind,items}] : [];
   });

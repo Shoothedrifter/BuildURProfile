@@ -34,6 +34,8 @@ export type ProjectCard = Readonly<{
   visual: "mint" | "lilac" | "peach";
   image?: string;
   link?: string;
+  /** 作品卡片对应的简历原文摘录（可选），详情页按需展示。 */
+  sourceText?: string;
 }>;
 
 export type StackedCardsConfig = Readonly<{
@@ -64,7 +66,7 @@ export type StructuredResumeV1 = Readonly<{
 }>;
 
 export type ResumeModuleKindV2 = 'basicInfo' | 'jobIntent' | 'selfEvaluation' | 'education' | 'workExperience' | 'projects' | 'awards' | 'campusExperience' | 'skills' | 'other';
-export type ResumeDisplayItem = ResumeEntry & Readonly<{ itemId: string; supplement: Readonly<{ text: string; links: readonly { label: string; url: string }[]; images: readonly { imageId: string; caption: string }[] }> }>;
+export type ResumeDisplayItem = ResumeEntry & Readonly<{ itemId: string; supplement: Readonly<{ text: string; links: readonly { label: string; url: string }[]; images: readonly { imageId: string; caption: string }[] }>; /** 条目对应的简历原文摘录（可选），详情页按需展示。 */ sourceText?: string }>;
 export type StructuredResumeV2 = Readonly<{ version: 'resume-v2'; sections: readonly { kind: ResumeModuleKindV2; items: readonly ResumeDisplayItem[] }[] }>;
 export type StructuredResumeV3 = Readonly<{ version: 'resume-v3'; sections: readonly { kind: ResumeModuleKindV2; order: number; items: readonly (ResumeDisplayItem & {order:number})[] }[] }>;
 

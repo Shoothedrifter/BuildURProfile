@@ -80,6 +80,23 @@ test("generation accepts a minimal confirmed brief and rejects PDF provenance or
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("generation brief keeps project sourceText with the same shape as cleanConfig", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+  const root = mkdtempSync(join(tmpdir(), "burp-brief-source-text-"));
+  try {
+    const service = createGenerationService({ db, assetRoot: root });
+    const card = { id: "project_source", index: "01", title: "合成项目", category: "", year: "2024",
+      description: "合成描述", tags: [], visual: "mint", sourceText: "一段合成原文" };
+    const task = service.enqueue("owner", { brief: { ...brief, content: { ...brief.content,
+      projects: [card, { ...card, id: "project_blank", sourceText: "   " }] } }, idempotencyKey: "source-text" });
+    const stored = JSON.parse(db.prepare("SELECT brief_json FROM generations WHERE id=?").get(task.id).brief_json);
+    // 非空原文保留；空白串丢弃（与 cleanConfig 的条件展开一致，保证 complete 的内容一致性校验可过）
+    assert.equal(stored.content.projects[0].sourceText, "一段合成原文");
+    assert.equal("sourceText" in stored.content.projects[1], false);
+  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
 test("structured resume survives queue and publication without accepting PDF evidence", () => {
   const resume = {
     version: "resume-v1",

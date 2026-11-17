@@ -4,7 +4,7 @@ import { QUESTIONS, isAssessmentComplete } from "../../../skills/src/assessment.
 const ROLES = new Set(["ui-ux-designer", "frontend-creative-developer", "brand-motion-copy"]);
 const PROFILE_FIELDS = ["name", "role", "location", "availability", "intro", "summary", "email"];
 const EXPERTISE_FIELDS = ["eyebrow", "headline", "summary", "skills", "disciplines"];
-const PROJECT_FIELDS = ["id", "index", "title", "category", "year", "description", "tags", "visual", "image", "link"];
+const PROJECT_FIELDS = ["id", "index", "title", "category", "year", "description", "tags", "visual", "image", "link", "sourceText"];
 
 function record(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
@@ -55,7 +55,9 @@ export function cleanGenerationBrief(input) {
       year: fieldText(project.year, "项目年份", 30), description: fieldText(project.description, "项目描述"),
       tags: fieldList(project.tags, "项目标签"), visual: project.visual ?? "mint",
       ...(project.image === undefined ? {} : { image: fieldText(project.image, "项目图片", 256 * 1024) }),
-      ...(project.link === undefined ? {} : { link: fieldText(project.link, "项目链接", 2048) })
+      ...(project.link === undefined ? {} : { link: fieldText(project.link, "项目链接", 2048) }),
+      // 详情原文：非空才保留，与 cleanConfig 的条件展开保持同形（complete 会做确认内容一致性比对）
+      ...(project.sourceText?.trim() ? { sourceText: fieldText(project.sourceText, "项目原文") } : {})
     };
   });
   const result = {

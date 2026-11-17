@@ -28,7 +28,21 @@
         "skills": [],
         "disciplines": []
       },
-      "projects": [],
+      "projects": [
+        {
+          "id": "project_source",
+          "index": "01",
+          "title": "合成项目",
+          "category": "前端开发",
+          "year": "2024",
+          "description": "使用 Next.js 重构作品集站点。",
+          "tags": [
+            "React"
+          ],
+          "visual": "mint",
+          "sourceText": "负责官网改版：使用 React 与 Next.js 重构首页与项目展示模块，首屏加载时间由 3.2 秒降至 1.1 秒。"
+        }
+      ],
       "workExperience": [],
       "campusExperience": [],
       "education": [],
@@ -128,7 +142,21 @@
           "skills": [],
           "disciplines": []
         },
-        "projects": [],
+        "projects": [
+          {
+            "id": "project_source",
+            "index": "01",
+            "title": "合成项目",
+            "category": "前端开发",
+            "year": "2024",
+            "description": "使用 Next.js 重构作品集站点。",
+            "tags": [
+              "React"
+            ],
+            "visual": "mint",
+            "sourceText": "负责官网改版：使用 React 与 Next.js 重构首页与项目展示模块，首屏加载时间由 3.2 秒降至 1.1 秒。"
+          }
+        ],
         "workExperience": [],
         "campusExperience": [],
         "education": [],

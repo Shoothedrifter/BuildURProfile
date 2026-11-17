@@ -88,7 +88,9 @@ export function cleanConfig(config) {
         category: text(project?.category), year: text(project?.year), description: text(project?.description),
         tags: textList(project?.tags), visual: text(project?.visual),
         ...(project?.image ? { image: imageText(project.image) } : {}),
-        ...(project?.link ? { link: text(project.link) } : {})
+        ...(project?.link ? { link: text(project.link) } : {}),
+        // 详情原文：非空才保留（条件展开，与 image/link 同款）
+        ...(project?.sourceText?.trim() ? { sourceText: text(project.sourceText) } : {})
       })),
       workExperience: textList(config.content.workExperience),
       campusExperience: textList(config.content.campusExperience), education: textList(config.content.education),

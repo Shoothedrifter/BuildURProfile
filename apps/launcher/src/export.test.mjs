@@ -5,6 +5,15 @@ import { JSDOM, VirtualConsole } from "jsdom";
 import { buildStaticHtml } from "../../web/src/server/export.mjs";
 import { cleanConfig } from "../../../packages/contracts/src/validation.mjs";
 
+test("cleanConfig keeps non-empty project sourceText and omits the key when absent", () => {
+  const config = JSON.parse(readFileSync(new URL("../../web/src/fixtures/two-projects.json", import.meta.url)));
+  config.content.projects[0].sourceText = "作品原文样例";
+  const cleaned = JSON.parse(cleanConfig(config));
+  assert.equal(cleaned.content.projects[0].sourceText, "作品原文样例");
+  // 无该键的卡片输出不含该键（条件展开，与 image/link 同款）
+  assert.equal("sourceText" in cleaned.content.projects[1], false);
+});
+
 test("offline export runs the shared showcase with embedded portrait and safe confirmed content", async () => {
   const config = JSON.parse(readFileSync(new URL("../../web/src/fixtures/two-projects.json", import.meta.url)));
   config.heroArtwork = { assetUrl: "data:image/png;base64,aGVsbG8=", styleId: "owned-style", alt: "Portrait" };
