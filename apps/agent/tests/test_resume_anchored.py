@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from buildurprofile_agent.providers.text_model import FallbackTextModel, FormattedOutputError
 from buildurprofile_agent.skills.anchored_formatter import (
     align_anchors, format_anchors, make_anchored_draft,
 )
@@ -193,6 +194,39 @@ async def test_number_rejection_does_not_log_private_anchor_text():
         await format_anchors(raw, anchors, model)
     assert "项目甲" not in str(error.value)
     assert "90" not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_number_rejection_is_a_formatted_output_error_with_anchor_id():
+    # 数字回源失败属于「该候选输出不合格」：抛 FormattedOutputError 并带 anchorId 定位条目；
+    # 被拒数字与锚文本原文仍不进消息（隐私护栏）
+    raw = source("项目甲", "完成模型训练")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "projects", "page": 1,
+         "text": "项目甲\n完成模型训练"}]})
+    model = FakeModel({"items": [{"anchorId": "a0", "kind": "projects", "title": "项目甲",
+                                  "details": "训练准确率提升 90%", "confidence": .99}]})
+    with pytest.raises(FormattedOutputError, match=r"absent from source anchor=a0") as error:
+        await format_anchors(raw, anchors, model)
+    assert "90" not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_format_anchors_switches_candidate_when_number_grounding_fails():
+    # 主力候选输出的数字不可回源时，经链的 run_with_fallback 换下一候选重新格式化，任务不再终结
+    raw = source("项目甲", "完成模型训练")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "projects", "page": 1,
+         "text": "项目甲\n完成模型训练"}]})
+    bad = FakeModel({"items": [{"anchorId": "a0", "kind": "projects", "title": "项目甲",
+                                "details": "训练准确率提升 90%", "confidence": .99}]})
+    good = FakeModel({"items": [{"anchorId": "a0", "kind": "projects", "title": "项目甲",
+                                 "details": "- 完成模型训练", "confidence": .9}]})
+    formatted = await format_anchors(raw, anchors, FallbackTextModel([bad, good]))
+    assert formatted[0]["details"] == "- 完成模型训练"
+    # bad 候选输出恒不可回源：先耗尽同候选 3 次重采样，再换 good
+    assert bad.calls == ["resume_format_v1"] * 3
+    assert good.calls == ["resume_format_v1"]
 
 
 @pytest.mark.asyncio

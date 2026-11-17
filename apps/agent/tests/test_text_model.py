@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from buildurprofile_agent.providers.text_model import (
-    FallbackTextModel, OpenAIResumeTextModel, ResumeTextModelError,
+    FallbackTextModel, FormattedOutputError, OpenAIResumeTextModel, ResumeTextModelError,
     build_text_model, parse_fallback_candidates,
 )
 
@@ -135,3 +135,102 @@ def test_build_text_model_missing_all_keys(monkeypatch):
     monkeypatch.delenv("SILICONFLOW_API_KEY", raising=False)
     with pytest.raises(ResumeTextModelError, match="CONFIG_MISSING"):
         build_text_model()
+
+
+@pytest.mark.asyncio
+async def test_run_with_fallback_retries_same_candidate_before_switching():
+    # 候选一首次输出未过内容校验 → 同候选重采样（新一次 LLM 调用）即可成功，不换候选
+    flaky = SequenceModel({"v": 1}, [])
+    second = SequenceModel({"v": 2}, [])
+    seen = []
+
+    async def attempt(candidate):
+        seen.append(candidate)
+        answer = await candidate.generate_json("n", {}, "p")
+        if candidate is flaky and answer["v"] == 1 and seen.count(flaky) == 1:
+            raise FormattedOutputError("PARSE_FAILED: formatted number absent from source")
+        return answer
+
+    assert await FallbackTextModel([flaky, second]).run_with_fallback(attempt) == {"v": 1}
+    assert seen == [flaky, flaky]
+
+
+@pytest.mark.asyncio
+async def test_run_with_fallback_switches_on_formatted_output_error():
+    # 候选一连续 3 次输出都不合格（单次失败率 ~50% 的实测背景）→ 用尽重采样才换候选二
+    first = SequenceModel({"v": 1}, [])
+    second = SequenceModel({"v": 2}, [])
+    seen = []
+
+    async def attempt(candidate):
+        seen.append(candidate)
+        answer = await candidate.generate_json("n", {}, "p")
+        if answer["v"] == 1:
+            raise FormattedOutputError("PARSE_FAILED: formatted number absent from source")
+        return answer
+
+    assert await FallbackTextModel([first, second]).run_with_fallback(attempt) == {"v": 2}
+    assert seen == [first, first, first, second]
+
+
+@pytest.mark.asyncio
+async def test_run_with_fallback_switches_on_text_model_error():
+    first = SequenceModel({}, [ResumeTextModelError(reason="RATE_LIMITED", retryable=True)] * 3)
+    second = SequenceModel({"ok": True}, [])
+    calls = []
+
+    async def attempt(candidate):
+        calls.append(candidate)
+        return await candidate.generate_json("n", {}, "p")
+
+    assert await FallbackTextModel([first, second]).run_with_fallback(attempt) == {"ok": True}
+    assert calls == [first, first, first, second]
+
+
+@pytest.mark.asyncio
+async def test_run_with_fallback_raises_last_error_when_all_candidates_fail():
+    # 全链尽抛最后一个候选的错误；最后是内容校验失败时保留 FormattedOutputError 类型
+    first = SequenceModel({}, [ResumeTextModelError(reason="RATE_LIMITED", retryable=True)])
+    last = SequenceModel({}, [])
+
+    async def attempt(candidate):
+        await candidate.generate_json("n", {}, "p")
+        raise FormattedOutputError("PARSE_FAILED: formatted number absent from source")
+
+    with pytest.raises(FormattedOutputError, match="absent from source"):
+        await FallbackTextModel([first, last]).run_with_fallback(attempt)
+
+
+@pytest.mark.asyncio
+async def test_run_with_fallback_does_not_swallow_unrelated_errors():
+    # 代码缺陷（如 KeyError）不是「候选不合格」：不得触发切换，原样上抛
+    first = SequenceModel({"ok": True}, [])
+    second = SequenceModel({"ok": True}, [])
+
+    async def attempt(candidate):
+        raise KeyError("bug")
+
+    with pytest.raises(KeyError):
+        await FallbackTextModel([first, second]).run_with_fallback(attempt)
+    assert (first.calls, second.calls) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_run_with_fallback_without_candidates_raises_config_missing():
+    async def attempt(candidate):
+        return {}
+
+    with pytest.raises(ResumeTextModelError, match="CONFIG_MISSING"):
+        await FallbackTextModel([]).run_with_fallback(attempt)
+
+
+@pytest.mark.asyncio
+async def test_single_candidate_run_with_fallback_passes_errors_through():
+    # 单候选适配器：attempt 抛什么冒什么，不吞不换（与无链现状一致）
+    model = OpenAIResumeTextModel(provider="siliconflow", model="m", api_key="k")
+
+    async def bad(candidate):
+        raise FormattedOutputError("PARSE_FAILED: x")
+
+    with pytest.raises(FormattedOutputError):
+        await model.run_with_fallback(bad)

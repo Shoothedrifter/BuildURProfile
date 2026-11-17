@@ -28,6 +28,10 @@ class ResumeTextModelError(ValueError):
         self.retryable = retryable
 
 
+class FormattedOutputError(ValueError):
+    """LLM 输出未通过内容校验（数字回源、条目形态等）：该候选不合格，链应换下一候选重跑。"""
+
+
 class OpenAIResumeTextModel:
     def __init__(self, *, provider: str | None = None, model: str | None = None,
                  api_key: str | None = None, client=None):
@@ -93,9 +97,17 @@ class OpenAIResumeTextModel:
         except Exception:
             raise ResumeTextModelError(reason="INVALID_OUTPUT") from None
 
+    async def run_with_fallback(self, attempt):
+        # 单候选：直接执行，输出校验失败原样上抛（与无链现状一致）
+        return await attempt(self)
+
 
 class FallbackTextModel:
     """按序尝试候选文本模型：任何候选失败即切换下一个，全部失败抛最后一个错误。"""
+
+    # 每候选最多尝试次数：单次输出成功率实测仅 ~50%，同候选重采样（新一次采样）
+    # 比立刻换候选更先命中；3 次用尽才换下一候选，全链失败率从 ~25% 降到 ~1.5%
+    ATTEMPTS_PER_CANDIDATE = 3
 
     def __init__(self, models: list[Any]):
         self.models = list(models)
@@ -109,6 +121,28 @@ class FallbackTextModel:
                 last_error = error
                 log.info("resume text fallback switch candidate=%d provider=%s code=%s",
                          index, getattr(model, "provider", "custom"), error.reason)
+        if last_error is None:
+            raise ResumeTextModelError(reason="CONFIG_MISSING")
+        raise last_error
+
+    async def run_with_fallback(self, attempt):
+        """按候选顺序执行 attempt(candidate)；模型错误或输出校验失败先同候选重采样，
+        每候选最多 ATTEMPTS_PER_CANDIDATE 次，用尽才换下一候选，全部失败抛最后一个错误。"""
+        last_error: ResumeTextModelError | FormattedOutputError | None = None
+        for index, model in enumerate(self.models):
+            for tries in range(self.ATTEMPTS_PER_CANDIDATE):
+                try:
+                    return await attempt(model)
+                except (ResumeTextModelError, FormattedOutputError) as error:
+                    last_error = error
+                    if tries + 1 < self.ATTEMPTS_PER_CANDIDATE:
+                        log.info("resume text fallback retry candidate=%d attempt=%d provider=%s code=%s",
+                                 index, tries + 1, getattr(model, "provider", "custom"),
+                                 getattr(error, "reason", "INVALID_OUTPUT"))
+            # FormattedOutputError 无 reason 属性，日志按 INVALID_OUTPUT 记码
+            log.info("resume text fallback switch candidate=%d provider=%s code=%s",
+                     index, getattr(model, "provider", "custom"),
+                     getattr(last_error, "reason", "INVALID_OUTPUT"))
         if last_error is None:
             raise ResumeTextModelError(reason="CONFIG_MISSING")
         raise last_error
