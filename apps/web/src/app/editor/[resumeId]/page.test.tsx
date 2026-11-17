@@ -79,6 +79,30 @@ it('marks user-edited text for later reparse merge', async () => {
   expect(vi.mocked(resumeApi.save).mock.calls[0][1].sections[0].items[0].editedFields).toContain('title');
 });
 
+it("edits the entry source text shown in the showcase detail expansion", async () => {
+  const draft = normalizeResumeDraft(fixture);
+  // Agent 逐字填充的详情原文先进入编辑区，用户可删改
+  draft.sections[0].items[0].sourceText = "既有原文";
+  vi.mocked(resumeApi.read).mockResolvedValue({draft,revision:1,expiresAt:'2026-12-09T00:00:00Z'});
+  vi.mocked(resumeApi.save).mockImplementation(async (_id,next) => ({draft:next,revision:2,expiresAt:'2026-12-09T00:00:00Z'}));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  const basic = (await screen.findByRole('heading',{name:'基本信息'})).closest('section')!;
+  expect(within(basic).getByText('此内容将展示在作品集的详情展开中（来自 PDF 原文，可删改）')).toBeInTheDocument();
+  const sourceText = within(basic).getByLabelText(/详情原文/);
+  expect(sourceText).toHaveDisplayValue('既有原文');
+  expect(within(basic).getByText('4/12000')).toBeInTheDocument();
+  fireEvent.change(sourceText,{target:{value:'负责整体前端架构'}});
+  expect(within(basic).getByText('8/12000')).toBeInTheDocument();
+  // 超过 12000 字符的输入按字符截断
+  fireEvent.change(sourceText,{target:{value:'a'.repeat(12005)}});
+  expect(within(basic).getByText('12000/12000')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'保存草稿'}));
+  await waitFor(()=>expect(resumeApi.save).toHaveBeenCalled());
+  const savedItem = vi.mocked(resumeApi.save).mock.calls.at(-1)![1].sections[0].items[0];
+  expect(savedItem.sourceText).toHaveLength(12000);
+  expect(savedItem.editedFields).toContain('sourceText');
+});
+
 it("asks before reparsing into a separate draft and reports failure", async () => {
   vi.mocked(resumeApi.read).mockResolvedValue({ draft: fixture as never, revision: 1,
     expiresAt: "2026-12-09T00:00:00Z" });

@@ -144,6 +144,13 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     <label className="proof-field"><span>内容</span>
       <textarea rows={Math.min(9, Math.max(4, item.details.split("\n").length + 1))} value={item.details}
         onChange={(event) => onPatchItem({ details: event.target.value })} /></label>
+    {/* 详情原文：Agent 从 PDF 逐字填充的原文摘录，作品集详情展开按此展示，可删改，超 12000 字符截断 */}
+    <label className="proof-field"><span>详情原文</span>
+      <span className="proof-microcopy">此内容将展示在作品集的详情展开中（来自 PDF 原文，可删改）</span>
+      <textarea rows={Math.min(9, Math.max(4, (item.sourceText ?? "").split("\n").length + 1))}
+        value={item.sourceText ?? ""}
+        onChange={(event) => onPatchItem({ sourceText: [...event.target.value].slice(0, 12000).join("") })} /></label>
+    <p className="proof-supplement-count">{[...(item.sourceText ?? "")].length}/12000</p>
     {item.facts.map((fact) => <div key={fact.key} className="proof-fact-row">
       <label className="proof-field"><span>{fact.label}</span>
         <input value={fact.value} onChange={(event) => onPatchFactValue(fact.key, event.target.value)} /></label>
