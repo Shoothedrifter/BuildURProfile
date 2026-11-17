@@ -77,3 +77,10 @@ it('exports v3 modules in the confirmed order around the project deck', async ()
   expect(doc.querySelector('[aria-label="Selected work cards"]')).not.toBeNull();
   page.window.close();
 });
+
+it('exports project sourceText verbatim into the standalone HTML', async () => {
+  const {buildStaticHtml}=await import('../server/export.mjs');
+  const config={...rawConfig,content:{...rawConfig.content,projects:[{...rawConfig.content.projects[0],sourceText:'导出原文样例'}]}};
+  const html=buildStaticHtml(config);
+  expect(html).toContain('导出原文样例');
+});
