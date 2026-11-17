@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from buildurprofile_agent.contracts import ResumeSourceV1, ResumeSourceV2, validate_resume_draft
 from buildurprofile_agent.providers.text_model import FallbackTextModel, FormattedOutputError
 from buildurprofile_agent.skills.anchored_formatter import (
     align_anchors, format_anchors, make_anchored_draft,
@@ -23,6 +24,22 @@ def source(*lines: str) -> dict:
                     "fontSize": 12, "bold": False, "readingOrder": index, "text": line}
                    for index, line in enumerate(lines)],
     }
+
+
+def v2_source(*pages: list[dict]) -> dict:
+    """构造 v2 来源：每个参数是一页的块规格（text/sourceType/ocrConfidence）。"""
+    uploaded = datetime(2026, 11, 9, tzinfo=timezone.utc)
+    blocks = []
+    for page, specs in enumerate(pages, start=1):
+        for index, spec in enumerate(specs):
+            blocks.append({"blockId": f"p{page}_b{index}", "page": page,
+                           "bbox": [20, 10 + index * 20, 200, 25 + index * 20],
+                           "fontSize": 12, "bold": False, "readingOrder": index, **spec})
+    return {"version": "resume-source-v2", "fileId": "file-1",
+            "extractionVersion": "pdf-layout-v2",
+            "uploadedAt": uploaded.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expiresAt": (uploaded + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "pageCount": len(pages), "blocks": blocks}
 
 
 def test_browser_anchor_without_pdfplumber_evidence_cannot_disappear_silently():
@@ -319,3 +336,49 @@ def test_facts_phone_fallback_skips_digits_followed_by_an_at_sign():
     text = "王芳\n1234567890@example.com\n电话： 0571-87654321"
     facts = {fact["key"]: fact["value"] for fact in _facts("basicInfo", text)}
     assert facts["phone"] == "0571-87654321"
+
+
+@pytest.mark.asyncio
+async def test_source_text_joins_anchored_blocks_verbatim_across_pages_and_ocr():
+    # sourceText 是锚定 source blocks 的逐字拼接：跨页锚定块按文档序（第 1 页在前），
+    # OCR 块照常计入、不因低置信度裁剪；needsReview 机制另行把关
+    raw = v2_source([{"text": "项目甲", "sourceType": "pdf"},
+                     {"text": "完成模型训练", "sourceType": "pdf"}],
+                    [{"text": "实现模型部署", "sourceType": "ocr", "ocrConfidence": .6}])
+    # align_anchors 只把块分配给同页锚点，跨页锚定（条目原文跨第 1、2 页）按其输出形状手工构造
+    anchors = [{"anchorId": "a0", "kind": "projects", "page": 1,
+                "text": "项目甲\n完成模型训练\n实现模型部署",
+                "sourceBlockIds": ["p1_b0", "p1_b1", "p2_b0"],
+                "confidence": 1.0, "needsReview": True}]
+    model = FakeModel({"items": [{"anchorId": "a0", "kind": "projects", "title": "项目甲",
+                                  "details": "- 完成模型训练\n- 实现模型部署", "confidence": .9}]})
+    draft = make_anchored_draft(raw, "resume-1", anchors, await format_anchors(raw, anchors, model))
+    item = next(section for section in draft.sections if section.kind == "projects").items[0]
+    assert item.sourceText == "项目甲\n完成模型训练\n实现模型部署"
+    assert item.needsReview
+    validate_resume_draft(draft.model_dump(), ResumeSourceV2.model_validate(raw))
+
+
+@pytest.mark.asyncio
+async def test_oversized_source_text_is_emptied_and_flagged_without_touching_neighbors():
+    # 单条拼接超过 12000 字符：该条 sourceText 置空并标记待核对，不硬失败整份简历；
+    # 同草稿正常条目（含恰好 12000 的边界）保持逐字全文
+    raw = source("甲" * 6000, "乙" * 6000, "丙" * 5999, "丁" * 6000)
+    anchors = [
+        {"anchorId": "a0", "kind": "projects", "page": 1, "text": "超长条目",
+         "sourceBlockIds": ["p1_b0", "p1_b1"], "confidence": 1.0, "needsReview": False},
+        {"anchorId": "a1", "kind": "campusExperience", "page": 1, "text": "边界条目",
+         "sourceBlockIds": ["p1_b2", "p1_b3"], "confidence": 1.0, "needsReview": False}]
+    model = FakeModel({"items": [
+        {"anchorId": "a0", "kind": "projects", "title": "超长条目", "details": "- 摘要", "confidence": .9},
+        {"anchorId": "a1", "kind": "campusExperience", "title": "边界条目", "details": "- 摘要", "confidence": .9}]})
+    draft = make_anchored_draft(raw, "resume-1", anchors, await format_anchors(raw, anchors, model))
+    sections = {section.kind: section for section in draft.sections}
+    oversized = sections["projects"].items[0]
+    assert oversized.sourceText == ""
+    assert oversized.needsReview is True
+    boundary = sections["campusExperience"].items[0]
+    assert boundary.sourceText == "丙" * 5999 + "\n" + "丁" * 6000
+    assert len(boundary.sourceText) == 12000
+    assert boundary.needsReview is False
+    validate_resume_draft(draft.model_dump(), ResumeSourceV1.model_validate(raw))

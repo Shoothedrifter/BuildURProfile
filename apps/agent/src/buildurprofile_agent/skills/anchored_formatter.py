@@ -268,6 +268,9 @@ def make_anchored_draft(source: ResumeSourceV1 | dict, resume_id: str, anchors: 
     if len(covered) != len(set(covered)) or set(covered) != {block.blockId for block in source.blocks}:
         raise ValueError("PARSE_FAILED: draft evidence coverage")
     by_id = {item["anchorId"]: item for item in formatted}
+    # blockId → 原文文本：sourceText 逐字取自锚定 source blocks（OCR 块、低置信块照常计入），
+    # 纯字典操作，不进模型、不因置信度裁剪
+    block_text = {block.blockId: block.text for block in source.blocks}
     sections = []
     for section_order, (kind, mapping) in enumerate(RESUME_MODULE_MAPPING.items()):
         items = []
@@ -275,14 +278,20 @@ def make_anchored_draft(source: ResumeSourceV1 | dict, resume_id: str, anchors: 
             output = by_id[anchor["anchorId"]]
             if output["kind"] != kind:
                 continue
+            # 按锚定 sourceBlockIds 顺序（文档 reading order）用 "\n" 逐字拼接；
+            # 拼接超过 12000 字符上限时置空并标记待核对（与既有 needsReview 结果取或），
+            # 不硬失败整份简历、不静默截断原文，其余条目不受影响
+            source_text = "\n".join(block_text[block_id] for block_id in anchor["sourceBlockIds"])
+            over_limit = len(source_text) > 12000
             index = len(items)
             items.append({"itemId": f"{kind}-{index}", "order": index,
                           "title": output["title"], "details": output["details"],
+                          "sourceText": "" if over_limit else source_text,
                           "facts": _facts(kind, anchor["text"]),
                           "sourceBlockIds": anchor["sourceBlockIds"],
                           "confidence": min(anchor["confidence"], output["confidence"]),
                           "segmentationConfidence": anchor["confidence"],
-                          "needsReview": anchor["needsReview"] or output["confidence"] < .8,
+                          "needsReview": anchor["needsReview"] or output["confidence"] < .8 or over_limit,
                           "included": False, "origin": "agent"})
         sections.append({"id": kind, "kind": kind, "mappedDesignModule": mapping,
                          "order": section_order, "visible": False, "items": items})
