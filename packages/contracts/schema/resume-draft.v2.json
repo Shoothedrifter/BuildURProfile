@@ -143,6 +143,19 @@
         "supplements": {
           "$ref": "#/$defs/ItemSupplements"
         },
+        "sourceText": {
+          "anyOf": [
+            {
+              "maxLength": 12000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcetext"
+        },
         "editedFields": {
           "items": {
             "type": "string"

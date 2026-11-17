@@ -78,7 +78,8 @@ def test_v2_enrichment_boundary_and_legacy_isolation():
     from buildurprofile_agent.contracts import StructuredResumeV2, GenerationBriefV2, DesignConfigV2
     import pytest
     raw = json.loads((ROOT.parent / 'fixtures/resume-enrichment.v2.json').read_text())
-    assert StructuredResumeV2.model_validate(raw).model_dump() == raw
+    # exclude_none：新增可选字段 sourceText 默认 None，fixture 条目无该键，不参与 round-trip 比较
+    assert StructuredResumeV2.model_validate(raw).model_dump(exclude_none=True) == raw
     for filename, model in [('generation-brief.v2.json', GenerationBriefV2), ('design-config.v2.json', DesignConfigV2)]:
         assert json.loads((ROOT / filename).read_text()) == model.model_json_schema()
     raw['sections'][0]['items'][0]['sourceBlockIds'] = ['private']
@@ -117,11 +118,30 @@ def test_private_resume_source_v2_records_ocr_provenance():
         ResumeSourceV2.model_validate(raw)
 
 
+def test_source_text_optional_field_on_contracts():
+    # sourceText 为三个合同模型上的可选字段：出现在 properties 且不进入 required
+    from buildurprofile_agent.contracts import ProjectCard, ResumeDisplayItem, ResumeDraftItem
+    for model in (ResumeDraftItem, ResumeDisplayItem, ProjectCard):
+        schema = model.model_json_schema()
+        assert "sourceText" in schema["properties"], f"{model.__name__} 缺少 sourceText"
+        assert "sourceText" not in schema.get("required", []), f"{model.__name__} 不应将 sourceText 设为必填"
+    # draft v2 的 editedFields 标记允许 sourceText
+    from buildurprofile_agent.contracts import ResumeDraftV2
+    raw = json.loads((ROOT.parent / 'fixtures/resume-draft.v1.json').read_text())
+    raw['version'] = 'resume-draft-v2'
+    for section in raw['sections']:
+        for item in section['items']:
+            item['editedFields'] = []
+    raw['sections'][0]['items'][0]['editedFields'] = ['sourceText']
+    assert ResumeDraftV2.model_validate(raw).sections[0].items[0].editedFields == ['sourceText']
+
+
 def test_ordered_public_resume_v3_accepts_user_order_and_rejects_private_fields():
     from buildurprofile_agent.contracts import StructuredResumeV3, GenerationBriefV3, DesignConfigV3
     import pytest
     raw = json.loads((ROOT.parent / 'fixtures/resume-enrichment.v3.json').read_text())
-    assert StructuredResumeV3.model_validate(raw).model_dump() == raw
+    # exclude_none：同 v2，可选字段默认 None 不参与 round-trip 比较
+    assert StructuredResumeV3.model_validate(raw).model_dump(exclude_none=True) == raw
     assert raw['sections'][0]['kind'] == 'workExperience'
     for filename, model in [('generation-brief.v3.json', GenerationBriefV3), ('design-config.v3.json', DesignConfigV3)]:
         assert json.loads((ROOT / filename).read_text()) == model.model_json_schema()

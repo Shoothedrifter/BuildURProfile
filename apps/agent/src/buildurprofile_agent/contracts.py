@@ -46,6 +46,8 @@ class ProjectCard(StrictModel):
     visual: Literal["mint", "lilac", "peach"]
     image: str | None = None
     link: str | None = None
+    # 作品卡片对应的简历原文摘录（可选），详情页按需展示
+    sourceText: str | None = Field(default=None, max_length=12000)
 
 
 class ResumeFact(StrictModel):
@@ -258,6 +260,8 @@ class ResumeDraftItem(StrictModel):
     included: bool
     origin: Literal['agent', 'user']
     supplements: ItemSupplements = Field(default_factory=lambda: ItemSupplements(text='', links=[], images=[]))
+    # 条目对应的简历原文摘录（可选），由来源块拼接而来
+    sourceText: str | None = Field(default=None, max_length=12000)
 
     @model_validator(mode='after')
     def valid_evidence(self):
@@ -308,7 +312,7 @@ class ResumeDraftItemV2(ResumeDraftItem):
     def valid_edit_fields(self):
         import re
         if len(set(self.editedFields)) != len(self.editedFields) or any(
-            not re.fullmatch(r'(title|details|included|supplements|needsReview|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})', field)
+            not re.fullmatch(r'(title|details|sourceText|included|supplements|needsReview|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})', field)
             for field in self.editedFields
         ):
             raise ValueError('Invalid edit fields')
@@ -353,6 +357,8 @@ class DisplaySupplement(StrictModel):
 class ResumeDisplayItem(ResumeEntry):
     itemId: ResumeId
     supplement: DisplaySupplement
+    # 条目对应的简历原文摘录（可选），详情页按需展示
+    sourceText: str | None = Field(default=None, max_length=12000)
 
 
 class ResumeDisplaySection(StrictModel):
