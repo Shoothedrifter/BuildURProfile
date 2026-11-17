@@ -3,8 +3,8 @@ import type { ResumeDraftItemV2, ResumeDraftV2, ResumeModuleKind } from '../../.
 const multiItemKinds = new Set<ResumeModuleKind>(['workExperience', 'projects', 'awards', 'campusExperience']);
 const supplementsOf = (item: ResumeDraftItemV2) =>
   item.supplements ?? { text: '', links: [], images: [] };
-const withEdited = (item: ResumeDraftItemV2, field: string) =>
-  [...new Set([...item.editedFields, field])];
+const withEdited = (item: ResumeDraftItemV2, ...fields: string[]) =>
+  [...new Set([...item.editedFields, ...fields])];
 
 export function moveResumeSection(draft: ResumeDraftV2, kind: ResumeModuleKind, delta: number): ResumeDraftV2 {
   const next = structuredClone(draft);
@@ -37,12 +37,16 @@ export function splitResumeItem(draft: ResumeDraftV2, kind: ResumeModuleKind, it
   if (!section || index < 0 || next.sections.some(s => s.items.some(i => i.itemId === newId))) throw new Error('条目不存在或 ID 已存在。');
   const item = section.items[index];
   const paragraphs = item.details.split(/\n\s*\n/).map(text => text.trim()).filter(Boolean);
+  // 详情原文按自身空行段落用同一边界切分；段落数不足边界时 slice 天然让前条保留全部、后条为空串
+  const sourceParagraphs = (item.sourceText ?? '').split(/\n\s*\n/).map(text => text.trim()).filter(Boolean);
   if (!Number.isInteger(boundary) || boundary <= 0 || boundary >= paragraphs.length) throw new Error('请选择两段之间的拆分位置。');
-  const first = { ...item, details: paragraphs.slice(0, boundary).join('\n\n'), needsReview: true,
-    editedFields: withEdited(item, 'details') };
+  const first = { ...item, details: paragraphs.slice(0, boundary).join('\n\n'),
+    sourceText: sourceParagraphs.slice(0, boundary).join('\n\n'), needsReview: true,
+    editedFields: withEdited(item, 'details', 'sourceText') };
   const second: ResumeDraftItemV2 = { ...item, itemId: newId, title: '', details: paragraphs.slice(boundary).join('\n\n'),
+    sourceText: sourceParagraphs.slice(boundary).join('\n\n'),
     facts: [], supplements: { text: '', links: [], images: [] }, included: false, needsReview: true,
-    derivedFromItemId: itemId, editedFields: ['details'] };
+    derivedFromItemId: itemId, editedFields: ['details', 'sourceText'] };
   section.items.splice(index, 1, first, second);
   section.items = section.items.map((entry, order) => ({ ...entry, order }));
   return next;
@@ -73,9 +77,13 @@ export function mergeResumeItems(draft: ResumeDraftV2, kind: ResumeModuleKind, f
   const mergedDetails = [first.details, second.title && second.title !== first.title ? second.title : '',
     second.details].filter(Boolean).join('\n\n');
   if ([...mergedDetails].length > 12000) throw new Error('合并后的内容超过单条上限。');
+  // 详情原文以空行连接；存量草稿可能携带显式 null，filter(Boolean) 天然过滤
+  const mergedSourceText = [first.sourceText, second.sourceText].filter(Boolean).join('\n\n');
+  if ([...mergedSourceText].length > 12000) throw new Error('合并后的详情原文超过单条上限。');
   section.items.splice(index, 2, { ...first, details: mergedDetails,
+    sourceText: mergedSourceText,
     facts, sourceBlockIds: [...new Set([...first.sourceBlockIds, ...second.sourceBlockIds])],
-    supplements, needsReview: true, editedFields: withEdited(first, 'details') });
+    supplements, needsReview: true, editedFields: withEdited(first, 'details', 'sourceText') });
   section.items = section.items.map((item, order) => ({ ...item, order }));
   return next;
 }

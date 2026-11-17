@@ -167,6 +167,24 @@ test('fill-empty protects edited fields and deleted source entries while preserv
  assert.equal(reserved[1].itemId,'split-first');
 });
 
+test('fill-empty fills sourceText from candidates, protects edited markers and overwrite carries it',()=>{
+ const current=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ current.version='resume-draft-v2';
+ for(const section of current.sections)for(const item of section.items)item.editedFields=[];
+ current.sections[0].items[0].sourceText='';
+ const candidate=structuredClone(current);
+ candidate.sections[0].items[0].sourceText='候选原文';
+ const filled=mergeEmptyDraft(current,candidate,new Set());
+ assert.equal(filled.sections[0].items[0].sourceText,'候选原文');
+ assert.equal(filled.sections[0].items[0].needsReview,true);
+ current.sections[0].items[0].editedFields=['sourceText'];
+ assert.equal(mergeEmptyDraft(current,candidate,new Set()).sections[0].items[0].sourceText,'');
+ current.sections[0].items[0].editedFields=[];
+ current.sections[0].items[0].sourceText=null;
+ assert.equal(mergeEmptyDraft(current,candidate,new Set()).sections[0].items[0].sourceText,'候选原文');
+ assert.equal(overwriteDraft(current,candidate).sections[0].items[0].sourceText,'候选原文');
+});
+
 test('fill-empty candidate matches stable source, adds reviewed item and never changes edited text',async t=>{
  const s=await readyResume(t),current=(await(await s.request(s.resumeId)).json()).draft;
  current.sections[0].items[0].title='人工标题';

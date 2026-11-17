@@ -22,8 +22,9 @@ export function mergeEmptyDraft(current,candidate,deletedSourceIds=new Set(),all
         continue;
       }
       let changed=false;
-      for(const field of ['title','details']){
-        if(!original[field].trim()&&!original.editedFields.includes(field)&&entry[field].trim()){
+      // sourceText 允许显式 null（Agent worker 非 exclude dump），?? '' 保证判空 null-safe
+      for(const field of ['title','details','sourceText']){
+        if(!(original[field]??'').trim()&&!original.editedFields.includes(field)&&(entry[field]??'').trim()){
           original[field]=entry[field];changed=true;
         }
       }

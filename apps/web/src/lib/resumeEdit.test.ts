@@ -36,6 +36,45 @@ it('splits only at a selected paragraph boundary and keeps supplements on the fi
   expect(draft.sections.find(s=>s.kind==='projects')!.items).toHaveLength(1);
 });
 
+it('splits sourceText by its own blank-line paragraphs at the same boundary', () => {
+  const draft = projectDraft();
+  const section = draft.sections.find(s=>s.kind==='projects')!;
+  section.items[0].sourceText = '原文甲\n\n原文乙';
+  const result = splitResumeItem(draft,'projects','project-one',1,'new-id');
+  const [first,second] = result.sections.find(s=>s.kind==='projects')!.items;
+  expect(first.sourceText).toBe('原文甲');
+  expect(second.sourceText).toBe('原文乙');
+  expect(first.editedFields).toContain('sourceText');
+  expect(second.editedFields).toEqual(['details','sourceText']);
+});
+
+it('keeps the full sourceText on the first item when its paragraphs are fewer than the boundary', () => {
+  const draft = projectDraft();
+  const section = draft.sections.find(s=>s.kind==='projects')!;
+  section.items[0].sourceText = '只有一段原文';
+  const result = splitResumeItem(draft,'projects','project-one',1,'new-id');
+  const [first,second] = result.sections.find(s=>s.kind==='projects')!.items;
+  expect(first.sourceText).toBe('只有一段原文');
+  expect(second.sourceText).toBe('');
+  expect(first.editedFields).toContain('sourceText');
+  expect(second.editedFields).toEqual(['details','sourceText']);
+});
+
+it('merges sourceText with a blank line and rejects results over the per-item limit', () => {
+  const draft = projectDraft();
+  const section = draft.sections.find(s=>s.kind==='projects')!;
+  section.items[0].sourceText = '原文甲';
+  section.items.push({...section.items[0],itemId:'project-two',order:1,title:'项目乙',
+    sourceText:'原文乙',supplements:{text:'',links:[],images:[]}});
+  const merged = mergeResumeItems(draft,'projects','project-one','project-two','combine');
+  const item = merged.sections.find(s=>s.kind==='projects')!.items[0];
+  expect(item.sourceText).toBe('原文甲\n\n原文乙');
+  expect(item.editedFields).toContain('sourceText');
+  section.items[1].sourceText = '长'.repeat(12000);
+  expect(() => mergeResumeItems(draft,'projects','project-one','project-two','combine'))
+    .toThrow('合并后的详情原文超过单条上限。');
+});
+
 it('does not lose assets when merging over a per-item limit', () => {
   const draft = projectDraft();
   const section = draft.sections.find(s=>s.kind==='projects')!;
