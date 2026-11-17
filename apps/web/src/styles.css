@@ -1316,6 +1316,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .resume-entry p { margin: 0 0 12px; color: var(--muted); font: 400 16px/1.75 var(--font-body); white-space: pre-line; overflow-wrap: anywhere; }
 .resume-entry p:last-child { margin-bottom: 0; }
 .resume-entry .resume-entry-subtitle { color: var(--accent); font-weight: 600; }
+/* 简历条目"查看详情"展开：基础交互样式与项目卡操作区（.project-actions summary）同款 */
+.resume-entry-detail summary { cursor: pointer; color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
 
 /* Builder: the neutral editor keeps source review readable before the skin takes over. */
 .builder-page {

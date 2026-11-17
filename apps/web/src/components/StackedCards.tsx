@@ -56,6 +56,8 @@ export function StackedCards({
   const card = cards[current];
   const { category, link } = projectPresentation(card);
   const preview = projectPreview(card.description);
+  // 统一降级规则：sourceText 有效（trim 后非空）时展开体显示原文，否则回退 description
+  const detailText = card.sourceText?.trim() ? card.sourceText : card.description;
   const displayTitle = card.title.trim() || "项目 " + (current + 1);
   const move = (amount: number) => {
     setInteracted(true);
@@ -102,15 +104,15 @@ export function StackedCards({
             <p className="project-overline">Selected work</p>
             <h3>{displayTitle}</h3>
             {preview.overview ? <p className="project-description"><strong>{preview.overviewIsExcerpt ? "概述节选" : "概述"}</strong>{preview.overview}{preview.overviewIsExcerpt && <span aria-hidden="true">…</span>}</p>
-              : card.description.trim() && <p className="project-description project-description--neutral">完整说明请查看项目详情</p>}
+              : (card.description.trim() || card.sourceText?.trim()) && <p className="project-description project-description--neutral">完整说明请查看项目详情</p>}
             {preview.points.length > 0 && <ul className="project-points">{preview.points.map((point, index) =>
               <li key={point.label + "-" + index}><strong>{point.label}{point.isExcerpt ? "节选" : ""}</strong>{point.text}{point.isExcerpt && <span aria-hidden="true">…</span>}</li>)}</ul>}
             {card.tags.filter(Boolean).length > 0 && <div className="project-tags">{card.tags.filter(Boolean).map((tag) => <span key={tag}>{tag}</span>)}</div>}
           </div>
           <div className="project-actions">
-            {card.description.trim() && <details className="project-detail" onToggle={handleDetailToggle}>
+            {detailText.trim() && <details className="project-detail" onToggle={handleDetailToggle}>
               <summary>查看项目详情</summary>
-              <div className="project-detail-body"><p>{card.description}</p></div>
+              <div className="project-detail-body"><p>{detailText}</p></div>
             </details>}
             {link && <a href={link} target="_blank" rel="noopener noreferrer" className="project-link">查看项目链接 ↗</a>}
             {card.image && <details className="project-image-detail" onToggle={handleDetailToggle}>

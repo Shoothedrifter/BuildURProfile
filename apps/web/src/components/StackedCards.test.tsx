@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import type { ProjectCard } from "../../../../packages/contracts/src/config";
 import { StackedCards } from "./StackedCards";
 
 const longTitle = "基于AI Studio计算机视觉的运动自行车环境感知系统（省级大创优秀结题项目·技术负责人）";
@@ -92,5 +93,39 @@ describe("StackedCards", () => {
     expect(screen.getByRole("img", { name: longTitle })).toHaveAttribute("src", image);
     fireEvent.click(screen.getByText("查看完整图片"));
     expect(screen.getByText("查看完整图片").closest("details")).toHaveAttribute("open");
+  });
+
+  describe("sourceText 详情降级", () => {
+    const baseCard: ProjectCard = { id: "s", index: "01", title: "Source detail project", category: "", year: "", description: "", tags: [], visual: "mint" };
+
+    it("sourceText 有内容时展开体显示原文而非 description", () => {
+      render(<StackedCards {...props} cards={[{ ...baseCard, description: "总结", sourceText: "完整原文" }]} />);
+      const details = screen.getByText("查看项目详情").closest("details");
+      fireEvent.click(screen.getByText("查看项目详情"));
+      expect(details).toHaveTextContent("完整原文");
+      expect(details).not.toHaveTextContent("总结");
+    });
+
+    it("无 sourceText 或 sourceText 为空白时展开体降级为 description", () => {
+      const { rerender } = render(<StackedCards {...props} cards={[{ ...baseCard, description: "总结" }]} />);
+      let details = screen.getByText("查看项目详情").closest("details");
+      fireEvent.click(screen.getByText("查看项目详情"));
+      expect(details).toHaveTextContent("总结");
+      rerender(<StackedCards {...props} cards={[{ ...baseCard, description: "总结", sourceText: "   \n" }]} />);
+      details = screen.getByText("查看项目详情").closest("details");
+      fireEvent.click(screen.getByText("查看项目详情"));
+      expect(details).toHaveTextContent("总结");
+    });
+
+    it("sourceText 与 description 皆空时不渲染展开按钮", () => {
+      render(<StackedCards {...props} cards={[baseCard]} />);
+      expect(screen.queryByText("查看项目详情")).not.toBeInTheDocument();
+    });
+
+    it("description 为空但 sourceText 有内容时仍渲染展开按钮与卡面提示", () => {
+      render(<StackedCards {...props} cards={[{ ...baseCard, sourceText: "完整原文" }]} />);
+      expect(screen.getByText("查看项目详情")).toBeVisible();
+      expect(screen.getByText("完整说明请查看项目详情")).toBeVisible();
+    });
   });
 });
