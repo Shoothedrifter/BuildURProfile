@@ -22,6 +22,7 @@
 - `npm run dev` 通过 `apps/launcher` 同时启动 Next.js Web（5173）和 Python Agent（8788）；`npm start` 启动 Next.js 生产服务（默认 8787），完整生成还需运行 Agent。
 - 环境变量样例位于 `apps/launcher`、`apps/agent`、`deploy`。实际加载位置保持在仓库根目录（`.env`、`.env.api`、`.env.agent`）或注入进程环境。
 - 启动脚本已自动检测 Unix（`apps/agent/.venv/bin/python`）与 Windows（`apps/agent/.venv/Scripts/python.exe`）虚拟环境，也可通过 `PYTHON` 环境变量显式指定。
+- 简历解析文本模型由 `.env.agent` 声明：设置 `RESUME_TEXT_FALLBACKS`（`provider:model` 逗号分隔、按序）时构成 fallback 链，任一候选失败即时切换，缺 key 候选跳过；未设置时沿用 `RESUME_TEXT_PROVIDER`/`RESUME_TEXT_MODEL` 单候选。provider 支持 `openai`、`zai`、`siliconflow`；链变更须整体重启 Agent 生效。
 
 ## 数据与权限
 
@@ -31,6 +32,7 @@
 - checkpoint 不保存 PDF 原文、来源片段、照片字节、密钥或支付数据；解析图只保存任务 ID、文件 ID、阶段与版本，生成图只保存任务所需的确认字段和资产 ID。
 - `.env` 及其变体、`.alipay-sandbox.json`、`data/`、私钥和真实简历样例不得提交、输出到日志或复制进前端；沙箱凭据文件在类 Unix 环境必须为普通文件且权限 `0600`。
 - 日志只记录任务 ID、节点、耗时和错误码。自动测试使用可提交的合成样例。
+- 新增模型供应商密钥只写入 `.env.agent`，并同步登记 `apps/launcher/src/web-env.mjs` 的 `WEB_EXCLUDED_KEYS`，确保 dev 启动时不透传给 Web 子进程。
 - 匿名项目所有权由服务端会话决定；写操作保持 CSRF 校验，任务和资产按会话隔离。
 - 私有 `/_internal/agent/` 接口只接受服务令牌，反向代理禁止向公网转发；任务读写同时核对有效租约。
 - 数据库、资产、会话密钥和 Agent checkpoint 持久化；生产和沙箱分库分密钥。多主机不得共享 SQLite 文件。
@@ -51,6 +53,7 @@
 | --- | --- |
 | Web 前端、Next.js 路由、共享 TS 合同或展示 | `npm test`、`npm run build` |
 | 服务端接口、支付、存储或权限 | `npm run test:payment` |
+| launcher 启动脚本或 env 编排 | `npm run test:payment`（launcher node:test 全量） |
 | TS Skills 或风格资源 | `npm run test:skills`；涉及跨语言评分时加 `npm run test:agent` |
 | Python、生成合同或私有协议 | `npm run test:agent`，必要时同步检查 Schema 和黄金样例 |
 | Docker 或编排 | 构建两端镜像并验证 Compose 健康检查、持久卷与重启 |
