@@ -1,10 +1,10 @@
 # Web（Next.js 全栈应用）
 
-`apps/web` 是基于 Next.js（App Router）+ React + TypeScript + Tailwind CSS 的全栈应用。新简历流程上传 PDF 并交给 Python Agent 解析，前端负责核对、八题测评、生成进度、编辑和作品展示；服务端通过 App Router Route Handlers 提供会话、私有 PDF、解析任务、资产、支付与作品集交付接口。
+`apps/web` 是基于 Next.js（App Router）+ React + TypeScript + Tailwind CSS 的全栈应用。新简历流程上传 PDF 并交给 Python Agent 解析，前端负责核对、固定模板选择、生成进度、编辑和作品展示；服务端通过 App Router Route Handlers 提供会话、私有 PDF、解析任务、资产、支付与作品集交付接口。
 
 ## 用户流程与边界
 
-PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块和条目 → Agent 对齐来源并逐条排版 → `/editor/:resumeId` 对照原 PDF 核对、排序和补充内容 → `/style/:resumeId` 选择职业并完成测评 → 仅提交确认内容与答案 → Python Agent `python-agent-v4` 生成配置 → 编辑与预览 → 免费导出个人作品集网页或付费发布分享。
+PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块和条目 → Agent 对齐来源并逐条排版 → `/editor/:resumeId` 对照原 PDF 核对、排序和补充内容 → `/style/:resumeId` 选择职业和固定模板 → 提交 `resumeId/revision/role/templateId` → Python Agent `python-agent-v5` 生成配置 → 编辑与预览 → 免费导出个人作品集网页或付费发布分享。新流程不展示八题，也不提交答案。
 
 - 新流程的原 PDF、来源块、私有草稿和最近 10 版历史从上传起在受会话保护的服务端保留 30 天，可提前删除；Agent 仅向当前配置的 OpenAI 或智谱 GLM 文本供应商发送逐条格式化必需的文字。扫描件普通解析失败后可主动选择本机 OCR；混合 PDF 成功解析后可对无文字页创建独立 OCR 候选，核对后补空应用。OCR 所需的系统组件见[部署说明](../shared/deployment.md)。
 - 首页保留明确标注的“浏览器解析（兼容）”入口；该旧路径的 PDF 与候选内容仍只留在浏览器内存。新流程模型失败时不会回退到旧路径并假称 AI 解析成功。
@@ -24,7 +24,7 @@ PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块�
 | `src/server/` | 服务端核心实现（配置、会话/CSRF、项目与支付服务、生成与内部桥接路由、作品集单文件 HTML 导出） |
 | `src/App.tsx` | 页面阶段、字段确认、异步任务与支付返回后的动作恢复 |
 | `src/components/BuilderExperience.tsx`、`BuilderChrome.tsx` | 六屏制作流程、暖色描边导航、进度、资料模块和交付状态 |
-| `src/ShowcasePage.tsx`、`src/components/` | 固定作品骨架、跑马灯、堆叠卡片和编辑面板 |
+| `src/ShowcasePage.tsx`、`src/components/CyberCreatorPage.tsx`、`src/components/` | 按显式模板标识分流的作品页、旧骨架、跑马灯、堆叠卡片和编辑面板 |
 | `src/lib/pdf.ts`、`src/lib/resume.ts` | 本地 PDF 提取与规则解析 |
 | `src/lib/*Api.ts` | 带会话与 CSRF 的同源服务端请求 |
 | `src/lib/presentation.ts`、`src/lib/resumePresentation.ts` | 项目、技能和经历的保守展示规则 |
@@ -34,7 +34,7 @@ PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块�
 
 “我的项目”支持二次确认后删除：已打开的项目删除成功后返回首页，现有分享和未使用的下载链接失效；待核实支付订单的项目会显示服务端拒绝原因。
 
-作品页将姓名、联系方式映射到首屏与联系区，技能映射到技能区和 Marquee，项目映射到 StackedCards；实习/工作经历、校园经历和教育背景分别渲染为独立区块。求职意向、自我评价、荣誉奖项和其他内容各有展示位置。无内容的区域不渲染。旧作品配置没有 `resume` 时继续按原有字段展示。
+“赛博科技”按显式 `cyber-creator-v1` 进入独立页面：已确认姓名进入人物首屏，技能进入浅色能力区，项目图片与文字进入深色项目区，其余模块按确认顺序显示。图片从原条目的补充资产 ID 读取；无图片时展示文字。其他模板与旧作品沿用原有骨架，旧 `dark-tech` 作品不会自动换成新页面。
 
 ## 开发与验证
 
@@ -53,6 +53,6 @@ npm run build
 
 每条可补充 500 个 Unicode 码点、5 个 HTTP(S) 链接（名称可选）和 6 张图片。全份上限为 24 张 / 50 MiB、单张 5 MiB；上传实际格式和尺寸由服务端复核。上传中移动条目按稳定 ID 归位，删除条目则释放迟到图片；未保存就刷新时，可从「管理未保存图片」恢复或删除占用额度的上传。保存时丢弃完全空白的链接行，有名称无 URL、非法协议或超限时定位模块并阻止提交。显式保存使用 revision 检测冲突，失败保留本地修改。
 
-新流程生成只提交已保存的 `resumeId/revision`、角色和答案，服务端重新投影。`resume-v3.sections` 按用户确认的模块和条目顺序进入预览、项目编辑、分享和导出；补充信息跟随原条目。项目仍使用 StackedCards，工作与校园独立展示；正文保留换行，不为排版拆成多个条目。草稿编辑 800 毫秒后串行自动保存，可恢复最近 10 版；断网时仅在当前会话的本机缓存未保存差异。无肖像生成成功会在「我的项目」出现未付款草稿。
+新流程生成只提交已保存的 `resumeId/revision`、角色和 `templateId`，服务端重新投影。`resume-v3.sections` 按用户确认的模块和条目顺序进入预览、项目编辑、分享和导出；补充信息跟随原条目。赛博科技项目使用独立拼贴卡片，其他模板仍使用 StackedCards；正文保留换行，不为排版拆成多个条目。草稿编辑 800 毫秒后串行自动保存，可恢复最近 10 版；断网时仅在当前会话的本机缓存未保存差异。无肖像生成成功会在「我的项目」出现未付款草稿。
 
 私有原件到期后，已有项目图片继续通过独立作品资产读取。图片权限及保留规则见[架构与协议](../shared/architecture.md#简历图片与作品资产)。旧 `resume-v1` 项目继续使用兼容展示和编辑路径。

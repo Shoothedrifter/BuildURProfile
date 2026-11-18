@@ -914,9 +914,13 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-portfolio-snapshot { min-width: 0; padding: 30px; display: grid; align-content: start; gap: 16px; border-radius: 12px; background: #e6f2e7; color: #17251c; overflow: hidden; }
 .proof-portfolio-snapshot--warm { background: #f6e1ce; }
 .proof-portfolio-snapshot--bold { background: #dce7f7; }
-.proof-portfolio-snapshot--cyber { background: radial-gradient(circle at 70% 36%, #543083, #15101f 56%); color: #fff; }
-.proof-portfolio-snapshot--cyber > strong { background: linear-gradient(100deg, #fff, #cf9eff 68%, #ff9adf); color: transparent; background-clip: text; }
-.proof-portfolio-snapshot--cyber .proof-snapshot-avatar { background: linear-gradient(135deg, #e0b9ff, #7442ac 65%, #281443); box-shadow: 12px 16px 0 #0005; }
+.proof-portfolio-snapshot--cyber { display: block; position: relative; min-height: 420px; background: radial-gradient(circle at 58% 60%, #3c174c, #0c0c0c 64%); color: #fff; }
+.proof-portfolio-snapshot--cyber > span, .proof-portfolio-snapshot--cyber > small { display: block; position: relative; z-index: 2; }
+.proof-portfolio-snapshot.proof-portfolio-snapshot--cyber > strong { display: block; position: relative; z-index: 1; margin-top: 54px; font-family: Kanit, "Arial Narrow", sans-serif; font-size: clamp(48px, 7vw, 94px); line-height: .85; text-transform: uppercase; background: linear-gradient(180deg, #fff 15%, #bdc4d9 68%, #6b6d82); color: transparent; background-clip: text; }
+.proof-portfolio-snapshot.proof-portfolio-snapshot--cyber h3 { position: absolute; z-index: 3; left: 30px; bottom: 28px; max-width: 38%; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; }
+.proof-portfolio-snapshot--cyber .proof-snapshot-avatar { position: absolute; z-index: 2; right: 0; bottom: 0; width: 64%; height: 69%; border-radius: 0; background: transparent; box-shadow: none; }
+.proof-portfolio-snapshot--cyber .proof-snapshot-avatar img { object-fit: contain; object-position: bottom right; }
+.proof-portfolio-snapshot--cyber > b, .proof-portfolio-snapshot--cyber > h4 { display: none; }
 .proof-portfolio-snapshot > span { font-size: 14px; font-weight: 700; }
 .proof-portfolio-snapshot > small { font-size: 15px; }
 .proof-portfolio-snapshot > strong { font-size: clamp(40px, 5vw, 64px); line-height: 1.1; overflow-wrap: anywhere; }

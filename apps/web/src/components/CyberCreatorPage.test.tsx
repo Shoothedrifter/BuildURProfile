@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { DesignConfigV4 } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4 } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
 import { ShowcasePage } from "../ShowcasePage";
 
@@ -21,6 +21,13 @@ function config(images: string[] = []): DesignConfigV4 {
 }
 
 describe("赛博科技固定模板", () => {
+  it("keeps an older dark-tech config on the legacy renderer", () => {
+    const oldConfig = { ...rawConfig, skin: "dark-tech" } as DesignConfig;
+    const { container } = render(<ShowcasePage config={oldConfig} />);
+    expect(screen.queryByTestId("cyber-creator-page")).not.toBeInTheDocument();
+    expect(container.querySelector(".showcase-page")).not.toBeNull();
+  });
+
   it("uses a full-screen figure hero and confirmed sections in user order", () => {
     const { container } = render(<ShowcasePage config={config()} />);
     expect(screen.getByTestId("cyber-creator-page")).toBeInTheDocument();

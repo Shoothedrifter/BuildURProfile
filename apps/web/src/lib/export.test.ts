@@ -90,3 +90,25 @@ it('embeds the cyber creator default portrait into offline HTML', async () => {
   expect(html).not.toContain('src="/cyber-creator-bust.webp"');
   page.window.close();
 });
+
+it('exports cyber project mosaic with confirmed captions and full text', async () => {
+  const {buildStaticHtml}=await import('../server/export.mjs');
+  const {resumeDisplayContent}=await import('../../../../packages/contracts/src/resume-v2.mjs');
+  const resume={version:'resume-v3',sections:[{kind:'projects',order:0,items:[{
+    itemId:'project_1',order:0,title:'项目甲',details:'完整正文\n第二段',facts:[],
+    supplement:{text:'用户补充说明',links:[{label:'项目链接',url:'https://example.test/project'}],
+      images:['a','b','c','d'].map(imageId=>({imageId,caption:`图片${imageId}`}))}
+  }]}]};
+  const config={...rawConfig,templateId:'cyber-creator-v1',content:resumeDisplayContent(resume)};
+  const html=buildStaticHtml(config,undefined,undefined,()=>({mime:'image/png',bytes:Buffer.from([1,2,3])}));
+  const page=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true});
+  await new Promise(resolve=>setTimeout(resolve,150));
+  const doc=page.window.document;
+  expect(doc.querySelectorAll('.cyber-project-mosaic img')).toHaveLength(3);
+  expect(doc.querySelector('img[alt="图片d"]')?.getAttribute('src')).toBe('data:image/png;base64,AQID');
+  expect(doc.body).toHaveTextContent('完整正文');
+  expect(doc.body).toHaveTextContent('第二段');
+  expect(doc.body).toHaveTextContent('用户补充说明');
+  expect(doc.querySelector('a[href="https://example.test/project"]')).not.toBeNull();
+  page.window.close();
+});

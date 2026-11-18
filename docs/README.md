@@ -10,6 +10,7 @@
 | 模块所有权、数据流和私有协议 | [架构与协议](shared/architecture.md) |
 | 本机、容器和独立部署；环境变量样例 | [部署与环境变量](shared/deployment.md) |
 | Next.js 前端、PDF 解析、编辑、展示与单测 | [Web](web/README.md) |
+| “赛博科技”固定作品集模板 P0 规格与实施计划 | [规格](web/cyber-creator-p0-spec.md) · [计划](web/cyber-creator-p0-plan.md) |
 | Next.js 服务端接口、任务、资产与 Launcher 入口 | [API 与 Launcher](api/README.md) |
 | 支付配置、沙箱与上线验收 | [支付与交付](api/payment.md) |
 | Python 图、Skills 与图像服务 | [Agent](agent/README.md) |
