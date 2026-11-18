@@ -24,7 +24,7 @@ function ProjectCard({ project, resolveResumeImage }: { project: CyberProject; r
   const remaining = images.slice(3);
   return <article className="cyber-project-card" data-layout={layout}>
     <div className="cyber-project-top"><span>{String(project.index).padStart(2, "0")}</span><h3>{item.title || `项目 ${project.index}`}</h3>
-      {link && <a href={link.url} target="_blank" rel="noopener noreferrer">{link.label || "查看项目"} ↗</a>}</div>
+      {link && <a className="cyber-project-link" href={link.url} target="_blank" rel="noopener noreferrer">{link.label || "查看项目"} ↗</a>}</div>
     <div className="cyber-project-content">
       <div className="cyber-project-copy">
         {item.details && <p className="cyber-preserve-lines">{item.details}</p>}
@@ -49,6 +49,7 @@ function ItemContent({ item, resolveResumeImage }: { item: ResumeDisplayItem; re
 export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash = false, touchDowngraded = false, defaultPortraitUrl = "/cyber-creator-bust.webp" }: Props) {
   const view = buildCyberCreatorPresentation(config);
   const [defaultPortraitFailed, setDefaultPortraitFailed] = useState(false);
+  const [staticMode, setStaticMode] = useState(touchDowngraded);
   const marqueeRef = useRef<HTMLElement>(null);
   const projectRef = useRef<HTMLElement>(null);
   const { profile } = view;
@@ -58,8 +59,28 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   const hasProjects = view.projects.length > 0;
 
   useEffect(() => {
-    const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (touchDowngraded || media?.matches) return;
+    const pointer = window.matchMedia?.("(pointer: coarse)");
+    const motion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const update = () => setStaticMode(touchDowngraded || navigator.maxTouchPoints > 0 || Boolean(pointer?.matches || motion?.matches));
+    update();
+    pointer?.addEventListener?.("change", update);
+    motion?.addEventListener?.("change", update);
+    return () => { pointer?.removeEventListener?.("change", update); motion?.removeEventListener?.("change", update); };
+  }, [touchDowngraded]);
+
+  useEffect(() => {
+    const cards = [...(projectRef.current?.querySelectorAll<HTMLElement>(".cyber-project-card") ?? [])];
+    const update = () => cards.forEach(card => card.classList.toggle("cyber-project-card--flow",
+      card.offsetHeight > window.innerHeight - 115));
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(update) : null;
+    cards.forEach(card => observer?.observe(card));
+    window.addEventListener("resize", update);
+    update();
+    return () => { observer?.disconnect(); window.removeEventListener("resize", update); };
+  }, [config.content.resume]);
+
+  useEffect(() => {
+    if (staticMode) return;
     let frame = 0;
     const update = () => {
       frame = 0;
@@ -78,7 +99,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
     window.addEventListener("resize", schedule);
     schedule();
     return () => { window.removeEventListener("scroll", schedule); window.removeEventListener("resize", schedule); if (frame) window.cancelAnimationFrame(frame); };
-  }, [touchDowngraded]);
+  }, [staticMode]);
 
   const preserveHash = (event: MouseEvent<HTMLDivElement>) => {
     if (!preserveShareHash || !(event.target instanceof Element)) return;
@@ -87,7 +108,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
     if (id && document.getElementById(id)) { event.preventDefault(); document.getElementById(id)?.scrollIntoView(); }
   };
 
-  return <div className="cyber-creator-page" data-testid="cyber-creator-page" data-skin="dark-tech" onClickCapture={preserveHash}>
+  return <div className="cyber-creator-page" data-testid="cyber-creator-page" data-skin="dark-tech" data-static={staticMode ? "true" : undefined} onClickCapture={preserveHash}>
     <header className="cyber-nav"><a href="#top" aria-label={`${profile.name} 首页`}>{profile.name || "PORTFOLIO"}<span className="cyber-nav-dot">.</span></a>
       <nav aria-label="作品集导航">{hasAbout && <a href="#selfEvaluation">关于</a>}{hasSkills && <a href="#skills">能力</a>}{hasProjects && <a href="#projects">项目</a>}{email && <a href="#contact">联系</a>}</nav></header>
     <main>
@@ -98,7 +119,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           ? <img src={config.heroArtwork?.assetUrl} alt={config.heroArtwork?.alt || "用户肖像"} />
           : defaultPortraitFailed ? <CyberPortrait />
           : <img src={defaultPortraitUrl} alt="赛博科技默认立体人物" onError={() => setDefaultPortraitFailed(true)} />}</div>
-        <div className="cyber-hero-bottom"><p>{profile.role || profile.summary || ""}</p>
+        <div className="cyber-hero-bottom"><p>{[profile.role, profile.location].filter(Boolean).join(" · ") || profile.summary || ""}</p>
           {email && <a href={`mailto:${email}`} className="cyber-contact-button">联系我 ↗</a>}</div>
         <span className="cyber-hero-side">SCROLL TO EXPLORE ↓</span>
       </section>
@@ -115,7 +136,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
             || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length);
           if (!items.length) return null;
           return <section className="cyber-generic cyber-page-width" id={section.kind} key={section.kind}><p className="cyber-section-label">PROFILE / {section.order + 1}</p>
-            <h2>{RESUME_LABELS[RESUME_KINDS.indexOf(section.kind)]}</h2><div className="cyber-entry-grid">{items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></section>;
+            <h2>{RESUME_LABELS[RESUME_KINDS.indexOf(section.kind)]}</h2><div className="cyber-entry-grid">{items.map(item => <ItemContent item={{ ...item, facts: item.facts.filter(fact => !["name", "email", "location", "targetRole"].includes(fact.key)) }} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></section>;
         }
         if (section.kind === "selfEvaluation") return <section className="cyber-about cyber-page-width" id={section.kind} key={section.kind}>
           <p className="cyber-section-label">ABOUT / {String(section.order + 1).padStart(2, "0")}</p><h2>ABOUT ME</h2>

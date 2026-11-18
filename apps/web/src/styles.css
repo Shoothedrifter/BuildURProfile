@@ -1413,7 +1413,10 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-project-top { display: grid; grid-template-columns: minmax(80px, .25fr) minmax(0, 1fr) auto; gap: 20px; align-items: start; }
 .cyber-project-top > span { font-size: clamp(55px, 8vw, 120px); font-weight: 900; line-height: .9; letter-spacing: -.08em; }
 .cyber-project-top h3 { margin: 0; font-size: clamp(33px, 5vw, 72px); line-height: 1; font-weight: 800; overflow-wrap: anywhere; }
-.cyber-project-top > a { display: inline-flex; align-items: center; padding: 12px 20px; border: 2px solid #d7e2ea; border-radius: 999px; text-decoration: none; font-size: 14px; text-transform: uppercase; }
+.cyber-project-top > a { display: inline-flex; align-items: center; max-width: 100%; min-width: 0; padding: 12px 20px; border: 2px solid #d7e2ea; border-radius: 999px; text-decoration: none; font-size: 14px; text-transform: uppercase; overflow-wrap: anywhere; }
+.cyber-project-card--flow, .cyber-creator-page[data-static="true"] .cyber-project-card { position: relative; top: auto; transform: none !important; }
+.cyber-creator-page[data-static="true"] .cyber-marquee-row, .cyber-creator-page[data-static="true"] .cyber-marquee-text { transform: none !important; }
+.cyber-creator-page[data-static="true"] .cyber-hero-figure { animation: none; }
 .cyber-project-content { display: grid; grid-template-columns: minmax(180px, .38fr) minmax(0, .62fr); gap: 24px; margin-top: 36px; }
 .cyber-project-copy { font-size: clamp(15px, 1.3vw, 20px); line-height: 1.5; }
 .cyber-preserve-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -1460,7 +1463,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .cyber-project-card { position: relative; top: auto; min-height: 0; transform: none !important; }
   .cyber-project-stack { gap: 24px; }
   .cyber-project-top { grid-template-columns: 70px 1fr; }
-  .cyber-project-top > a { grid-column: 2; width: max-content; }
+  .cyber-project-top > a { grid-column: 2; width: fit-content; max-width: 100%; }
   .cyber-project-content { grid-template-columns: 1fr; }
   .cyber-project-mosaic { min-height: 300px; }
   .cyber-footer { flex-wrap: wrap; }

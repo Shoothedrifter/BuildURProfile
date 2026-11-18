@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { DesignConfig, DesignConfigV4 } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
 import { ShowcasePage } from "../ShowcasePage";
@@ -21,6 +21,53 @@ function config(images: string[] = []): DesignConfigV4 {
 }
 
 describe("赛博科技固定模板", () => {
+  it("shows confirmed location in the hero and other selected basic facts in the body", () => {
+    const value = config();
+    const sections = value.content.resume.sections.map(section => section.kind === "basicInfo"
+      ? { ...section, items: section.items.map(item => ({ ...item, facts: [
+        ...item.facts, { key: "location", label: "所在地", value: "上海" },
+        { key: "phone", label: "电话", value: "123456789" }
+      ] })) } : section);
+    const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+      resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
+    expect(within(container.querySelector(".cyber-hero") as HTMLElement).getByText(/上海/)).toBeInTheDocument();
+    expect(within(container.querySelector("#basicInfo") as HTMLElement).getByText("123456789")).toBeInTheDocument();
+  });
+
+  it("puts over-height desktop project cards in document flow", async () => {
+    const value = config();
+    const projects = value.content.resume.sections.find(section => section.kind === "projects")!;
+    const first = projects.items[0];
+    const sections = value.content.resume.sections.map(section => section.kind === "projects"
+      ? { ...section, items: [{ ...first, details: "长正文".repeat(600) }, { ...first, itemId: "project-two", order: 1, title: "项目乙" }] }
+      : section);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("cyber-project-card") && this.textContent?.includes("长正文") ? 1600 : 500;
+    });
+    try {
+      const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+        resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
+      await waitFor(() => expect(container.querySelector(".cyber-project-card")?.classList).toContain("cyber-project-card--flow"));
+    } finally { vi.restoreAllMocks(); }
+  });
+
+  it("marks coarse-pointer rendering static and constrains project link layout", async () => {
+    const { container } = render(<ShowcasePage config={config()} touchDowngraded />);
+    await waitFor(() => expect(screen.getByTestId("cyber-creator-page")).toHaveAttribute("data-static", "true"));
+    expect(container.querySelector(".cyber-project-top > a")).toHaveClass("cyber-project-link");
+  });
+
+  it("detects a coarse pointer without relying on its caller", async () => {
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({
+      matches: query === "(pointer: coarse)", media: query, onchange: null,
+      addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn()
+    })));
+    try {
+      render(<ShowcasePage config={config()} />);
+      await waitFor(() => expect(screen.getByTestId("cyber-creator-page")).toHaveAttribute("data-static", "true"));
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("keeps an older dark-tech config on the legacy renderer", () => {
     const oldConfig = { ...rawConfig, skin: "dark-tech" } as DesignConfig;
     const { container } = render(<ShowcasePage config={oldConfig} />);

@@ -1,6 +1,6 @@
 # “赛博科技”固定作品集模板 P0 规格
 
-状态：P0 代码已实施，待最终审查。参考材料为用户提供的 MotionSites “3D Jack Portfolio”设计 Prompt；本规格描述 BuildURProfile 的产品行为，不要求运行时访问 MotionSites。
+状态：P0 已实施并完成本地验收。参考材料为用户提供的 MotionSites “3D Jack Portfolio”设计 Prompt；本规格描述 BuildURProfile 的产品行为，不要求运行时访问 MotionSites。
 
 ## 目标与范围
 
