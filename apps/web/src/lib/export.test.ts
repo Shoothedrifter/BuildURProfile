@@ -77,3 +77,16 @@ it('exports v3 modules in the confirmed order around the project deck', async ()
   expect(doc.querySelector('[aria-label="Selected work cards"]')).not.toBeNull();
   page.window.close();
 });
+
+it('embeds the cyber creator default portrait into offline HTML', async () => {
+  const {buildStaticHtml}=await import('../server/export.mjs');
+  const fixture=await import('../../../../packages/contracts/fixtures/agent-golden.v3.json');
+  const config={...fixture.default.expected.config,templateId:'cyber-creator-v1'};
+  const html=buildStaticHtml(config,undefined,undefined,()=>({mime:'image/png',bytes:Buffer.from([1,2,3])}));
+  const page=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true});
+  await new Promise(resolve=>setTimeout(resolve,150));
+  const image=page.window.document.querySelector('img[alt="赛博科技默认立体人物"]');
+  expect(image?.getAttribute('src')).toMatch(/^data:image\/webp;base64,/);
+  expect(html).not.toContain('src="/cyber-creator-bust.webp"');
+  page.window.close();
+});
