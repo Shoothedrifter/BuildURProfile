@@ -140,23 +140,23 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           const items = section.items.filter(item => item.facts.some(fact => fact.value.trim() && !["name", "email", "location", "targetRole"].includes(fact.key))
             || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length);
           if (!items.length) return null;
-          return <section className="cyber-generic cyber-page-width" id={section.kind} key={section.kind}><p className="cyber-section-label">PROFILE / {section.order + 1}</p>
+          return <section className="cyber-generic cyber-page-width" id={section.kind} key={section.kind}>
             <h2>{RESUME_LABELS[RESUME_KINDS.indexOf(section.kind)]}</h2><div className="cyber-entry-grid">{items.map(item => <ItemContent item={{ ...item, facts: item.facts.filter(fact => !["name", "email", "location", "targetRole"].includes(fact.key)) }} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></section>;
         }
         if (section.kind === "selfEvaluation") return <section className="cyber-about cyber-page-width" id={section.kind} key={section.kind}>
-          <p className="cyber-section-label">ABOUT / {String(section.order + 1).padStart(2, "0")}</p><h2>关于我</h2>
+          <h2>关于我</h2>
           <div className="cyber-about-copy">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div>
           {email && <a href={`mailto:${email}`} className="cyber-contact-button">联系我 ↗</a>}
         </section>;
         if (section.kind === "skills") return <section className="cyber-capabilities" id={section.kind} key={section.kind}><div className="cyber-page-width">
-          <p className="cyber-section-label">CAPABILITIES / {String(section.order + 1).padStart(2, "0")}</p><h2>能力与专长</h2>
+          <h2>能力与专长</h2>
           <div className="cyber-capability-list">{section.items.map((item, index) => <div className="cyber-capability" key={item.itemId}><span>{String(index + 1).padStart(2, "0")}</span><ItemContent item={item} resolveResumeImage={resolveResumeImage} /></div>)}</div>
         </div></section>;
         if (section.kind === "projects") return <section className="cyber-projects" id={section.kind} key={section.kind} ref={projectRef}><div className="cyber-page-width">
-          <p className="cyber-section-label">SELECTED WORK / {String(section.order + 1).padStart(2, "0")}</p><h2>项目作品</h2>
+          <h2>项目作品</h2>
           <div className="cyber-project-stack">{view.projects.map(project => <ProjectCard project={project} resolveResumeImage={resolveResumeImage} key={project.item.itemId} />)}</div>
         </div></section>;
-        return <section className="cyber-generic cyber-page-width" id={section.kind} key={section.kind}><p className="cyber-section-label">EXPERIENCE / {String(section.order + 1).padStart(2, "0")}</p>
+        return <section className="cyber-generic cyber-page-width" id={section.kind} key={section.kind}>
           <h2>{RESUME_LABELS[RESUME_KINDS.indexOf(section.kind)]}</h2><div className="cyber-entry-grid">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></section>;
       })}
     </main>

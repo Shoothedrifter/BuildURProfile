@@ -88,6 +88,21 @@ describe("赛博科技固定模板", () => {
     expect(screen.getByText("用户确认的成果")).toBeInTheDocument();
   });
 
+  it("shows portfolio sections without resume-style module markers", () => {
+    const value = config();
+    const sections = value.content.resume.sections.map(section => section.kind === "basicInfo"
+      ? { ...section, items: section.items.map(item => ({ ...item, facts: [...item.facts,
+        { key: "phone", label: "电话", value: "123456789" }] })) }
+      : section);
+    const withExperience = { ...value, content: { ...value.content, resume: { version: "resume-v3", sections: [
+      ...sections, { kind: "workExperience", order: 4, items: [{ itemId: "work", order: 0, title: "实习经历", details: "完成项目交付", facts: [], supplement: { text: "", links: [], images: [] } }] }
+    ] } } } as DesignConfigV4;
+    const { container } = render(<ShowcasePage config={withExperience} />);
+    expect(container.querySelector(".cyber-section-label")).toBeNull();
+    expect(screen.getByRole("heading", { name: "实习/工作经历" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "项目作品" })).toBeInTheDocument();
+  });
+
   it("renders a three-image mosaic and keeps additional images accessible", () => {
     const { container } = render(<ShowcasePage config={config(["a", "b", "c", "d"])} resolveResumeImage={id => `/media/${id}`} />);
     expect(container.querySelectorAll(".cyber-project-mosaic img")).toHaveLength(3);
