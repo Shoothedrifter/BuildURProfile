@@ -42,7 +42,8 @@ const python = process.env.PYTHON || defaultVenv;
 const nextBin = fileURLToPath(new URL("../../../node_modules/next/dist/bin/next", import.meta.url));
 
 const children = [
-  spawn(process.execPath, [nextBin, "dev", "apps/web", "-H", host, "-p", webPort], { stdio: "inherit", env: webEnv }),
+  // Next 16.4.5 Turbopack can repeatedly restart an unchanged client chunk; Webpack keeps Fast Refresh active.
+  spawn(process.execPath, [nextBin, "dev", "apps/web", "-H", host, "-p", webPort, "--webpack"], { stdio: "inherit", env: webEnv }),
   spawn(python, ["-m", "buildurprofile_agent.server"], { stdio: "inherit", env: agentEnv })
 ];
 

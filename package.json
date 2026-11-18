@@ -11,7 +11,7 @@
   },
   "scripts": {
     "dev": "node apps/launcher/src/dev.mjs",
-    "dev:server": "next dev apps/web -H 127.0.0.1 -p 8787",
+    "dev:server": "next dev apps/web -H 127.0.0.1 -p 8787 --webpack",
     "dev:agent": "node scripts/run-python-agent.mjs",
     "setup:avatar": "node scripts/install-wibi-demo.mjs",
     "start": "node apps/launcher/src/index.mjs",
