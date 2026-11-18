@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import type { DesignConfig, JobRole } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
-import { QUESTIONS } from "../lib/assessment";
 import type { DraftField, ResumeDraft } from "../lib/resume";
 import type { AvatarStyleId } from "../lib/generationApi";
 import type { Offer, OwnedProject } from "../lib/paymentApi";
@@ -20,7 +19,7 @@ import {
   StepHeader,
   WorkflowProgress
 } from "./BuilderChrome";
-import type { WorkflowPhase } from "./BuilderChrome";
+import type { WorkflowPhase, WorkflowStepTarget } from "./BuilderChrome";
 
 export type DraftGroup = "basicInfo" | "jobIntent" | "selfEvaluation" | "workExperience" | "campusExperience" | "projects" | "awards" | "skills" | "education" | "other";
 export type ReclassifyTarget = DraftGroup;
@@ -181,6 +180,8 @@ export type BuilderExperienceProps = {
   progress: string;
   error: string;
   draft: ResumeDraft | null;
+  hasConfirmedResume: boolean;
+  styleResumeId: string | null;
   role: JobRole;
   answers: Record<string, number>;
   generated: DesignConfig | null;
@@ -212,7 +213,6 @@ export type BuilderExperienceProps = {
   onReclassify: (key: DraftGroup, index: number, target: ReclassifyTarget) => void;
   onConfirm: () => void;
   onRoleChange: (role: JobRole) => void;
-  onAnswer: (questionId: string, optionIndex: number) => void;
   onApplyAnswers: (answers: Record<string, number>) => void;
   onGenerate: () => void;
   onRunAvatarGeneration: () => void;
@@ -255,10 +255,6 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       else window.scrollTo({ top: 0, behavior: "instant" });
     }, 0);
   };
-  const answer = (questionId: string, optionIndex: number) => {
-    setSelectedPreset(null);
-    props.onAnswer(questionId, optionIndex);
-  };
   const applyPreset = (preset: (typeof stylePresets)[number]) => {
     setSelectedPreset(preset.id);
     props.onApplyAnswers(preset.answers);
@@ -266,6 +262,14 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const isPresetSelected = (presetId: StylePresetId) => selectedPreset === presetId && Object.keys(answers).length === 8;
   const hasVisibleError = Boolean(error);
   const deliveryUnlocked = projectPaid || Boolean(projects.find((project) => project.id === projectId)?.paid);
+  const styleResumeId = props.styleResumeId;
+  const stepTargets: Partial<Record<number, WorkflowStepTarget>> = {
+    1: styleResumeId ? { href: "/upload" } : { onClick: () => go("upload") },
+    ...(styleResumeId ? { 2: { href: `/editor/${encodeURIComponent(styleResumeId)}` } }
+      : draft ? { 2: { onClick: () => go("confirm") } } : {}),
+    ...((draft || props.hasConfirmedResume) ? { 3: { onClick: () => go("quiz") } } : {}),
+    ...(generated ? { 4: { onClick: () => go("result") }, 5: { onClick: () => go("delivery") } } : {})
+  };
 
   if (phase === "mock") {
     return <div className="proof-demo-page">
@@ -295,7 +299,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     onProjects={() => setProjectsOpen(true)}
     onSample={() => go("mock")}
     onSection={(section) => goLanding(section)}>
-    <WorkflowProgress phase={phase} />
+    <WorkflowProgress phase={phase} targets={stepTargets} />
     {progressNumber > 0 && <div className="proof-step-shell" data-step={progressNumber} />}
 
     {phase === "upload" && <section className="proof-step-page">
@@ -408,7 +412,15 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       </div>
     </section>}
 
-    {phase === "quiz" && <section className="proof-step-page">
+    {phase === "quiz" && !draft && !props.hasConfirmedResume && <section className="proof-step-page">
+      <StepHeader number={4} title="04 头像与网站风格" description="正在准备已确认的简历草稿。" />
+      <ProofCard role={error ? "alert" : "status"}>
+        <p>{error || progress || "正在读取已确认的简历草稿…"}</p>
+        {error && styleResumeId && <a href={`/editor/${encodeURIComponent(styleResumeId)}`}>← 返回资料编辑</a>}
+      </ProofCard>
+    </section>}
+
+    {phase === "quiz" && (draft || props.hasConfirmedResume) && <section className="proof-step-page">
       <StepHeader number={4} title="04 头像与网站风格" description="头像可选；选择网站风格后查看首屏样张，再生成完整作品集。" />
       <div className="proof-style-layout">
         <ProofCard as="section" className="proof-style-preview" aria-label="首屏实时预览">
@@ -423,7 +435,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           generating={generatingAvatar} onPhoto={props.onPhoto} onStyle={props.onAvatarStyle} onClear={props.onClearPhoto} />
         <ProofCard className="proof-style-card">
           <h2>网站风格</h2>
-          <p>直接选择模板，或逐项完成 8 道偏好问题。模板会填入全部答案，之后仍可修改。</p>
+          <p>选择一个网站模板。更换模板会保留已确认的资料与头像。</p>
           <div className="proof-style-options">
             {stylePresets.map((preset) => <button type="button" key={preset.id} className={isPresetSelected(preset.id) ? "is-selected" : ""}
               aria-pressed={isPresetSelected(preset.id)} onClick={() => applyPreset(preset)}>
@@ -433,19 +445,6 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <label className="proof-role-select"><span>展示方向</span><select id="job-role" value={role} onChange={(event) => props.onRoleChange(event.target.value as JobRole)}>
             {roles.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select></label>
-          <div className="proof-question-heading"><div><h2>你的偏好画像</h2><p>回答会转换为 E / K / P / S 四维分数。</p></div><strong>{Object.keys(answers).length} / 8</strong></div>
-          <div className="proof-question-list">
-            {QUESTIONS.map((question, index) => <fieldset className="proof-question" key={question.id}>
-              <legend><span>{String(index + 1).padStart(2, "0")}</span>{question.prompt}</legend>
-              <div>
-                {question.options.map((option, optionIndex) => <label key={optionIndex} className={answers[question.id] === optionIndex ? "is-selected" : ""}>
-                  <input type="radio" name={question.id} checked={answers[question.id] === optionIndex}
-                    onChange={() => answer(question.id, optionIndex)} />
-                  <span>{option.label}</span><b aria-hidden="true">→</b>
-                </label>)}
-              </div>
-            </fieldset>)}
-          </div>
           {isTouch && <p className="proof-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
           {progress && <p className="proof-status" role="status">{progress}</p>}
           {error && <p className="proof-inline-error" role="alert">{error}</p>}
@@ -458,7 +457,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           if (match) window.location.assign(`/editor/${match[1]}`);
           else go("confirm");
         }}>← 返回资料</ProofButton>
-        <ProofButton variant="primary" disabled={Object.keys(answers).length !== 8 || generatingAvatar} onClick={props.onGenerate}>
+        <ProofButton variant="primary" disabled={!selectedPreset || generatingAvatar} onClick={props.onGenerate}>
           {generatingAvatar ? "正在生成作品…" : "生成我的 Showcase →"}
         </ProofButton>
       </div>
@@ -493,7 +492,9 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       </details>}
       <div className="proof-result-layout">
         <div className="proof-preview-column">
-          <div className="proof-preview-toolbar"><span>草稿预览 · 尚未公开</span><ProofButton variant="quiet" onClick={props.onRestartQuiz}>重新作答</ProofButton></div>
+          <div className="proof-preview-toolbar"><span>草稿预览 · 尚未公开</span>
+            {(draft || props.hasConfirmedResume) && <ProofButton variant="quiet" onClick={props.onRestartQuiz}>更换模板</ProofButton>}
+          </div>
           <div className="proof-preview-frame"><ShowcasePage config={generated} touchDowngraded={isTouch} /></div>
           <details className="proof-advanced">
             <summary>高级参数 / 调试信息 →</summary>

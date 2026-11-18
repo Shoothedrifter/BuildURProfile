@@ -2,14 +2,15 @@
 
 import type { ReactNode } from "react";
 import { WorkflowProgress } from "./BuilderChrome";
-import type { WorkflowPhase } from "./BuilderChrome";
+import type { WorkflowPhase, WorkflowStepTarget } from "./BuilderChrome";
 
 // Agent 流程页（上传 / 编辑器）共用的品牌外壳：横幅、logo 导航、五步进度与页脚，
 // 视觉上与 BuilderChrome 的 .proof-page 令牌体系保持同一套语言。
-export function AgentChrome({ phase, backHref, backLabel, children }: {
+export function AgentChrome({ phase, backHref, backLabel, steps, children }: {
   phase: WorkflowPhase;
   backHref: string;
   backLabel: string;
+  steps?: Partial<Record<number, WorkflowStepTarget>>;
   children: ReactNode;
 }) {
   return <div className="proof-page">
@@ -23,7 +24,7 @@ export function AgentChrome({ phase, backHref, backLabel, children }: {
       </nav>
       <span aria-hidden="true" />
     </header>
-    <WorkflowProgress phase={phase} />
+    <WorkflowProgress phase={phase} targets={steps} />
     <main className="proof-main">{children}</main>
     <footer className="proof-footer">
       <a href="/" aria-label="返回 BuildURProfile 首页">
