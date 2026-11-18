@@ -6,13 +6,13 @@ from typing import Any, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from .contracts import clean_brief, clean_config, GenerationBriefV2, DesignConfigV2, GenerationBriefV3, DesignConfigV3
+from .contracts import clean_brief, clean_config, GenerationBriefV2, DesignConfigV2, GenerationBriefV3, DesignConfigV3, GenerationBriefV4, DesignConfigV4
 from .skills.registry import SkillRegistry
 from .transport.node_api import AgentTask, NodeAgentClient
 
 
-WORKFLOW_VERSION = "python-agent-v4"
-SUPPORTED_WORKFLOWS = ("python-agent-v2", "python-agent-v3", WORKFLOW_VERSION)
+WORKFLOW_VERSION = "python-agent-v5"
+SUPPORTED_WORKFLOWS = ("python-agent-v2", "python-agent-v3", "python-agent-v4", WORKFLOW_VERSION)
 DESIGN_SKILLS = ("assessment.score.v1", "design.map.v1", "resume.compose.v2")
 AVATAR_SKILL = "avatar.wibi.v1"
 QA_SKILL = "artifact.qa.v1"
@@ -42,10 +42,11 @@ def task_input(task: AgentTask) -> GenerationState:
 
 def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: Any,
                            registry: SkillRegistry, *, checkpointer: Any = None) -> Any:
-    enriched = task.workflow_version in ("python-agent-v3", WORKFLOW_VERSION)
-    ordered = task.workflow_version == WORKFLOW_VERSION
-    design_skills = (*DESIGN_SKILLS[:2], "resume.compose.v4" if ordered else "resume.compose.v3") if enriched else DESIGN_SKILLS
-    qa_skill = "artifact.qa.v3" if ordered else "artifact.qa.v2" if enriched else QA_SKILL
+    templated = task.workflow_version == WORKFLOW_VERSION
+    enriched = task.workflow_version in ("python-agent-v3", "python-agent-v4", WORKFLOW_VERSION)
+    ordered = task.workflow_version in ("python-agent-v4", WORKFLOW_VERSION)
+    design_skills = ("design.template.v1", "resume.compose.v5") if templated else (*DESIGN_SKILLS[:2], "resume.compose.v4" if ordered else "resume.compose.v3") if enriched else DESIGN_SKILLS
+    qa_skill = "artifact.qa.v4" if templated else "artifact.qa.v3" if ordered else "artifact.qa.v2" if enriched else QA_SKILL
 
     async def run_skill(skill_id: str, inputs: dict, state: GenerationState,
                         grants: dict | None = None) -> Any:
@@ -64,8 +65,8 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
         if bool(state["brief"]) == bool(state["config"]):
             raise ValueError("INVALID_BRIEF")
         if enriched:
-            brief_model = GenerationBriefV3 if ordered else GenerationBriefV2
-            config_model = DesignConfigV3 if ordered else DesignConfigV2
+            brief_model = GenerationBriefV4 if templated else GenerationBriefV3 if ordered else GenerationBriefV2
+            config_model = DesignConfigV4 if templated else DesignConfigV3 if ordered else DesignConfigV2
             if state["brief"]:
                 return {"brief": brief_model.model_validate(state["brief"]).model_dump(exclude_none=True), "config": None}
             if not state["portrait_asset_id"]:
@@ -87,12 +88,13 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
         return {"vector": result["vector"]}
 
     async def map_design(state: GenerationState) -> dict:
-        result = await run_skill(design_skills[1], {"vector": state["vector"],
-                                                     "role": state["brief"]["role"]}, state)
+        result = await run_skill(design_skills[0] if templated else design_skills[1],
+                                 {"templateId": state["brief"]["templateId"], "role": state["brief"]["role"]}
+                                 if templated else {"vector": state["vector"], "role": state["brief"]["role"]}, state)
         return {"config": result["config"]}
 
     async def compose(state: GenerationState) -> dict:
-        result = await run_skill(design_skills[2], {"config": state["config"],
+        result = await run_skill(design_skills[1] if templated else design_skills[2], {"config": state["config"],
                                                     "content": state["brief"]["content"]}, state)
         return {"config": result["config"]}
 
@@ -122,7 +124,7 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
             status = await client.output(task)
             return status.get("assetId") == asset_id and bool(status.get("exists"))
         if enriched:
-            (DesignConfigV3 if ordered else DesignConfigV2).model_validate(state["config"])
+            (DesignConfigV4 if templated else DesignConfigV3 if ordered else DesignConfigV2).model_validate(state["config"])
             if state["brief"] and state["config"]["content"] != state["brief"]["content"]:
                 raise ValueError("Confirmed content was changed")
         result = await run_skill(qa_skill, {"config": state["config"],
@@ -142,7 +144,7 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
     graph.add_node("qa", qa)
     graph.add_edge(START, "validate")
     graph.add_edge("validate", "plan")
-    graph.add_conditional_edges("plan", lambda state: "score" if state["brief"] else
+    graph.add_conditional_edges("plan", lambda state: ("map_design" if templated else "score") if state["brief"] else
                                 ("avatar" if state["portrait_asset_id"] else "qa"))
     graph.add_edge("score", "map_design")
     graph.add_edge("map_design", "compose")

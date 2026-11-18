@@ -39,6 +39,19 @@ test('new confirmed generation carries user module order in v4 brief',t=>{
  assert.deepEqual(resume.sections.slice(0,2).map(section=>section.kind),['projects','basicInfo']);
  assert.doesNotMatch(row.brief_json,/sourceBlockIds|editedFields|confidence/);
 });
+test('template generation binds the selected template without hidden assessment answers',t=>{
+ const s=setup(t);
+ const input={resumeId:s.input.resumeId,revision:1,role:s.input.role,templateId:'cyber-creator-v1',idempotencyKey:'template-request'};
+ const task=s.service.enqueueResume('owner',input);
+ const row=s.db.prepare('SELECT brief_json,workflow_version FROM generations WHERE id=?').get(task.id);
+ assert.equal(row.workflow_version,'python-agent-v5');
+ const brief=JSON.parse(row.brief_json);
+ assert.equal(brief.templateId,'cyber-creator-v1');
+ assert.equal(brief.answers,undefined);
+ assert.throws(()=>s.service.enqueueResume('owner',{...input,templateId:'warm-v1'}),e=>e.status===409);
+ assert.throws(()=>s.service.enqueueResume('owner',{...input,revision:2}),e=>e.status===409);
+ assert.throws(()=>s.service.enqueueResume('other',{...input,idempotencyKey:'other'}));
+});
 test('server projects exact revision, materializes only selected media atomically and isolates owners',t=>{
  const s=setup(t),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,s.draft.sections[0].items[0].itemId).imageId;
  s.draft.sections[0].items[0].supplements={text:'说明',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图'}]};

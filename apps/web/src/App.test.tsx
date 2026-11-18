@@ -278,7 +278,8 @@ describe("showcase builder", () => {
     expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     await screen.findByRole("heading", { name: "05 网站预览与轻量编辑" });
-    expect(Object.keys(vi.mocked(generationApi.generatePortfolio).mock.calls[0][0].answers)).toHaveLength(8);
+    const firstBrief = vi.mocked(generationApi.generatePortfolio).mock.calls[0][0];
+    expect("answers" in firstBrief && Object.keys(firstBrief.answers)).toHaveLength(8);
   });
 
   it("keeps the style step visible when generation returns an incomplete config", async () => {
@@ -425,7 +426,7 @@ describe("showcase builder", () => {
 
   it("adds generated portrait to hero and offers delivery", async () => {
     vi.mocked(generationApi.generatePortfolio).mockImplementationOnce(async (brief) => ({
-      config: { ...styleToConfig(scoreAnswers(brief.answers), brief.role), content: "content" in brief ? brief.content : ({} as DesignConfig["content"]) },
+      config: { ...styleToConfig(scoreAnswers("answers" in brief ? brief.answers : {}), brief.role), content: "content" in brief ? brief.content : ({} as DesignConfig["content"]) },
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" }
     }));
     render(<App />);

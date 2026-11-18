@@ -182,3 +182,17 @@ async def test_v4_preserves_user_order_and_uses_versioned_skills():
     state = await build_generation_graph(item, FakeClient(), FakeProvider(), default_registry()).ainvoke(task_input(item))
     assert state['config'] == golden['expected']['config']
     assert state['skill_plan'] == ['assessment.score.v1', 'design.map.v1', 'resume.compose.v4', 'artifact.qa.v3']
+
+
+@pytest.mark.asyncio
+async def test_v5_generates_selected_template_without_assessment():
+    from dataclasses import replace
+    golden = json.loads((FIXTURE.parent / 'agent-golden.v3.json').read_text())
+    brief = {"role": golden["input"]["role"], "content": golden["input"]["content"],
+             "templateId": "cyber-creator-v1"}
+    item = replace(task(), workflow_version='python-agent-v5', brief=brief)
+    state = await build_generation_graph(item, FakeClient(), FakeProvider(), default_registry()).ainvoke(task_input(item))
+    assert state['config']['templateId'] == 'cyber-creator-v1'
+    assert state['config']['skin'] == 'dark-tech'
+    assert state['config']['content'] == brief['content']
+    assert state['skill_plan'] == ['design.template.v1', 'resume.compose.v5', 'artifact.qa.v4']
