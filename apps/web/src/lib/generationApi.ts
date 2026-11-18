@@ -1,4 +1,4 @@
-import type { DesignConfig, JobRole, ResumeContent } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
 import type { AvatarStyleId } from "../../../../packages/skills/src/avatar-catalog";
 import { toPublishedConfig } from "./publication";
 
@@ -70,7 +70,7 @@ async function waitForTask(id: string, epoch: number, onStatus?: (status: Genera
 }
 
 export const generationApi = {
-  async generatePortfolio(brief: GenerationBrief | {resumeId: string; revision: number; role: JobRole; answers: Record<string,number>}, portrait?: { dataUrl: string; styleId: AvatarStyleId },
+  async generatePortfolio(brief: GenerationBrief | {resumeId: string; revision: number; role: JobRole; answers: Record<string,number>} | {resumeId: string; revision: number; role: JobRole; templateId: TemplateId}, portrait?: { dataUrl: string; styleId: AvatarStyleId },
     onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
     const epoch = generationEpoch;
     let portraitAssetId: string | null = null;

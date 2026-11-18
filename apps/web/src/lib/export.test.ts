@@ -41,10 +41,11 @@ it('exports v2 content in separate modules with a usable project deck and packag
   const resume={version:'resume-v2',sections:[{kind:'workExperience',items:[{itemId:'work',title:'工作条目',details:'工作正文',facts:[],supplement:{text:'',links:[],images:[]}}]}, {kind:'projects',items:[{itemId:'project1',title:'项目一',details:'第一段\n第二段',facts:[],supplement},{itemId:'project2',title:'项目二',details:'第二个项目',facts:[],supplement:{text:'',links:[],images:[]}}]}, {kind:'campusExperience',items:[{itemId:'campus',title:'校园条目',details:'校园正文',facts:[],supplement:{text:'',links:[],images:[]}}]}]};
   const config={...rawConfig,content:resumeDisplayContent(resume)};
   const html=buildStaticHtml(config,undefined,undefined,()=>({mime:'image/png',bytes:Buffer.from([1,2,3])}));
-  const page=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true});
+  const page=new JSDOM(html,{url:'https://example.test',runScripts:'dangerously',pretendToBeVisual:true});
   await new Promise(resolve=>setTimeout(resolve,150));
   const doc=page.window.document;
   expect(doc.querySelectorAll('.project-card')).toHaveLength(1);
+  expect(doc.querySelector('.showcase-touch-note')).toBeNull();
   expect(doc.body).toHaveTextContent('项目一');
   expect(doc.querySelector('img[alt="图片说明"]')?.getAttribute('src')).toBe('data:image/png;base64,AQID');
   expect(doc.querySelector('a[href="https://example.test"]')?.textContent).toBe('作品链接');
@@ -83,4 +84,40 @@ it('exports project sourceText verbatim into the standalone HTML', async () => {
   const config={...rawConfig,content:{...rawConfig.content,projects:[{...rawConfig.content.projects[0],sourceText:'导出原文样例'}]}};
   const html=buildStaticHtml(config);
   expect(html).toContain('导出原文样例');
+});
+
+it('embeds the cyber creator default portrait into offline HTML', async () => {
+  const {buildStaticHtml}=await import('../server/export.mjs');
+  const fixture=await import('../../../../packages/contracts/fixtures/agent-golden.v3.json');
+  const config={...fixture.default.expected.config,templateId:'cyber-creator-v1'};
+  const html=buildStaticHtml(config,undefined,undefined,()=>({mime:'image/png',bytes:Buffer.from([1,2,3])}));
+  const page=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true});
+  await new Promise(resolve=>setTimeout(resolve,150));
+  const image=page.window.document.querySelector('img[alt="赛博科技默认立体人物"]');
+  expect(image?.getAttribute('src')).toMatch(/^data:image\/webp;base64,/);
+  expect(page.window.document.querySelector('[data-testid="cyber-creator-page"]')?.getAttribute('data-static')).toBe('true');
+  expect(html).not.toContain('src="/cyber-creator-bust.webp"');
+  page.window.close();
+});
+
+it('exports cyber project mosaic with confirmed captions and full text', async () => {
+  const {buildStaticHtml}=await import('../server/export.mjs');
+  const {resumeDisplayContent}=await import('../../../../packages/contracts/src/resume-v2.mjs');
+  const resume={version:'resume-v3',sections:[{kind:'projects',order:0,items:[{
+    itemId:'project_1',order:0,title:'项目甲',details:'完整正文\n第二段',facts:[],
+    supplement:{text:'用户补充说明',links:[{label:'项目链接',url:'https://example.test/project'}],
+      images:['a','b','c','d'].map(imageId=>({imageId,caption:`图片${imageId}`}))}
+  }]}]};
+  const config={...rawConfig,templateId:'cyber-creator-v1',content:resumeDisplayContent(resume)};
+  const html=buildStaticHtml(config,undefined,undefined,()=>({mime:'image/png',bytes:Buffer.from([1,2,3])}));
+  const page=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true});
+  await new Promise(resolve=>setTimeout(resolve,150));
+  const doc=page.window.document;
+  expect(doc.querySelectorAll('.cyber-project-mosaic img')).toHaveLength(3);
+  expect(doc.querySelector('img[alt="图片d"]')?.getAttribute('src')).toBe('data:image/png;base64,AQID');
+  expect(doc.body).toHaveTextContent('完整正文');
+  expect(doc.body).toHaveTextContent('第二段');
+  expect(doc.body).toHaveTextContent('用户补充说明');
+  expect(doc.querySelector('a[href="https://example.test/project"]')).not.toBeNull();
+  page.window.close();
 });

@@ -5,6 +5,7 @@ const ROLES = new Set(["ui-ux-designer", "frontend-creative-developer", "brand-m
 const PROFILE_FIELDS = ["name", "role", "location", "availability", "intro", "summary", "email"];
 const EXPERTISE_FIELDS = ["eyebrow", "headline", "summary", "skills", "disciplines"];
 const PROJECT_FIELDS = ["id", "index", "title", "category", "year", "description", "tags", "visual", "image", "link", "sourceText"];
+const TEMPLATE_IDS = new Set(["cyber-creator-v1", "warm-v1", "minimal-v1", "bold-v1"]);
 
 function record(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
@@ -27,10 +28,12 @@ export function cleanGenerationBrief(input) {
   let size;
   try { size = Buffer.byteLength(JSON.stringify(input)); } catch { throw new ServiceError(400, "生成内容无效。"); }
   if (size > 256 * 1024) throw new ServiceError(413, "生成内容过大（最大 256 KiB）。");
-  const brief = record(input, ["role", "answers", "content"], "生成请求");
+  const templated = input?.templateId !== undefined;
+  const brief = record(input, templated ? ["role", "templateId", "content"] : ["role", "answers", "content"], "生成请求");
   if (!ROLES.has(brief.role)) throw new ServiceError(400, "目标角色无效。");
-  const answers = record(brief.answers, QUESTIONS.map((question) => question.id), "测评答案");
-  if (Object.keys(answers).length !== QUESTIONS.length || !isAssessmentComplete(answers)) {
+  if (templated && !TEMPLATE_IDS.has(brief.templateId)) throw new ServiceError(400, "作品模板无效。");
+  const answers = templated ? null : record(brief.answers, QUESTIONS.map((question) => question.id), "测评答案");
+  if (!templated && (Object.keys(answers).length !== QUESTIONS.length || !isAssessmentComplete(answers))) {
     throw new ServiceError(400, "测评答案无效或不完整。");
   }
   const content = record(brief.content,
@@ -62,7 +65,7 @@ export function cleanGenerationBrief(input) {
   });
   const result = {
     role: brief.role,
-    answers: Object.fromEntries(QUESTIONS.map(({ id }) => [id, answers[id]])),
+    ...(templated ? { templateId: brief.templateId } : { answers: Object.fromEntries(QUESTIONS.map(({ id }) => [id, answers[id]])) }),
     content: {
       profile: Object.fromEntries(PROFILE_FIELDS.map((key) => [key, fieldText(profile[key], `个人资料 ${key}`)])),
       expertise: { eyebrow: fieldText(expertise.eyebrow, "能力标题"), headline: fieldText(expertise.headline, "能力标题"),
@@ -76,5 +79,6 @@ export function cleanGenerationBrief(input) {
     }
   };
   if (!result.content.profile.name.trim()) throw new ServiceError(400, "请确认简历姓名。");
+  if (templated && result.content.resume?.version !== "resume-v3") throw new ServiceError(400, "模板需要已确认的新版简历。");
   return result;
 }

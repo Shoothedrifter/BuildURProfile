@@ -1,4 +1,4 @@
-import type { DesignConfig, JobRole, StackedCardsConfig, StyleVector } from "../../contracts/src/config.ts";
+import type { DesignConfig, DesignConfigV4, JobRole, StackedCardsConfig, StyleVector, TemplateId } from "../../contracts/src/config.ts";
 
 const unit = (score: number): number => Number.isFinite(score) ? Math.min(1, Math.max(0, score)) : 0.5;
 
@@ -75,4 +75,16 @@ export function styleToConfig(vector: StyleVector, jobRole: JobRole): DesignConf
       projects: []
     }
   };
+}
+
+const templateVectors: Record<TemplateId, StyleVector> = {
+  "cyber-creator-v1": { E: 1, K: 0.75, P: 0.75, S: 0.75, PChoice: "cool" },
+  "warm-v1": { E: 0.75, K: 0.5, P: 0.5, S: 0.5, PChoice: "warm" },
+  "minimal-v1": { E: 0.25, K: 0.25, P: 0.25, S: 0.75, PChoice: "neutral" },
+  "bold-v1": { E: 1, K: 1, P: 1, S: 0.5, PChoice: "vivid" }
+};
+
+export function templateToConfig(templateId: TemplateId, jobRole: JobRole): Omit<DesignConfigV4, "content"> & { content: DesignConfig["content"] } {
+  if (!Object.hasOwn(templateVectors, templateId)) throw new Error("Unknown template");
+  return { ...styleToConfig(templateVectors[templateId], jobRole), templateId };
 }

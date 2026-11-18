@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import type { DesignConfig, JobRole, ResumeContent } from "../../../packages/contracts/src/config";
+import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../packages/contracts/src/config";
 import type { ResumeDraftV2 } from "../../../packages/contracts/src/resume-draft";
-import { projectConfirmedResume } from "../../../packages/contracts/src/resume-draft";
+import { projectConfirmedResumeV3 } from "../../../packages/contracts/src/resume-draft";
 import type { AvatarStyleId, GenerationStatus } from "./lib/generationApi";
 import type { Offer, OwnedProject } from "./lib/paymentApi";
 import type { DraftField, ResumeDraft } from "./lib/resume";
@@ -65,8 +65,10 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<ResumeDraft | null>(null);
   const [agentDraft, setAgentDraft] = useState<ResumeDraftV2 | null>(null);
+  const [confirmedContent, setConfirmedContent] = useState<ResumeContent | null>(null);
   const [role, setRole] = useState<JobRole>("frontend-creative-developer");
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateId | null>(null);
   const [generated, setGenerated] = useState<DesignConfig | null>(null);
   const [isTouch, setIsTouch] = useState(false);
   const [share, setShare] = useState<{ id: string; url: string; expiresAt: number } | null>(null);
@@ -204,9 +206,10 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     let active = true;
     setProgress("正在读取已确认的简历草稿…");
     void resumeApi.read(match[1]).then(({ draft: nextDraft }) => {
-      projectConfirmedResume(nextDraft);
+      const content = projectConfirmedResumeV3(nextDraft);
       if (!active) return;
       setAgentDraft(nextDraft);
+      setConfirmedContent(content);
       setProgress("");
       setPhase("quiz");
     }).catch((cause) => {
@@ -244,6 +247,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     setFileName(file.name);
     setDraft(null);
     setAgentDraft(null);
+    setConfirmedContent(null);
+    setSelectedTemplate(null);
     setGenerated(null);
   };
 
@@ -399,10 +404,10 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   };
 
   const generate = async () => {
-    if ((!draft && !agentDraft) || !isAssessmentComplete(answers)) return;
+    if ((!draft && !agentDraft) || !selectedTemplate || (!agentDraft && !isAssessmentComplete(answers))) return;
     let confirmation: { problems: string[]; content?: ResumeContent };
     try {
-      confirmation = agentDraft ? { problems: [], content: projectConfirmedResume(agentDraft) }
+      confirmation = agentDraft ? { problems: [], content: projectConfirmedResumeV3(agentDraft) }
         : workflowSkills.runSync("resume.confirm.v3", { draft },
           { runtime: "browser", capabilities: { validateResumeDraft, toResumeContent } }) as
           { problems: string[]; content?: ResumeContent };
@@ -422,7 +427,9 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     setError("");
     setProgress(photoDataUrl ? "正在上传肖像，准备 Agent 工作流…" : "正在提交 Agent 工作流…");
     try {
-      const result = await generationApi.generatePortfolio(agentDraft ? {resumeId: agentDraft.resumeId, revision: agentDraft.revision,role,answers} : { role, answers, content },
+      const result = await generationApi.generatePortfolio(agentDraft
+        ? { resumeId: agentDraft.resumeId, revision: agentDraft.revision, role, templateId: selectedTemplate }
+        : { role, answers, content },
         avatarDemo && photoDataUrl ? { dataUrl: photoDataUrl, styleId: avatarStyle } : undefined,
         (status) => {
           if (version === generationVersion.current) setProgress(agentStatusText(status));
@@ -611,6 +618,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     setFileName("");
     setDraft(null);
     setAnswers({});
+    setConfirmedContent(null);
+    setSelectedTemplate(null);
     setPhotoDataUrl(null);
     setPhotoName("");
     setGenerated(null);
@@ -696,9 +705,10 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     error={error}
     draft={draft}
     hasConfirmedResume={Boolean(agentDraft)}
+    confirmedContent={confirmedContent}
     styleResumeId={styleResumeId}
     role={role}
-    answers={answers}
+    selectedTemplate={selectedTemplate}
     generated={generated}
     projectId={projectId}
     projectPaid={projectPaid}
@@ -729,6 +739,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     onConfirm={confirm}
     onRoleChange={setRole}
     onApplyAnswers={setAnswers}
+    onSelectTemplate={setSelectedTemplate}
     onGenerate={() => void generate()}
     onRunAvatarGeneration={() => { if (generated) void runAvatarGeneration(generated, true); }}
     onEditGenerated={editGenerated}

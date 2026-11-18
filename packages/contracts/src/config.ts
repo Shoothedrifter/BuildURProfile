@@ -1,4 +1,5 @@
 export type SkinId = "dark-tech" | "light-minimal" | "high-saturation";
+export type TemplateId = "cyber-creator-v1" | "warm-v1" | "minimal-v1" | "bold-v1";
 export type PaletteTone = "cool" | "neutral" | "warm" | "vivid";
 export type JobRole = "ui-ux-designer" | "frontend-creative-developer" | "brand-motion-copy";
 
@@ -105,4 +106,9 @@ export type DesignConfig = Readonly<{
   content: ResumeContent;
   /** Session-scoped asset in preview; embedded image in saved projects. */
   heroArtwork?: Readonly<{ assetUrl: string; styleId: string; alt: string }>;
+}>;
+
+export type DesignConfigV4 = DesignConfig & Readonly<{
+  templateId: TemplateId;
+  content: ResumeContent & Readonly<{ resume: StructuredResumeV3 }>;
 }>;

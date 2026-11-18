@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
-import type { DesignConfig, JobRole } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
 import type { DraftField, ResumeDraft } from "../lib/resume";
 import type { AvatarStyleId } from "../lib/generationApi";
@@ -48,6 +48,7 @@ const roles: Array<{ value: JobRole; label: string }> = [
 
 const stylePresets: Array<{
   id: StylePresetId;
+  templateId: TemplateId;
   label: string;
   description: string;
   tone: string;
@@ -55,6 +56,7 @@ const stylePresets: Array<{
 }> = [
   {
     id: "cyber",
+    templateId: "cyber-creator-v1",
     label: "赛博科技",
     description: "暗色舞台 / 立体视觉 / 紫色光感",
     tone: "3D / 未来",
@@ -71,6 +73,7 @@ const stylePresets: Array<{
   },
   {
     id: "warm",
+    templateId: "warm-v1",
     label: "温暖创意",
     description: "桃橙 / 描边 / 轻松表达",
     tone: "Aa / 你好",
@@ -87,6 +90,7 @@ const stylePresets: Array<{
   },
   {
     id: "minimal",
+    templateId: "minimal-v1",
     label: "理性简约",
     description: "留白 / 秩序 / 内容优先",
     tone: "Aa / 你好",
@@ -103,6 +107,7 @@ const stylePresets: Array<{
   },
   {
     id: "bold",
+    templateId: "bold-v1",
     label: "大胆实验",
     description: "对比 / 动态 / 个性探索",
     tone: "Aa / 你好",
@@ -167,7 +172,7 @@ function PortfolioSnapshot({ name, role, intro, project, photo, tone = "minimal"
     <small>{role.trim() || "个人作品集"}</small>
     <strong>{displayName}</strong>
     <h3>{intro.trim() || "用你的经历，讲述自己的故事。"}</h3>
-    <div className="proof-snapshot-avatar">{photo ? <img src={photo} alt="作品集头像预览" /> : <span aria-label="姓名首字头像">{[...displayName][0]}</span>}</div>
+    <div className="proof-snapshot-avatar">{photo || tone === "cyber" ? <img src={photo || "/cyber-creator-bust.webp"} alt={photo ? "作品集头像预览" : "赛博科技默认立体人物预览"} /> : <span aria-label="姓名首字头像">{[...displayName][0]}</span>}</div>
     <b>精选项目&nbsp; 01</b>
     <h4>{project.trim() || "你的精选项目"}</h4>
   </div>;
@@ -181,9 +186,10 @@ export type BuilderExperienceProps = {
   error: string;
   draft: ResumeDraft | null;
   hasConfirmedResume: boolean;
+  confirmedContent: ResumeContent | null;
   styleResumeId: string | null;
   role: JobRole;
-  answers: Record<string, number>;
+  selectedTemplate: TemplateId | null;
   generated: DesignConfig | null;
   projectId: string | null;
   projectPaid: boolean;
@@ -214,6 +220,7 @@ export type BuilderExperienceProps = {
   onConfirm: () => void;
   onRoleChange: (role: JobRole) => void;
   onApplyAnswers: (answers: Record<string, number>) => void;
+  onSelectTemplate: (templateId: TemplateId) => void;
   onGenerate: () => void;
   onRunAvatarGeneration: () => void;
   onEditGenerated: (update: (current: DesignConfig) => DesignConfig) => void;
@@ -232,13 +239,13 @@ export type BuilderExperienceProps = {
 export function BuilderExperience(props: BuilderExperienceProps) {
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [confirmModule, setConfirmModule] = useState<ConfirmModule>("basic");
-  const [selectedPreset, setSelectedPreset] = useState<StylePresetId | null>(null);
   const [publishConfirmed, setPublishConfirmed] = useState(false);
   const {
-    phase, fileName, selectedFile, progress, error, draft, role, answers, generated, isTouch, share, savedShares,
+    phase, fileName, selectedFile, progress, error, draft, role, generated, isTouch, share, savedShares,
     projects, projectId, projectPaid, offer, quotedAmountYuan, paymentIntent, shareSnapshot, resultError, exporting, photoDataUrl, photoName,
     avatarStyle, generatingAvatar, avatarDemo
   } = props;
+  const selectedPreset = stylePresets.find(preset => preset.templateId === props.selectedTemplate)?.id ?? null;
   useEffect(() => { if (phase === "result") setPublishConfirmed(false); }, [phase]);
   useEffect(() => { if (phase === "delivery" && share) setPublishConfirmed(true); }, [phase, share]);
 
@@ -256,10 +263,10 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     }, 0);
   };
   const applyPreset = (preset: (typeof stylePresets)[number]) => {
-    setSelectedPreset(preset.id);
-    props.onApplyAnswers(preset.answers);
+    props.onSelectTemplate(preset.templateId);
+    if (!props.hasConfirmedResume) props.onApplyAnswers(preset.answers);
   };
-  const isPresetSelected = (presetId: StylePresetId) => selectedPreset === presetId && Object.keys(answers).length === 8;
+  const isPresetSelected = (presetId: StylePresetId) => selectedPreset === presetId;
   const hasVisibleError = Boolean(error);
   const deliveryUnlocked = projectPaid || Boolean(projects.find((project) => project.id === projectId)?.paid);
   const styleResumeId = props.styleResumeId;
@@ -425,8 +432,8 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       <div className="proof-style-layout">
         <ProofCard as="section" className="proof-style-preview" aria-label="首屏实时预览">
           <h2>实时预览 / {stylePresets.find((preset) => preset.id === selectedPreset)?.label ?? "风格示意"}</h2>
-          <PortfolioSnapshot name={draft?.name.value ?? ""} role={roles.find((entry) => entry.value === role)?.label ?? ""}
-            intro={draft?.selfEvaluation[0]?.value ?? ""} project={draft?.projects[0]?.value ?? ""}
+          <PortfolioSnapshot name={draft?.name.value ?? props.confirmedContent?.profile.name ?? ""} role={roles.find((entry) => entry.value === role)?.label ?? ""}
+            intro={draft?.selfEvaluation[0]?.value ?? props.confirmedContent?.profile.summary ?? ""} project={draft?.projects[0]?.value ?? props.confirmedContent?.projects[0]?.title ?? ""}
             photo={photoDataUrl} tone={selectedPreset ?? "minimal"} />
           <p>首屏样张会随选择更新；完整网站以生成后的预览为准。</p>
         </ProofCard>
@@ -457,7 +464,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           if (match) window.location.assign(`/editor/${match[1]}`);
           else go("confirm");
         }}>← 返回资料</ProofButton>
-        <ProofButton variant="primary" disabled={!selectedPreset || generatingAvatar} onClick={props.onGenerate}>
+        <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar} onClick={props.onGenerate}>
           {generatingAvatar ? "正在生成作品…" : "生成我的 Showcase →"}
         </ProofButton>
       </div>

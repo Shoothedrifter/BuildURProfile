@@ -40,6 +40,9 @@ export function buildStaticHtml(config, javascript, css, mediaReader) {
   }
   const safeConfig = JSON.stringify(config).replace(/</g, "\\u003c");
   const safeImages = JSON.stringify(resumeImages).replace(/</g, "\\u003c");
+  const defaultPortrait = config.templateId === "cyber-creator-v1" && !config.heroArtwork
+    ? `data:image/webp;base64,${readFileSync(join(existsSync(join(process.cwd(), "packages/contracts/package.json")) ? process.cwd() : resolve(process.cwd(), "../.."), "apps/web/public/cyber-creator-bust.webp")).toString("base64")}`
+    : "";
   const safeJs = javascript.replace(/<\/script/gi, "<\\/script");
   const title = escapeHtml(config.content?.profile?.name ? `${config.content.profile.name} — BuildURProfile Showcase` : "BuildURProfile Showcase");
   return `<!doctype html>
@@ -48,7 +51,8 @@ export function buildStaticHtml(config, javascript, css, mediaReader) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src data:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>${title}</title><style>${css}</style></head><body><div id="root"></div>
 <script type="application/json" id="buildurprofile-config">${safeConfig}</script>
-<script type="application/json" id="buildurprofile-images">${safeImages}</script><script>${safeJs}</script></body></html>`;
+<script type="application/json" id="buildurprofile-images">${safeImages}</script>
+<script type="application/json" id="buildurprofile-default-portrait">${defaultPortrait}</script><script>${safeJs}</script></body></html>`;
 }
 
 function crc32(bytes) {

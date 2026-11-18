@@ -79,6 +79,18 @@ test("generation accepts a minimal confirmed brief and rejects PDF provenance or
       ...brief.content.profile, summary: "a".repeat(300000) } } }, idempotencyKey: "size" }), /过大|超过/);
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
+test("a saved template config keeps the v5 workflow for later portrait regeneration", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+  const root = mkdtempSync(join(tmpdir(), "burp-template-regenerate-"));
+  try {
+    const service = createGenerationService({ db, assetRoot: root });
+    const config = readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8");
+    const saved = JSON.parse(config).expected.config;
+    const task = service.enqueue("owner", { config: { ...saved, templateId: "cyber-creator-v1" }, idempotencyKey: "template-regeneration" });
+    assert.equal(db.prepare("SELECT workflow_version FROM generations WHERE id=?").get(task.id).workflow_version, "python-agent-v5");
+  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+});
 
 test("generation brief keeps project sourceText with the same shape as cleanConfig", () => {
   const db = openDatabase(":memory:");

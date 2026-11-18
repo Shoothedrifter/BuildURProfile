@@ -435,3 +435,16 @@ class GenerationBriefV3(GenerationBriefV1):
 
 class DesignConfigV3(DesignConfigV1):
     content: ResumeContentV3
+
+
+TemplateId = Literal["cyber-creator-v1", "warm-v1", "minimal-v1", "bold-v1"]
+
+
+class GenerationBriefV4(StrictModel):
+    role: Literal["ui-ux-designer", "frontend-creative-developer", "brand-motion-copy"]
+    templateId: TemplateId
+    content: ResumeContentV3
+
+
+class DesignConfigV4(DesignConfigV3):
+    templateId: TemplateId

@@ -2,7 +2,8 @@ import { ResumeDisplay, ResumeSupplement, type ResumeImageResolver } from './com
 import { resumeV1View, resumeDisplayContent } from '../../../packages/contracts/src/resume-v2.mjs';
 import { Fragment, useEffect, useState } from "react";
 import type { MouseEvent } from "react";
-import type { DesignConfig, ResumeEntry, SkinId, StructuredResumeV1 } from "../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4, ResumeEntry, SkinId, StructuredResumeV1 } from "../../../packages/contracts/src/config";
+import { CyberCreatorPage } from "./components/CyberCreatorPage";
 import { Marquee } from "./components/Marquee";
 import { StackedCards } from "./components/StackedCards";
 import { shouldAnimateMarquee } from "./lib/presentation";
@@ -45,7 +46,14 @@ function AdditionalModule({ title, entries, id }: { title: string; entries: read
   </section>;
 }
 
-export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}` }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; resolveResumeImage?: ResumeImageResolver }) {
+export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}`, defaultPortraitUrl }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; resolveResumeImage?: ResumeImageResolver; defaultPortraitUrl?: string }) {
+  if ((config as DesignConfigV4).templateId === "cyber-creator-v1" && config.content.resume?.version === "resume-v3") {
+    return <CyberCreatorPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} />;
+  }
+  return <LegacyShowcasePage config={config} allowSkinSwitch={allowSkinSwitch} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} resolveResumeImage={resolveResumeImage} />;
+}
+
+function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}` }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; resolveResumeImage?: ResumeImageResolver }) {
   const [skin, setSkin] = useState<SkinId>(config.skin);
   const [touchDetected, setTouchDetected] = useState(touchInput);
   const touchMode = touchDowngraded || touchDetected;

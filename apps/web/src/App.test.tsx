@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DesignConfig } from "../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4 } from "../../../packages/contracts/src/config";
+import { normalizeResumeDraft, projectConfirmedResumeV3 } from "../../../packages/contracts/src/resume-draft";
 import App from "./App";
 import { ShowcasePage } from "./ShowcasePage";
 import rawConfig from "./demo/config.json";
@@ -102,6 +103,73 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("submits an explicit cyber template from a confirmed Agent resume without preference answers", async () => {
+    window.history.replaceState(null, "", "/style/resume_synthetic");
+    const nextDraft = { ...normalizeResumeDraft(resumeDraftFixture), revision: 1 };
+    vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft: nextDraft,
+      revision: 1, expiresAt: "2026-12-09T00:00:00Z" });
+    const confirmed = projectConfirmedResumeV3(nextDraft);
+    vi.mocked(generationApi.generatePortfolio).mockResolvedValueOnce({ config: {
+      ...rawConfig, templateId: "cyber-creator-v1", content: confirmed
+    } as DesignConfigV4 });
+    try {
+      render(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
+      await screen.findByRole("heading", { name: "04 头像与网站风格" });
+      expect(screen.getByText("合成用户 / 个人作品集")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
+      expect(screen.getByRole("img", { name: "赛博科技默认立体人物预览" })).toBeInTheDocument();
+      expect(screen.queryAllByRole("radio")).toHaveLength(0);
+      fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+      expect(await screen.findByTestId("cyber-creator-page")).toBeInTheDocument();
+      expect(vi.mocked(generationApi.generatePortfolio).mock.calls[0][0]).toEqual({
+        resumeId: "resume_synthetic", revision: 1,
+        role: "frontend-creative-developer", templateId: "cyber-creator-v1"
+      });
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("keeps a supplemented project image attached through cyber editing and publication", async () => {
+    window.history.replaceState(null, "", "/style/resume_synthetic");
+    const nextDraft = normalizeResumeDraft(resumeDraftFixture);
+    const projectSection = nextDraft.sections.find(section => section.kind === "projects");
+    if (!projectSection) throw new Error("Synthetic project section missing");
+    const project = { itemId: "item_project", order: 0, title: "项目甲", details: "完整项目说明", facts: [],
+      sourceBlockIds: [], confidence: 1, segmentationConfidence: 1, needsReview: false, included: true,
+      origin: "user" as const, editedFields: [],
+      supplements: { text: "项目补充", links: [], images: [{ imageId: "image_synthetic", caption: "原图片说明" }] } };
+    projectSection.items.push(project);
+    vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft: nextDraft,
+      revision: nextDraft.revision, expiresAt: "2026-12-09T00:00:00Z" });
+    const content = projectConfirmedResumeV3(nextDraft);
+    vi.mocked(generationApi.generatePortfolio).mockResolvedValueOnce({ config: {
+      ...rawConfig, templateId: "cyber-creator-v1", content
+    } as DesignConfigV4 });
+    try {
+      render(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
+      await screen.findByRole("heading", { name: "04 头像与网站风格" });
+      fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
+      fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+      const showcase = await screen.findByTestId("cyber-creator-page");
+      expect(within(showcase).getByRole("img", { name: "原图片说明" })).toHaveAttribute("src", "/api/showcase-media/image_synthetic");
+      fireEvent.change(screen.getByRole("textbox", { name: "图片说明 1" }), { target: { value: "修改后的图片说明" } });
+      expect(within(showcase).getByRole("img", { name: "修改后的图片说明" })).toHaveAttribute("src", "/api/showcase-media/image_synthetic");
+      fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+      fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
+      await waitFor(() => expect(paymentApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
+        templateId: "cyber-creator-v1",
+        content: expect.objectContaining({ resume: expect.objectContaining({
+          sections: expect.arrayContaining([expect.objectContaining({ kind: "projects",
+            items: expect.arrayContaining([expect.objectContaining({ itemId: project.itemId,
+              supplement: expect.objectContaining({ images: [{ imageId: "image_synthetic", caption: "修改后的图片说明" }] }) })]) })])
+        }) })
+      })));
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
   it("shows the style loading state immediately on the style route", async () => {
     window.history.replaceState(null, "", "/style/resume_synthetic");
     vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft: resumeDraftFixture as never,
@@ -278,7 +346,8 @@ describe("showcase builder", () => {
     expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     await screen.findByRole("heading", { name: "05 网站预览与轻量编辑" });
-    expect(Object.keys(vi.mocked(generationApi.generatePortfolio).mock.calls[0][0].answers)).toHaveLength(8);
+    const firstBrief = vi.mocked(generationApi.generatePortfolio).mock.calls[0][0];
+    expect("answers" in firstBrief && Object.keys(firstBrief.answers)).toHaveLength(8);
   });
 
   it("keeps the style step visible when generation returns an incomplete config", async () => {
@@ -425,7 +494,7 @@ describe("showcase builder", () => {
 
   it("adds generated portrait to hero and offers delivery", async () => {
     vi.mocked(generationApi.generatePortfolio).mockImplementationOnce(async (brief) => ({
-      config: { ...styleToConfig(scoreAnswers(brief.answers), brief.role), content: "content" in brief ? brief.content : ({} as DesignConfig["content"]) },
+      config: { ...styleToConfig(scoreAnswers("answers" in brief ? brief.answers : {}), brief.role), content: "content" in brief ? brief.content : ({} as DesignConfig["content"]) },
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "动画肖像" }
     }));
     render(<App />);
