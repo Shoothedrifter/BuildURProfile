@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import type { DesignConfig, JobRole } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
@@ -26,7 +26,7 @@ export type DraftGroup = "basicInfo" | "jobIntent" | "selfEvaluation" | "workExp
 export type ReclassifyTarget = DraftGroup;
 export type DeliveryAction = "share" | "export";
 type ConfirmModule = "basic" | DraftGroup;
-type StylePresetId = "warm" | "minimal" | "bold";
+type StylePresetId = "warm" | "minimal" | "bold" | "cyber";
 
 const confirmationGroups: Array<{ key: DraftGroup; title: string; hint: string }> = [
   { key: "basicInfo", title: "更多基本信息", hint: "电话、所在地等默认不展示，请主动选择" },
@@ -54,6 +54,22 @@ const stylePresets: Array<{
   tone: string;
   answers: Record<string, number>;
 }> = [
+  {
+    id: "cyber",
+    label: "赛博科技",
+    description: "暗色舞台 / 立体视觉 / 紫色光感",
+    tone: "3D / 未来",
+    answers: {
+      "e-presence": 4,
+      "e-type": 4,
+      "k-pace": 3,
+      "k-cards": 3,
+      "p-tone": 0,
+      "p-strength": 3,
+      "s-browse": 2,
+      "s-control": 3
+    }
+  },
   {
     id: "warm",
     label: "温暖创意",
@@ -104,8 +120,9 @@ const stylePresets: Array<{
   }
 ];
 
-function AvatarPicker({ enabled, photoDataUrl, photoName, avatarStyle, generating, onPhoto, onStyle, onClear }: {
+function AvatarPicker({ enabled, name, photoDataUrl, photoName, avatarStyle, generating, onPhoto, onStyle, onClear }: {
   enabled: boolean;
+  name: string;
   photoDataUrl: string | null;
   photoName: string;
   avatarStyle: AvatarStyleId;
@@ -115,15 +132,15 @@ function AvatarPicker({ enabled, photoDataUrl, photoName, avatarStyle, generatin
   onClear: () => void;
 }) {
   return <ProofCard as="section" className="proof-avatar-card" aria-labelledby="avatar-heading">
-    <h2 id="avatar-heading">01 / 头像</h2>
-    <p>上传照片，使用原照或生成风格头像。</p>
+    <h2 id="avatar-heading">个人头像</h2>
+    <p>{[...(name.trim() || "你")][0]} · 姓名首字可直接使用，也可上传照片生成风格头像。</p>
     {enabled ? <>
       <label className="proof-avatar-upload">
         <span className="proof-avatar-placeholder">
-          {photoDataUrl ? <img src={photoDataUrl} alt="待生成的肖像照片预览" /> : "◯"}
+          {photoDataUrl ? <img src={photoDataUrl} alt="待生成的肖像照片预览" /> : [...(name.trim() || "你")][0]}
         </span>
         <strong>{photoDataUrl ? "重新选择照片" : "上传照片"}</strong>
-        <small>照片在点击生成前只保留在浏览器内存中</small>
+        <small>PNG、JPEG、WebP · 最多 10 MiB。点击生成前只保留在浏览器内存中。</small>
         <input aria-label="选择个人肖像照片" type="file" accept="image/png,image/jpeg,image/webp" onChange={onPhoto} />
       </label>
       {photoName && <p className="proof-file-name">{photoName}</p>}
@@ -136,10 +153,25 @@ function AvatarPicker({ enabled, photoDataUrl, photoName, avatarStyle, generatin
       {photoDataUrl && <ProofButton variant="quiet" aria-busy={generating || undefined} onClick={onClear}>移除照片</ProofButton>}
       <p className="proof-microcopy">图片生成会把照片发送给配置的图像供应商。</p>
     </> : <>
-      <span className="proof-avatar-placeholder" aria-hidden="true">◯</span>
+      <span className="proof-avatar-placeholder" aria-hidden="true">{[...(name.trim() || "你")][0]}</span>
       <p className="proof-muted">当前部署未启用头像生成，可跳过并在生成后继续编辑。</p>
     </>}
   </ProofCard>;
+}
+
+function PortfolioSnapshot({ name, role, intro, project, photo, tone = "minimal" }: {
+  name: string; role: string; intro: string; project: string; photo?: string | null; tone?: StylePresetId;
+}) {
+  const displayName = name.trim() || "你的名字";
+  return <div className={`proof-portfolio-snapshot proof-portfolio-snapshot--${tone}`}>
+    <span>{displayName} / 个人作品集</span>
+    <small>{role.trim() || "个人作品集"}</small>
+    <strong>{displayName}</strong>
+    <h3>{intro.trim() || "用你的经历，讲述自己的故事。"}</h3>
+    <div className="proof-snapshot-avatar">{photo ? <img src={photo} alt="作品集头像预览" /> : <span aria-label="姓名首字头像">{[...displayName][0]}</span>}</div>
+    <b>精选项目&nbsp; 01</b>
+    <h4>{project.trim() || "你的精选项目"}</h4>
+  </div>;
 }
 
 export type BuilderExperienceProps = {
@@ -186,6 +218,7 @@ export type BuilderExperienceProps = {
   onRunAvatarGeneration: () => void;
   onEditGenerated: (update: (current: DesignConfig) => DesignConfig) => void;
   onRequestDelivery: (action: DeliveryAction) => void;
+  onConfirmPublish: () => void;
   onStartPayment: () => void;
   onCheckEntitlement: () => void;
   onResumeProject: (project: OwnedProject) => void;
@@ -200,11 +233,14 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [confirmModule, setConfirmModule] = useState<ConfirmModule>("basic");
   const [selectedPreset, setSelectedPreset] = useState<StylePresetId | null>(null);
+  const [publishConfirmed, setPublishConfirmed] = useState(false);
   const {
     phase, fileName, selectedFile, progress, error, draft, role, answers, generated, isTouch, share, savedShares,
     projects, projectId, projectPaid, offer, quotedAmountYuan, paymentIntent, shareSnapshot, resultError, exporting, photoDataUrl, photoName,
     avatarStyle, generatingAvatar, avatarDemo
   } = props;
+  useEffect(() => { if (phase === "result") setPublishConfirmed(false); }, [phase]);
+  useEffect(() => { if (phase === "delivery" && share) setPublishConfirmed(true); }, [phase, share]);
 
   const go = (next: WorkflowPhase) => {
     props.onPhaseChange(next);
@@ -373,12 +409,20 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </section>}
 
     {phase === "quiz" && <section className="proof-step-page">
-      <StepHeader number={4} title="让你的风格，先开口介绍你" description="从头像到页面表达，选择一个与你的专业和个性都契合的方向。" />
+      <StepHeader number={4} title="04 头像与网站风格" description="头像可选；选择网站风格后查看首屏样张，再生成完整作品集。" />
       <div className="proof-style-layout">
-        <AvatarPicker enabled={avatarDemo} photoDataUrl={photoDataUrl} photoName={photoName} avatarStyle={avatarStyle}
+        <ProofCard as="section" className="proof-style-preview" aria-label="首屏实时预览">
+          <h2>实时预览 / {stylePresets.find((preset) => preset.id === selectedPreset)?.label ?? "风格示意"}</h2>
+          <PortfolioSnapshot name={draft?.name.value ?? ""} role={roles.find((entry) => entry.value === role)?.label ?? ""}
+            intro={draft?.selfEvaluation[0]?.value ?? ""} project={draft?.projects[0]?.value ?? ""}
+            photo={photoDataUrl} tone={selectedPreset ?? "minimal"} />
+          <p>首屏样张会随选择更新；完整网站以生成后的预览为准。</p>
+        </ProofCard>
+        <div className="proof-style-controls">
+        <AvatarPicker enabled={avatarDemo} name={draft?.name.value ?? ""} photoDataUrl={photoDataUrl} photoName={photoName} avatarStyle={avatarStyle}
           generating={generatingAvatar} onPhoto={props.onPhoto} onStyle={props.onAvatarStyle} onClear={props.onClearPhoto} />
         <ProofCard className="proof-style-card">
-          <h2>02 / 网站风格</h2>
+          <h2>网站风格</h2>
           <p>直接选择模板，或逐项完成 8 道偏好问题。模板会填入全部答案，之后仍可修改。</p>
           <div className="proof-style-options">
             {stylePresets.map((preset) => <button type="button" key={preset.id} className={isPresetSelected(preset.id) ? "is-selected" : ""}
@@ -406,6 +450,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           {progress && <p className="proof-status" role="status">{progress}</p>}
           {error && <p className="proof-inline-error" role="alert">{error}</p>}
         </ProofCard>
+        </div>
       </div>
       <div className="proof-actions">
         <ProofButton onClick={() => {
@@ -432,14 +477,14 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </section>}
 
     {phase === "result" && generated && <section className="proof-step-page">
-      <StepHeader number={5} title="你的经历，正在成为一件作品" description="预览真实的表达效果，调整内容和风格。满意之后，再决定发布。" />
+      <StepHeader number={5} title="05 网站预览与轻量编辑" description="草稿尚未公开。左侧预览完整网站，右侧调整内容；满意后再确认分享。" />
       <div className="proof-result-next">
         <div><p>STEP 5 / DELIVERY</p><strong>作品已生成。下一步选择分享或导出。</strong></div>
         <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>下一步：前往分享与付费 →</ProofButton>
       </div>
       {avatarDemo && <details className="proof-regenerate">
         <summary>更换头像或风格 →</summary>
-        <AvatarPicker enabled photoDataUrl={photoDataUrl} photoName={photoName} avatarStyle={avatarStyle} generating={generatingAvatar}
+        <AvatarPicker enabled name={generated.content.profile.name} photoDataUrl={photoDataUrl} photoName={photoName} avatarStyle={avatarStyle} generating={generatingAvatar}
           onPhoto={props.onPhoto} onStyle={props.onAvatarStyle} onClear={props.onClearPhoto} />
         <ProofButton variant="primary" disabled={!photoDataUrl || generatingAvatar} onClick={props.onRunAvatarGeneration}>
           {generatingAvatar ? "正在生成头像…" : "应用当前头像风格 →"}
@@ -447,15 +492,27 @@ export function BuilderExperience(props: BuilderExperienceProps) {
         {progress && <p className="proof-status" role="status">{progress}</p>}
       </details>}
       <div className="proof-result-layout">
-        <div className="proof-editor-column" id="proof-editor"><EditorPanel config={generated} onChange={props.onEditGenerated} isTouch={isTouch} /></div>
         <div className="proof-preview-column">
-          <div className="proof-preview-toolbar"><span>LIVE PREVIEW</span><ProofButton variant="quiet" onClick={props.onRestartQuiz}>重新作答</ProofButton></div>
+          <div className="proof-preview-toolbar"><span>草稿预览 · 尚未公开</span><ProofButton variant="quiet" onClick={props.onRestartQuiz}>重新作答</ProofButton></div>
           <div className="proof-preview-frame"><ShowcasePage config={generated} touchDowngraded={isTouch} /></div>
           <details className="proof-advanced">
             <summary>高级参数 / 调试信息 →</summary>
             <div className="proof-result-stats"><span>SKIN <strong>{generated.skin}</strong></span><span>SPEED <strong>{generated.marquee.speed} px/s</strong></span><span>PROJECTS <strong>{generated.content.projects.length}</strong></span></div>
             <pre data-testid="design-config-json">{JSON.stringify(generated, null, 2)}</pre>
           </details>
+        </div>
+        <div className="proof-editor-column" id="proof-editor">
+          <div className="proof-editor-actions">
+            <h2>调整你的网站</h2>
+            <p>下方可编辑展示内容与交互强度。修改会立即出现在左侧预览。</p>
+            <ProofButton onClick={() => {
+              const match = /^\/style\/([A-Za-z0-9_-]+)$/.exec(window.location.pathname);
+              if (match) window.location.assign(`/editor/${match[1]}`);
+              else go("confirm");
+            }}>返回编辑详细内容</ProofButton>
+            <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>发布并获取链接 →</ProofButton>
+          </div>
+          <EditorPanel config={generated} onChange={props.onEditGenerated} isTouch={isTouch} />
         </div>
       </div>
       {isTouch && <p className="proof-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
@@ -471,19 +528,29 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </section>}
 
     {phase === "delivery" && generated && <section className="proof-step-page">
-      <StepHeader number={6} title="让对的人，看见你的作品" description="按项目一次付费解锁发布与分享，导出免费。" />
+      <StepHeader number={6} title="06 分享确认与发布" description="发布前确认公开内容。当前项目按一次付款解锁分享，导出免费。" />
       <div className="proof-delivery-layout">
         <ProofCard className="proof-delivery-summary">
-          <h2>{generated.content.profile.name || "你的"} Showcase</h2>
-          <p>{generated.skin} · 桌面预览已就绪</p>
-          <strong>你的作品，已准备好出发。</strong>
-          <ul><li>✓ 免费生成、预览与编辑</li><li>✓ 发布网页并获取分享链接</li><li>✓ 导出下载作品文件</li></ul>
+          <h2>{publishConfirmed ? "已确认的作品集" : "即将公开的作品集"}</h2>
+          <PortfolioSnapshot name={generated.content.profile.name} role={generated.content.profile.role}
+            intro={generated.content.profile.intro || generated.content.profile.summary}
+            project={generated.content.projects[0]?.title ?? ""} photo={generated.heroArtwork?.assetUrl} />
+          <p>仅已选择展示的资料会进入公开网站。请核对姓名、介绍和项目。</p>
           <ProofButton onClick={() => go("result")}>返回预览，继续编辑</ProofButton>
           {deliveryUnlocked && <div className="proof-unlock-actions">
             <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>重新发布分享链接</ProofButton>
             <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>导出文件</ProofButton>
           </div>}
         </ProofCard>
+        {!publishConfirmed ? <ProofCard className="proof-unlock-card">
+          <h2>准备好公开分享了吗？</h2>
+          <p>拿到链接的人可以查看你选择公开的资料。分享链接有有效期，也可以提前撤销。</p>
+          <p>当前项目一次付款解锁发布与分享；同一项目更新无需重复付款。</p>
+          <div className="proof-unlock-actions">
+            <ProofButton variant="primary" disabled={exporting} onClick={() => { setPublishConfirmed(true); props.onConfirmPublish(); }}>确认并发布</ProofButton>
+            <ProofButton onClick={() => go("result")}>暂不分享，返回预览</ProofButton>
+          </div>
+        </ProofCard> :
         <ProofCard className="proof-unlock-card">
           <h2>解锁当前项目</h2>
           <p>单项目一次付费 · {offer?.shareDays ?? 7} 天分享链接</p>
@@ -499,8 +566,9 @@ export function BuilderExperience(props: BuilderExperienceProps) {
             <ProofButton disabled={exporting || !paymentIntent} onClick={props.onCheckEntitlement}>{exporting ? "正在检查…" : "检查已有权益"}</ProofButton>
           </div>
           <span className="proof-microcopy">支付渠道：支付宝 · 服务端确认权益后才能发布分享</span>
-        </ProofCard>
+        </ProofCard>}
       </div>
+      {publishConfirmed && <>
       <section className="proof-status-section" aria-labelledby="delivery-status-title">
         <h2 id="delivery-status-title">支付与交付状态</h2>
         <div className="proof-three-grid">
@@ -526,6 +594,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <a href={saved.url} target="_blank" rel="noopener noreferrer">打开分享 →</a>
           <ProofButton variant="quiet" aria-label={`删除分享 ${saved.id}`} onClick={() => props.onRemoveSavedShare(saved.id)}>删除</ProofButton></li>)}</ul>
       </ProofCard>}
+      </>}
       {resultError && <p className="proof-inline-error" role="alert">{resultError}</p>}
       <div className="proof-actions"><ProofButton onClick={() => go("result")}>← 返回预览</ProofButton></div>
     </section>}

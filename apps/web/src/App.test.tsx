@@ -61,7 +61,7 @@ async function reachStyle() {
   openUpload();
   await chooseAndParse();
   fireEvent.click(screen.getByRole("button", { name: /确认资料，选择风格/ }));
-  await screen.findByRole("heading", { name: "让你的风格，先开口介绍你" });
+  await screen.findByRole("heading", { name: "04 头像与网站风格" });
 }
 
 function answerAll(optionIndex = 0) {
@@ -75,7 +75,7 @@ async function reachResult(optionIndex = 0) {
   await reachStyle();
   answerAll(optionIndex);
   fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
-  await screen.findByRole("heading", { name: "你的经历，正在成为一件作品" });
+  await screen.findByRole("heading", { name: "05 网站预览与轻量编辑" });
 }
 
 beforeEach(() => {
@@ -112,7 +112,7 @@ describe("showcase builder", () => {
     vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig });
     try {
       render(<App />);
-      expect(await screen.findByRole("heading", { name: "让你的风格，先开口介绍你" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "04 头像与网站风格" })).toBeInTheDocument();
       expect(generationApi.resumeGeneration).not.toHaveBeenCalled();
       expect(screen.queryByTestId("design-config-json")).not.toBeInTheDocument();
     } finally {
@@ -127,7 +127,7 @@ describe("showcase builder", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "我的项目，共 1 个" }));
     fireEvent.click(screen.getByRole("button", { name: /继续编辑/ }));
-    expect(screen.getByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "我的项目，共 1 个" }));
     fireEvent.click(screen.getByRole("button", { name: /删除项目/ }));
     expect(screen.getByText(/分享链接.*失效/)).toBeInTheDocument();
@@ -253,7 +253,7 @@ describe("showcase builder", () => {
     answerAll();
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("作品配置不完整");
-    expect(screen.getByRole("heading", { name: "让你的风格，先开口介绍你" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "04 头像与网站风格" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "作品配置暂时不可用" })).not.toBeInTheDocument();
   });
 
@@ -263,7 +263,7 @@ describe("showcase builder", () => {
     expect(screen.getByRole("button", { name: /下一步：前往分享与付费/ })).toBeInTheDocument();
     fireEvent.click(screen.getByText("高级参数 / 调试信息 →"));
     expect(screen.getByTestId("design-config-json")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
   });
 
   it("keeps the latest PDF when an older extraction finishes afterwards", async () => {
@@ -312,25 +312,25 @@ describe("showcase builder", () => {
     await act(async () => finish({ config: rawConfig as DesignConfig, heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "已移除肖像" } }));
     await waitFor(() => expect(screen.queryByAltText("已移除肖像")).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
-    expect(await screen.findByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
   });
 
   it("can regenerate a restored avatar while keeping edits to the current config", async () => {
     const oldArtwork = { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "旧肖像" };
     vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig, heroArtwork: oldArtwork });
-    vi.mocked(generationApi.generateAvatar).mockResolvedValueOnce({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789013", styleId: "yellow-hair-doodle", alt: "新肖像" });
+    vi.mocked(generationApi.generateAvatar).mockResolvedValueOnce({ assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789013", styleId: "lofi-print-anime", alt: "新肖像" });
     render(<App />);
     await screen.findByAltText("旧肖像");
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
     fireEvent.click(screen.getByText("更换头像或风格 →"));
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "new.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
-    fireEvent.click(screen.getByRole("button", { name: /明黄发丝涂鸦/ }));
+    fireEvent.click(screen.getByRole("button", { name: /低清晰印刷感动漫/ }));
     fireEvent.click(screen.getByRole("button", { name: /应用当前头像风格/ }));
     expect(await screen.findByAltText("新肖像")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
     expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].content.profile.name).toBe("Edited Person");
-    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][1]).toBe("yellow-hair-doodle");
+    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][1]).toBe("lofi-print-anime");
     expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].heroArtwork).toBeUndefined();
   });
 
@@ -339,19 +339,22 @@ describe("showcase builder", () => {
       heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "恢复的动画肖像" } });
     render(<App />);
     expect(await screen.findByAltText("恢复的动画肖像")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
   });
   it("restores a completed no-photo Agent task after refresh", async () => {
     vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config: rawConfig as DesignConfig });
     render(<App />);
     const json = await screen.findByTestId("design-config-json");
     expect((JSON.parse(json.textContent ?? "") as DesignConfig).content.profile.name).toBe("Alex Morgan");
-    expect(screen.getByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
   });
-  it("offers three portrait styles and keeps the photo local until Generate", async () => {
+  it("offers two portrait styles and keeps the photo local until Generate", async () => {
     render(<App />);
     await reachStyle();
-    expect(screen.getAllByRole("button", { name: /复古扁平动画头|明黄发丝涂鸦|低清晰印刷感动漫/ })).toHaveLength(3);
+    expect(screen.getByText(/实时预览/)).toBeInTheDocument();
+    expect(screen.getByText(/黄琬斐 \/ 个人作品集/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /复古扁平动画头|低清晰印刷感动漫/ })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /明黄发丝涂鸦/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /蜡笔极简扁平画/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /颗粒绒感玩偶/ })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
@@ -359,6 +362,30 @@ describe("showcase builder", () => {
     expect(generationApi.generateAvatar).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
     expect(screen.queryByAltText("待生成的肖像照片预览")).not.toBeInTheDocument();
+  });
+
+  it("offers the cyber technology template and carries it into the generated showcase", async () => {
+    render(<App />);
+    await reachStyle();
+    fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
+    expect(screen.getByRole("button", { name: /赛博科技/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("heading", { name: "实时预览 / 赛博科技" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    const page = await screen.findByTestId("showcase-page");
+    expect(page).toHaveAttribute("data-skin", "dark-tech");
+    expect(within(page).getByLabelText("赛博科技立体视觉")).toBeInTheDocument();
+  });
+
+  it("asks for public-share confirmation before creating or publishing a project", async () => {
+    render(<App />);
+    await reachResult();
+    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    expect(screen.getByRole("heading", { name: "准备好公开分享了吗？" })).toBeInTheDocument();
+    expect(paymentApi.createProject).not.toHaveBeenCalled();
+    expect(paymentApi.publish).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "暂不分享，返回预览" }));
+    expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
+    expect(paymentApi.createProject).not.toHaveBeenCalled();
   });
 
   it("adds generated portrait to hero and offers delivery", async () => {
@@ -387,7 +414,7 @@ describe("showcase builder", () => {
     await screen.findByText("图像服务暂不可用");
     fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
-    expect(await screen.findByRole("heading", { name: "你的经历，正在成为一件作品" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
   });
   it("shows the local avatar controls in a tunnel production build", async () => {
     vi.stubEnv("MODE", "tunnel");
@@ -518,6 +545,7 @@ describe("showcase builder", () => {
     expect(after.marquee.speed).toBeGreaterThan(before.marquee.speed);
     expect(after.stackedCards.scaleStep).toBeGreaterThan(before.stackedCards.scaleStep);
     fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await waitFor(() => expect(paymentApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.objectContaining({ profile: expect.objectContaining({ name: "Edited Person" }) }),
       marquee: expect.objectContaining({ speed: after.marquee.speed }),
@@ -561,6 +589,7 @@ describe("showcase builder", () => {
     render(<App />);
     await reachResult();
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("paid-project"));
     fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalledWith("paid-project"));
@@ -572,6 +601,7 @@ describe("showcase builder", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledTimes(2));
     expect(paymentApi.createProject).toHaveBeenCalledTimes(1);
     expect(paymentApi.updateProject).toHaveBeenCalledWith("paid-project", expect.any(Object));
@@ -587,7 +617,7 @@ describe("showcase builder", () => {
       window.history.replaceState(null, "", "/payment/return?project_id=return-project&trade_status=success");
       render(<App />);
       await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("return-project"));
-      expect(screen.getByRole("heading", { name: "让对的人，看见你的作品" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "06 分享确认与发布" })).toBeInTheDocument();
     } finally { window.history.replaceState(null, "", original); }
   });
 
@@ -599,7 +629,7 @@ describe("showcase builder", () => {
     try {
       window.history.replaceState(null, "", "/payment/return?project_id=return-project");
       render(<App />);
-      expect(await screen.findByRole("heading", { name: "让对的人，看见你的作品" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "06 分享确认与发布" })).toBeInTheDocument();
       expect(screen.getByRole("alert")).toHaveTextContent("查单暂不可用");
       expect(paymentApi.publish).not.toHaveBeenCalled();
     } finally { window.history.replaceState(null, "", original); }
@@ -621,10 +651,12 @@ describe("showcase builder", () => {
     render(<App />);
     await reachResult();
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await screen.findByRole("heading", { name: "解锁当前项目" });
     fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "支付前改名" } });
     fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await screen.findByRole("heading", { name: "解锁当前项目" });
     fireEvent.click(screen.getByRole("button", { name: /前往支付宝沙箱收银台/ }));
     await waitFor(() => expect(paymentApi.updateProject).toHaveBeenCalledWith("project-1",
@@ -642,6 +674,8 @@ describe("showcase builder", () => {
     await waitFor(() => expect(page).toHaveAttribute("data-skin", "light-minimal"));
     fireEvent.click(screen.getByRole("button", { name: /high saturation/i }));
     expect(page).toHaveAttribute("data-skin", "high-saturation");
+    fireEvent.click(screen.getByRole("button", { name: "赛博科技" }));
+    expect(page).toHaveAttribute("data-skin", "dark-tech");
   });
 
   it("shows campus activities under their own heading in the showcase", () => {

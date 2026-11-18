@@ -7,6 +7,13 @@ import { ShowcasePage } from "./ShowcasePage";
 const defaultConfig = rawConfig as DesignConfig;
 
 describe("ShowcasePage image content", () => {
+  it("renders an abstract 3D focal point without inventing a portrait", () => {
+    const { container } = render(<ShowcasePage config={{ ...defaultConfig, heroArtwork: undefined }} />);
+    const stage = screen.getByLabelText("赛博科技立体视觉");
+    expect(stage).toBeInTheDocument();
+    expect(stage.querySelector("img")).toBeNull();
+    expect(container.querySelector(".hero h1")).toHaveAttribute("aria-label", defaultConfig.content.profile.name);
+  });
   it("matches confirmed awards and other content while omitting an empty project module", () => {
     const config: DesignConfig = {
       ...defaultConfig,

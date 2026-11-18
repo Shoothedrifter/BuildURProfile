@@ -31,7 +31,7 @@ test("offline export runs the shared showcase with embedded portrait and safe co
     await new Promise((resolve) => setTimeout(resolve, 150));
     assert.equal(errors.length, 0, errors.map(String).join("\n"));
     assert.equal(dom.window.document.querySelector(".showcase-page")?.dataset.skin, cleaned.skin);
-    assert.equal(dom.window.document.querySelector(".hero-artwork img")?.getAttribute("src"), cleaned.heroArtwork.assetUrl);
+    assert.equal(dom.window.document.querySelector(".cyber-stage img")?.getAttribute("src"), cleaned.heroArtwork.assetUrl);
     assert.equal(dom.window.document.querySelector("#hero-title")?.getAttribute("aria-label"), cleaned.content.profile.name);
     const next = dom.window.document.querySelector('[aria-label="Next project"]');
     assert.ok(next);
