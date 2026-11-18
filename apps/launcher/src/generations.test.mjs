@@ -318,7 +318,7 @@ test("generation enqueue is idempotent and owner-only", () => {
     assert.equal(service.enqueue("a", { portraitAssetId: asset.id, styleId: "retro-flat-anime-head", idempotencyKey: "first" }).id, task.id);
     assert.equal(service.getTask("a", task.id).status, "QUEUED");
     assert.throws(() => service.getTask("b", task.id), /不存在|无权/);
-    assert.throws(() => service.enqueue("a", { portraitAssetId: asset.id, styleId: "other", idempotencyKey: "second" }), /未知肖像风格/);
+    assert.throws(() => service.enqueue("a", { portraitAssetId: asset.id, styleId: "yellow-hair-doodle", idempotencyKey: "second" }), /未知肖像风格/);
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 

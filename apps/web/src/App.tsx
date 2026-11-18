@@ -493,12 +493,13 @@ export default function App() {
     }
   };
 
-  const requestDelivery = async (action: DeliveryAction) => {
+  const requestDelivery = async (action: DeliveryAction, confirmed = false) => {
     if (!generated || exporting) return;
     if (action === "share") {
       setPaymentIntent(action);
       setPhase("delivery");
       window.scrollTo({ top: 0, behavior: "instant" });
+      if (!confirmed) return;
     }
     setExporting(true);
     setResultError("");
@@ -728,6 +729,7 @@ export default function App() {
     onRunAvatarGeneration={() => { if (generated) void runAvatarGeneration(generated, true); }}
     onEditGenerated={editGenerated}
     onRequestDelivery={(action) => void requestDelivery(action)}
+    onConfirmPublish={() => void requestDelivery("share", true)}
     onStartPayment={() => void startPayment()}
     onCheckEntitlement={() => void checkEntitlement()}
     onResumeProject={resumeProject}

@@ -10,7 +10,7 @@ BuildURProfile 将文本型 PDF 简历转成桌面优先的交互式作品网页
 ## 展示与测评
 
 - 用户角色为 UI/UX 设计师、前端/创意开发、品牌/动效/文案三类。
-- 固定 Marquee + StackedCards 骨架；三种皮肤为 `dark-tech`、`light-minimal`、`high-saturation`。个性化只调整允许的参数与 Design Tokens。
+- 固定 Marquee + StackedCards 骨架；三种皮肤为 `dark-tech`（界面名称“赛博科技”）、`light-minimal`、`high-saturation`。个性化只调整允许的参数与 Design Tokens。“赛博科技”参考 MotionSites 的 3D Jack Portfolio 方向，使用本项目实现的暗色、紫色光感和 CSS 立体视觉；可选的用户肖像取代抽象视觉，不内嵌第三方人物素材或 prompt。生成任务不调用 MotionSites MCP。
 - 八题产生 E/K/P/S 四个归一化分数，并保留离散的 `PChoice`。E 控制表现程度，K 控制动效，P 表示视觉基调，S 表示浏览与操控倾向；P 不是可随意插值的色相。
 - 网页、编辑器与导出产物使用受校验的 `DesignConfig`。文案以文本节点渲染，不接收可执行页面代码。
 - 支持键盘操作、焦点可见性和 `prefers-reduced-motion`；触屏应提供可点击的操作方式。

@@ -9,7 +9,7 @@ import { shouldAnimateMarquee } from "./lib/presentation";
 import { resumeEntryPresentation } from "./lib/resumePresentation";
 
 const skinOptions: { id: SkinId; label: string; short: string }[] = [
-  { id: "dark-tech", label: "Dark tech", short: "01" },
+  { id: "dark-tech", label: "赛博科技", short: "01" },
   { id: "light-minimal", label: "Light minimal", short: "02" },
   { id: "high-saturation", label: "High saturation", short: "03" }
 ];
@@ -82,6 +82,9 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
   const nameParts = profile.name.trim().split(/\s+/);
   const firstName = nameParts[0] ?? "";
   const restOfName = nameParts.slice(1).join(" ");
+  const isCyber = skin === "dark-tech";
+  const artwork = config.heroArtwork && /^(?:\/api\/hero-assets\/[0-9a-f-]{36}|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(config.heroArtwork.assetUrl)
+    ? config.heroArtwork : undefined;
 
   useEffect(() => setSkin(config.skin), [config.skin]);
   useEffect(() => {
@@ -118,16 +121,31 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
       <main id="top">
         <section className="hero page-container" aria-labelledby="hero-title">
           <div className="hero-meta">{profile.role.trim() && <span>{profile.role}</span>}<span>PROFILE / {new Date().getFullYear()}</span></div>
-          <div className={config.heroArtwork ? "hero-content hero-content--artwork" : "hero-content"}>
+          {isCyber ? <div className="hero-content hero-content--cyber">
+            <div className="cyber-intro">
+              <p className="hero-eyebrow"><span className="hero-eyebrow-line" /> CYBER / PROFILE</p>
+              <h1 id="hero-title" aria-label={profile.name}><span>{firstName}</span>{restOfName && <span className="hero-last">{restOfName}</span>}</h1>
+              {profile.intro.trim() && <p className="cyber-tagline">{profile.intro}</p>}
+              <div className="cyber-hero-links">
+                {visibleProjects.length > 0 && <a href="#work">查看项目 <span aria-hidden="true">↗</span></a>}
+                {profile.email.trim() && <a href={`mailto:${profile.email}`}>联系我 <span aria-hidden="true">↗</span></a>}
+              </div>
+            </div>
+            <div className="cyber-stage" role="group" aria-label="赛博科技立体视觉">
+              <div className="cyber-stage-halo" aria-hidden="true" />
+              <div className="cyber-stage-grid" aria-hidden="true" />
+              {artwork ? <img src={artwork.assetUrl} alt={artwork.alt} /> : <div className="cyber-stage-core" aria-hidden="true"><span /></div>}
+              <div className="cyber-stage-orbit" aria-hidden="true" />
+            </div>
+          </div> : <div className={config.heroArtwork ? "hero-content hero-content--artwork" : "hero-content"}>
             <div>
               <p className="hero-eyebrow"><span className="hero-eyebrow-line" /> PROFILE</p>
               <h1 id="hero-title" aria-label={profile.name}><span>{firstName}</span>{restOfName && <span className="hero-last">{restOfName}</span>}</h1>
             </div>
-            {config.heroArtwork && /^(?:\/api\/hero-assets\/[0-9a-f-]{36}|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(config.heroArtwork.assetUrl) &&
-              <figure className="hero-artwork"><img src={config.heroArtwork.assetUrl} alt={config.heroArtwork.alt} /><figcaption>{config.heroArtwork.styleId.replaceAll("-", " ")}</figcaption></figure>}
+            {artwork && <figure className="hero-artwork"><img src={artwork.assetUrl} alt={artwork.alt} /><figcaption>{artwork.styleId.replaceAll("-", " ")}</figcaption></figure>}
             <div className={config.heroArtwork && !profile.intro ? "hero-aside hero-aside--empty" : "hero-aside"}><div className="hero-stamp" aria-hidden="true"><span>WORK<br />IN<br />MOTION</span><span className="stamp-arrow">↗</span></div>{profile.intro && <p>{profile.intro}</p>}</div>
-          </div>
-          <div className="hero-bottom"><div className="hero-identity">{(profile.role.trim() || profile.location.trim()) && <p>{profile.role}{profile.role.trim() && profile.location.trim() && <br />}{profile.location.trim() && <span>{profile.location}</span>}</p>}{profile.availability.trim() && <p className="hero-availability">{profile.availability}</p>}</div><div className="hero-links">{visibleProjects.length > 0 && <a className="hero-project-link" href="#work">查看项目 ↗</a>}<a className="scroll-hint" href={exploreTarget}>EXPLORE <span>↓</span></a></div></div>
+          </div>}
+          <div className="hero-bottom"><div className="hero-identity">{(profile.role.trim() || profile.location.trim()) && <p>{profile.role}{profile.role.trim() && profile.location.trim() && <br />}{profile.location.trim() && <span>{profile.location}</span>}</p>}{profile.availability.trim() && <p className="hero-availability">{profile.availability}</p>}</div><div className="hero-links">{!isCyber && visibleProjects.length > 0 && <a className="hero-project-link" href="#work">查看项目 ↗</a>}<a className="scroll-hint" href={exploreTarget}>EXPLORE <span>↓</span></a></div></div>
         </section>
 
         {showMarquee && <section className="ticker-section" aria-label="Skills highlights">
