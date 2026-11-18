@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "../../../packages/storage/src/database.mjs";
@@ -70,6 +70,29 @@ test("internal Agent bridge requires token and leases only the versioned public 
     assert.equal(generationService.getTask("owner", cancelling.id).status, "CANCELLED");
   } finally {
     await new Promise((resolve) => server.close(resolve));
+    db.close(); rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("internal Agent bridge leases a queued v5 template generation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "burp-v5-bridge-"));
+  const db = openDatabase(join(root, "app.sqlite"));
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
+  const generationService = createGenerationService({ db, assetRoot: join(root, "assets"), allowPortraits: false });
+  const fixture = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const task = generationService.enqueue("owner", { config: { ...fixture.expected.config, templateId: "cyber-creator-v1" }, idempotencyKey: "v5-lease" });
+  const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: false,
+    agentToken: token, secret: Buffer.alloc(32, 7) });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await post(`http://127.0.0.1:${server.address().port}`, "/_internal/agent/lease", { workerId: "python-v5" });
+    assert.equal(response.status, 200);
+    const leased = await response.json();
+    assert.equal(leased.id, task.id);
+    assert.equal(leased.workflowVersion, "python-agent-v5");
+    assert.equal(generationService.getTask("owner", task.id).status, "RUNNING");
+  } finally {
+    await new Promise(resolve => server.close(resolve));
     db.close(); rmSync(root, { recursive: true, force: true });
   }
 });
