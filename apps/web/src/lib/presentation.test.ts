@@ -32,9 +32,22 @@ describe("showcase presentation", () => {
     ]);
   });
 
-  it("uses neutral preview text if the description has no reliable overview marker", () => {
+  it("falls back to the whole unlabeled description as the card overview", () => {
     const source = "Built with google/byt5-base and checked against BLEU. Full research detail remains here.";
-    expect(projectPreview(source)).toEqual({ overview: "", overviewIsExcerpt: false, points: [] });
+    expect(projectPreview(source)).toEqual({ overview: source, overviewIsExcerpt: false, points: [] });
+  });
+
+  it("collapses multiline unlabeled details into a single-line overview", () => {
+    const preview = projectPreview("- 第一行要点\n- 第二行要点\n- 第三行要点");
+    expect(preview.overview).toBe("- 第一行要点 - 第二行要点 - 第三行要点");
+    expect(preview.overviewIsExcerpt).toBe(false);
+  });
+
+  it("excerpts an unlabeled overview longer than the card limit", () => {
+    const source = "无标签的自由正文应当被节选。".repeat(40);
+    const preview = projectPreview(source);
+    expect(preview.overview.length).toBeLessThan(source.length);
+    expect(preview.overviewIsExcerpt).toBe(true);
   });
 
   it("keeps long skill statements out of the animated track without truncating their text", () => {

@@ -44,8 +44,10 @@ export function projectPreview(description: string): ProjectPreview {
     label: match[1],
     text: description.slice(match.index! + match[0].length, matches[index + 1]?.index ?? description.length).trim()
   }));
-  const overviewSource = segments.find((segment) => overviewLabels.has(segment.label) && segment.text);
-  const overview = overviewSource ? excerpt(overviewSource.text, 175) : { text: "", isExcerpt: false };
+  // 完全无分段标签时（新流程 Agent 总结为自由正文），整段降级为概述；出现任何标签则维持旧解析
+  const overviewText = segments.find((segment) => overviewLabels.has(segment.label) && segment.text)?.text
+    ?? (matches.length === 0 && description.trim() ? description.replace(/\s+/gu, " ").trim() : "");
+  const overview = overviewText ? excerpt(overviewText, 175) : { text: "", isExcerpt: false };
   const points = segments.filter((segment) => pointLabels.has(segment.label) && segment.text).slice(0, 2)
     .map((segment) => ({ label: segment.label, ...excerpt(segment.text, 120) }));
   return { overview: overview.text, overviewIsExcerpt: overview.isExcerpt, points };

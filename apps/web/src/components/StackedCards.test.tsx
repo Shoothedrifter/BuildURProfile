@@ -39,7 +39,10 @@ describe("StackedCards", () => {
     expect(screen.getByRole("heading", { name: "Second project" })).toBeVisible();
     expect(screen.getByRole("link", { name: /查看项目链接/ })).toHaveAttribute("href", "https://github.com/example/repo");
     expect(screen.queryByText("https://github.com/example/repo")).not.toBeInTheDocument();
-    expect(screen.getByText("完整说明请查看项目详情")).toBeVisible();
+    // 无标签自由正文：卡面概述与展开体全文各显示一处（与 ResumeDisplay 的重复展示口径一致）
+    const summaries = screen.getAllByText("No structured introduction, but this complete text must remain readable.");
+    expect(summaries).toHaveLength(2);
+    expect(summaries[0]).toBeVisible();
     fireEvent.keyDown(deck, { key: "ArrowLeft" });
     expect(screen.getByRole("heading", { name: longTitle })).toBeVisible();
     rerender(<StackedCards {...props} scaleStep={0.2} offsetStep={40} />);
