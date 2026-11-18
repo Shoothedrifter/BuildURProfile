@@ -52,10 +52,13 @@ function isRenderableConfig(value: DesignConfig | null | undefined): value is De
   return Boolean(value?.content && value.marquee && value.stackedCards && value.styleVector);
 }
 
-export default function App() {
+export default function App({ initialPhase = "landing", styleResumeId = null }: {
+  initialPhase?: WorkflowPhase;
+  styleResumeId?: string | null;
+}) {
   const avatarDemo = isAvatarDemoEnabled();
   const [shareView, setShareView] = useState<{ requested: boolean; config: DesignConfig | null; loading: boolean }>({ requested: false, config: null, loading: false });
-  const [phase, setPhase] = useState<WorkflowPhase>("landing");
+  const [phase, setPhase] = useState<WorkflowPhase>(initialPhase);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
   const [progress, setProgress] = useState("");
@@ -692,6 +695,8 @@ export default function App() {
     progress={progress}
     error={error}
     draft={draft}
+    hasConfirmedResume={Boolean(agentDraft)}
+    styleResumeId={styleResumeId}
     role={role}
     answers={answers}
     generated={generated}
@@ -723,7 +728,6 @@ export default function App() {
     onReclassify={reclassify}
     onConfirm={confirm}
     onRoleChange={setRole}
-    onAnswer={(questionId, optionIndex) => setAnswers((previous) => ({ ...previous, [questionId]: optionIndex }))}
     onApplyAnswers={setAnswers}
     onGenerate={() => void generate()}
     onRunAvatarGeneration={() => { if (generated) void runAvatarGeneration(generated, true); }}
@@ -738,7 +742,6 @@ export default function App() {
     onRemoveShare={() => void removeShare()}
     onRemoveSavedShare={(id) => void removeSavedShare(id)}
     onRestartQuiz={() => {
-      setAnswers({});
       setError("");
       setPhase("quiz");
       window.scrollTo({ top: 0, behavior: "instant" });

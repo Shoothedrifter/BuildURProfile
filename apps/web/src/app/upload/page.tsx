@@ -162,7 +162,9 @@ export default function UploadPage() {
   const parsing = Boolean(resumeId && stage);
   const activeStep = stage ? (STAGE_STEP[stage] ?? 2) : 2;
 
-  return <AgentChrome phase="upload" backHref="/" backLabel="← 返回首页">
+  return <AgentChrome phase="upload" backHref="/" backLabel="← 返回首页"
+    steps={{ 1: { onClick: () => window.scrollTo({ top: 0, behavior: "instant" }) },
+      ...(doneResumeId ? { 2: { href: `/editor/${encodeURIComponent(doneResumeId)}` } } : {}) }}>
     <section className="proof-step-page">
       <StepHeader number={1} title="上传你的简历" description="支持 PDF，让 AI 帮你整理经历与项目。" />
       <ProofCard className="proof-upload-card" onDragOver={(event) => event.preventDefault()}

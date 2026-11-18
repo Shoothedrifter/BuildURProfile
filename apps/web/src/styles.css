@@ -557,6 +557,14 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-progress li span { margin-right: 3px; }
 .proof-progress li.is-active { color: var(--proof-ink); font-weight: 700; }
 .proof-progress li.is-done { color: #4f4b48; }
+.proof-progress li > button, .proof-progress li > a {
+  display: inline-block; padding: 3px 5px; margin: -3px -5px; color: inherit;
+  background: transparent; border: 0; border-radius: 4px; font: inherit; text-decoration: none;
+  cursor: pointer;
+}
+.proof-progress li > button:hover, .proof-progress li > a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.proof-progress li > button:focus-visible, .proof-progress li > a:focus-visible { outline: 2px solid var(--proof-ink); outline-offset: 3px; }
+.proof-progress-unavailable { cursor: not-allowed; opacity: .55; }
 .proof-step-shell { display: none; }
 .proof-step-page, .proof-landing { width: min(100%, 1296px); margin-inline: auto; }
 .proof-landing { width: min(100%, 1360px); display: grid; gap: 32px; }
@@ -814,20 +822,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-style-options button > span { color: var(--proof-muted); font-size: 13px; line-height: 1.5; }
 .proof-role-select { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-block: 18px; border-block: 1px solid #d8c9c0; color: var(--proof-ink); font-size: 15px; font-weight: 700; }
 .proof-role-select select { width: min(100%, 360px); background: var(--proof-surface); }
-.proof-question-heading { display: flex; justify-content: space-between; align-items: end; gap: 20px; }
-.proof-question-heading h2 { margin: 0 0 4px; font-size: 24px; }
-.proof-question-heading p { color: var(--proof-muted); font-size: 14px; }
-.proof-question-heading > strong { font-size: 18px; }
-.proof-question-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.proof-question { min-width: 0; margin: 0; padding: 20px; border: 1px solid #d8c9c0; background: #fffaf7; }
-.proof-question legend { width: 100%; float: left; display: flex; gap: 10px; padding: 0; margin-bottom: 15px; font-size: 15px; font-weight: 700; line-height: 1.55; }
-.proof-question legend span { color: var(--proof-muted); font: 500 11px/2.1 ui-monospace, monospace; }
-.proof-question > div { display: grid; gap: 6px; clear: both; }
-.proof-question label { min-height: 42px; padding: 8px 10px; display: flex; align-items: center; gap: 9px; border: 1px solid #d8c9c0; background: var(--proof-surface); color: var(--proof-muted); font-size: 12px; line-height: 1.5; cursor: pointer; }
-.proof-question label.is-selected { border-color: var(--proof-line); background: var(--proof-accent); color: var(--proof-ink); font-weight: 700; }
-.proof-question input { width: 15px; height: 15px; flex: none; accent-color: var(--proof-ink); }
-.proof-question label span { flex: 1; }
-.proof-question label b { font-size: 15px; font-weight: 400; }
 .proof-note, .proof-status { margin: 0; padding: 12px 14px; border-left: 3px solid var(--proof-line); background: var(--proof-accent-soft); color: var(--proof-muted); font-size: 12px; line-height: 1.6; }
 
 .proof-result-layout {
@@ -1029,10 +1023,9 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .proof-confirm-editor { min-height: 0; }
   .proof-form-stack { gap: 16px; }
   .proof-entry-top { align-items: flex-start; flex-direction: column; }
-  .proof-style-options, .proof-question-list { grid-template-columns: minmax(0, 1fr); }
+  .proof-style-options { grid-template-columns: minmax(0, 1fr); }
   .proof-role-select { align-items: stretch; flex-direction: column; }
   .proof-role-select select { width: 100%; max-width: none; }
-  .proof-question-heading { align-items: flex-start; flex-direction: column; }
   .proof-result-layout { margin-top: 20px; }
   .proof-result-next { align-items: stretch; flex-direction: column; }
   .proof-result-next .proof-button { width: 100%; }

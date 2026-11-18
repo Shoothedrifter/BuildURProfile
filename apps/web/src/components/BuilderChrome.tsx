@@ -15,6 +15,8 @@ const phaseStep: Record<Exclude<WorkflowPhase, "landing" | "mock">, number> = {
   delivery: 5
 };
 
+export type WorkflowStepTarget = { href?: string; onClick?: () => void };
+
 type ProofButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "quiet";
 };
@@ -31,14 +33,21 @@ export function ProofCard({ children, className = "", as: Tag = "div", ...props 
   return <Tag className={`proof-card ${className}`.trim()} {...props}>{children}</Tag>;
 }
 
-export function WorkflowProgress({ phase }: { phase: WorkflowPhase }) {
+export function WorkflowProgress({ phase, targets = {} }: {
+  phase: WorkflowPhase;
+  targets?: Partial<Record<number, WorkflowStepTarget>>;
+}) {
   const active = phase === "landing" || phase === "mock" ? 0 : phaseStep[phase];
   return <nav className="proof-progress" aria-label="生成进度">
     <ol>
       {progressSteps.map((label, index) => {
         const step = index + 1;
+        const target = targets[step];
+        const content = <><span>{step}.</span> {label}</>;
         return <li key={label} className={step === active ? "is-active" : step < active ? "is-done" : ""} aria-current={step === active ? "step" : undefined}>
-          <span>{step}.</span> {label}
+          {target?.href ? <a href={target.href}>{content}</a>
+            : target?.onClick ? <button type="button" onClick={target.onClick}>{content}</button>
+            : <span className="proof-progress-unavailable" aria-disabled="true" title="完成前面步骤后可进入">{content}</span>}
         </li>;
       })}
     </ol>

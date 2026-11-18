@@ -491,7 +491,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     } catch(cause) {setError(cause instanceof Error?cause.message:'合并失败。');}
   };
 
-  if (!draft && error) return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传">
+  if (!draft && error) return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传"
+    steps={{ 1: { href: "/upload" } }}>
     <section className="proof-step-page">
       <ProofCard className="proof-error-card">
         <h1>简历不存在或已过期</h1>
@@ -501,7 +502,9 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     </section>
   </AgentChrome>;
 
-  return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传">
+  return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传"
+    steps={{ 1: { href: "/upload" }, 2: { onClick: () => window.scrollTo({ top: 0, behavior: "instant" }) },
+      ...(draft && !busy ? { 3: { onClick: () => void save(true) } } : {}) }}>
     <section className="proof-step-page">
       <StepHeader number={2} title="核对经历，把你的能力补充完整"
         description={`Agent 已按模块整理内容，只有主动勾选的内容会用于作品。原 PDF 与草稿保留至 ${expiresAt ? new Date(expiresAt).toLocaleString("zh-CN") : "上传 30 天后"} 自动删除。`} />

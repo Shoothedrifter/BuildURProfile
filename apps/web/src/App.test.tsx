@@ -65,10 +65,7 @@ async function reachStyle() {
 }
 
 function answerAll(optionIndex = 0) {
-  document.querySelectorAll(".proof-question").forEach((question) => {
-    const options = within(question as HTMLElement).getAllByRole("radio");
-    fireEvent.click(options[Math.min(optionIndex, options.length - 1)]);
-  });
+  fireEvent.click(screen.getByRole("button", { name: optionIndex === 4 ? /大胆实验/ : /理性简约/ }));
 }
 
 async function reachResult(optionIndex = 0) {
@@ -105,6 +102,42 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("shows the style loading state immediately on the style route", async () => {
+    window.history.replaceState(null, "", "/style/resume_synthetic");
+    vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft: resumeDraftFixture as never,
+      revision: 1, expiresAt: "2026-12-09T00:00:00Z" });
+    try {
+      const serverHtml = renderToString(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
+      expect(serverHtml).toContain("正在读取已确认的简历草稿");
+      expect(serverHtml).not.toContain("launch-hero-title");
+      render(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
+      expect(screen.queryByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).not.toBeInTheDocument();
+      expect(screen.getByText("正在读取已确认的简历草稿…")).toBeInTheDocument();
+      await act(async () => {});
+      expect(await screen.findByRole("heading", { name: "04 头像与网站风格" })).toBeInTheDocument();
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("lets users revisit completed steps from the progress bar", async () => {
+    render(<App />);
+    await reachStyle();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "生成进度" })).getByRole("button", { name: /解析与补充/ }));
+    expect(screen.getByRole("heading", { name: "让每一段经历，都有证据可循" })).toBeInTheDocument();
+  });
+
+  it("uses template selection without showing preference questions", async () => {
+    render(<App />);
+    await reachStyle();
+    expect(screen.queryByText("你的偏好画像")).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    const generate = screen.getByRole("button", { name: /生成我的 Showcase/ });
+    expect(generate).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /温暖创意/ }));
+    expect(generate).toBeEnabled();
+  });
+
   it("opens a confirmed Agent resume in style instead of restoring an older showcase", async () => {
     window.history.replaceState(null, "", "/style/resume_synthetic");
     vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft: resumeDraftFixture as never,
@@ -235,15 +268,17 @@ describe("showcase builder", () => {
     expect(await screen.findByRole("heading", { name: "让每一段经历，都有证据可循" })).toBeInTheDocument();
   });
 
-  it("fills all eight assessment answers from a style preset and permits manual overrides", async () => {
+  it("fills the generation contract from the selected template without manual questions", async () => {
     render(<App />);
     await reachStyle();
     fireEvent.click(screen.getByRole("button", { name: /温暖创意/ }));
-    const checked = screen.getAllByRole("radio").filter((input) => (input as HTMLInputElement).checked);
-    expect(checked).toHaveLength(8);
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
     expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(within(screen.getByRole("group", { name: /第一印象/ })).getAllByRole("radio")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /理性简约/ }));
     expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    await screen.findByRole("heading", { name: "05 网站预览与轻量编辑" });
+    expect(Object.keys(vi.mocked(generationApi.generatePortfolio).mock.calls[0][0].answers)).toHaveLength(8);
   });
 
   it("keeps the style step visible when generation returns an incomplete config", async () => {
@@ -493,7 +528,7 @@ describe("showcase builder", () => {
     expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "校园经历 2" }).value).toContain("无土栽培系统");
   });
 
-  it("keeps the PDF confirmation mandatory, allows correction, and changes config when answers change", async () => {
+  it("keeps the PDF confirmation mandatory, allows correction, and changes config when templates change", async () => {
     render(<App />);
     expect(screen.queryByRole("button", { name: /生成我的 Showcase/ })).not.toBeInTheDocument();
     openUpload();
@@ -508,9 +543,8 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: /教育经历/ }));
     expect(screen.getByRole("textbox", { name: "教育经历 1" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /确认资料，选择风格/ }));
-    const questions = document.querySelectorAll(".proof-question");
-    expect(questions).toHaveLength(8);
-    questions.forEach((question) => fireEvent.click(within(question as HTMLElement).getAllByRole("radio")[0]));
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    answerAll();
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     const first = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     expect(first.content.profile.name).toBe("黄 琬斐");
@@ -520,11 +554,8 @@ describe("showcase builder", () => {
       content: expect.not.objectContaining({ sourceRefs: expect.anything() })
     }), undefined, expect.any(Function));
 
-    fireEvent.click(screen.getByRole("button", { name: /重新作答/ }));
-    document.querySelectorAll(".proof-question").forEach((question) => {
-      const options = within(question as HTMLElement).getAllByRole("radio");
-      fireEvent.click(options[options.length - 1]);
-    });
+    fireEvent.click(screen.getByRole("button", { name: /更换模板/ }));
+    answerAll(4);
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     const second = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     expect(second.skin).not.toBe(first.skin);
@@ -595,10 +626,8 @@ describe("showcase builder", () => {
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalledWith("paid-project"));
     expect(paymentApi.checkout).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));
-    fireEvent.click(screen.getByRole("button", { name: /重新作答/ }));
-    document.querySelectorAll(".proof-question").forEach((question) => {
-      fireEvent.click(within(question as HTMLElement).getAllByRole("radio").at(-1)!);
-    });
+    fireEvent.click(screen.getByRole("button", { name: /更换模板/ }));
+    answerAll(4);
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
     fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
@@ -694,13 +723,10 @@ describe("showcase builder", () => {
       render(<App />);
       await reachStyle();
       expect(screen.getAllByText(/检测到触屏/).length).toBeGreaterThan(0);
-      document.querySelectorAll(".proof-question").forEach((question) => {
-        const options = within(question as HTMLElement).getAllByRole("radio");
-        fireEvent.click(options[options.length - 1]);
-      });
+      answerAll();
       fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
       const config = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
-      expect(config.styleVector.S).toBe(1);
+      expect(config.styleVector.S).toBe(0.75);
       expect(config.marquee.bindToScroll).toBe(true);
       expect(config.stackedCards.enableTilt).toBe(true);
       expect(config.stackedCards.autoPlay).toBe(false);
@@ -713,7 +739,7 @@ describe("showcase builder", () => {
 
   it("downgrades an already generated configuration after an actual touch event", async () => {
     render(<App />);
-    await reachResult(4);
+    await reachResult();
     await screen.findByTestId("design-config-json");
     const output = () => JSON.parse(screen.getByTestId("design-config-json").textContent ?? "") as DesignConfig;
     expect(output().marquee.bindToScroll).toBe(true);
