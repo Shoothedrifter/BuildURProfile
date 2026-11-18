@@ -92,6 +92,30 @@ async def test_browser_anchors_keep_a_paragraph_inside_one_project_item():
 
 
 @pytest.mark.asyncio
+async def test_format_prompt_pins_summary_language_to_the_resume_language():
+    # 语言约束回归钉：全英文指令会把中文简历的总结带偏成英文，
+    # prompt 必须要求 title/details 跟随简历语言（中文简历用中文，不切换英文）
+    raw = source("项目甲", "完成模型训练")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "projects", "page": 1, "text": "项目甲\n完成模型训练"}]})
+
+    class PromptSpy:
+        def __init__(self):
+            self.prompts = []
+
+        async def generate_json(self, name: str, schema: dict, prompt: str) -> dict:
+            self.prompts.append(prompt)
+            return {"items": [{"anchorId": "a0", "kind": "projects", "title": "项目甲",
+                               "details": "- 完成模型训练", "confidence": .9}]}
+
+    spy = PromptSpy()
+    await format_anchors(raw, anchors, spy)
+    assert spy.prompts, "应至少发出一次格式化请求"
+    assert "same language as the resume" in spy.prompts[0]
+    assert "never in English" in spy.prompts[0]
+
+
+@pytest.mark.asyncio
 async def test_formatter_rejects_a_model_that_splits_one_anchor_into_two_items():
     raw = source("项目甲", "第一句职责", "第二句职责")
     anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
