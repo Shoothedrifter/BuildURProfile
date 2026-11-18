@@ -22,10 +22,11 @@ function ProjectCard({ project, resolveResumeImage }: { project: CyberProject; r
   const { item, images, layout, link } = project;
   const primary = images.slice(0, 3);
   const remaining = images.slice(3);
+  const detailText = item.sourceText?.trim() && item.sourceText.trim() !== item.details.trim() ? item.sourceText : "";
   return <article className="cyber-project-card" data-layout={layout}>
     <div className="cyber-project-top"><span>{String(project.index).padStart(2, "0")}</span><h3>{item.title || `项目 ${project.index}`}</h3>
       {link && <a className="cyber-project-link" href={link.url} target="_blank" rel="noopener noreferrer">{link.label || "查看项目"} ↗</a>}</div>
-    <div className="cyber-project-content">
+    <div className={`cyber-project-content${layout === "text" ? " cyber-project-content--text" : ""}`}>
       <div className="cyber-project-copy">
         {item.details && <p className="cyber-preserve-lines">{item.details}</p>}
         {item.supplement.text && <p className="cyber-preserve-lines">{item.supplement.text}</p>}
@@ -36,12 +37,15 @@ function ProjectCard({ project, resolveResumeImage }: { project: CyberProject; r
         {primary.map(image => <figure key={image.imageId}><img loading="lazy" src={resolveResumeImage(image.imageId)} alt={image.caption || `${item.title}的项目图片`} />{image.caption && <figcaption>{image.caption}</figcaption>}</figure>)}
       </div>}
     </div>
+    {detailText.trim() && <details className="cyber-text-detail cyber-project-detail"><summary>查看项目详情</summary><div className="cyber-detail-body"><p>{detailText}</p></div></details>}
     {remaining.length > 0 && <details className="cyber-project-more"><summary>查看其余图片</summary><div>{remaining.map(image => <figure key={image.imageId}><img loading="lazy" src={resolveResumeImage(image.imageId)} alt={image.caption || `${item.title}的项目图片`} />{image.caption && <figcaption>{image.caption}</figcaption>}</figure>)}</div></details>}
   </article>;
 }
 
 function ItemContent({ item, resolveResumeImage }: { item: ResumeDisplayItem; resolveResumeImage: ResumeImageResolver }) {
+  const detailText = item.sourceText?.trim() && item.sourceText.trim() !== item.details.trim() ? item.sourceText : "";
   return <article className="cyber-entry">{item.title && <h3>{item.title}</h3>}{item.details && <p className="cyber-preserve-lines">{item.details}</p>}
+    {detailText.trim() && <details className="cyber-text-detail"><summary>查看详情</summary><div className="cyber-detail-body"><p>{detailText}</p></div></details>}
     <ResumeSupplement item={item} resolveImage={resolveResumeImage} />
   </article>;
 }
@@ -57,6 +61,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   const hasAbout = view.sections.some(section => section.kind === "selfEvaluation");
   const hasSkills = view.sections.some(section => section.kind === "skills");
   const hasProjects = view.projects.length > 0;
+  const hasArtwork = safeArtwork(config.heroArtwork?.assetUrl);
 
   useEffect(() => {
     const pointer = window.matchMedia?.("(pointer: coarse)");
@@ -115,7 +120,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
       <section className="cyber-hero" id="top" aria-labelledby="cyber-hero-title">
         <p className="cyber-hero-kicker">CREATOR PORTFOLIO <span>✦</span> {profile.role}</p>
         <h1 id="cyber-hero-title">{profile.name}</h1>
-        <div className="cyber-hero-figure">{safeArtwork(config.heroArtwork?.assetUrl)
+        <div className={`cyber-hero-figure${hasArtwork ? " cyber-hero-figure--photo" : ""}`}>{hasArtwork
           ? <img src={config.heroArtwork?.assetUrl} alt={config.heroArtwork?.alt || "用户肖像"} />
           : defaultPortraitFailed ? <CyberPortrait />
           : <img src={defaultPortraitUrl} alt="赛博科技默认立体人物" onError={() => setDefaultPortraitFailed(true)} />}</div>
@@ -139,7 +144,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
             <h2>{RESUME_LABELS[RESUME_KINDS.indexOf(section.kind)]}</h2><div className="cyber-entry-grid">{items.map(item => <ItemContent item={{ ...item, facts: item.facts.filter(fact => !["name", "email", "location", "targetRole"].includes(fact.key)) }} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></section>;
         }
         if (section.kind === "selfEvaluation") return <section className="cyber-about cyber-page-width" id={section.kind} key={section.kind}>
-          <p className="cyber-section-label">ABOUT / {String(section.order + 1).padStart(2, "0")}</p><h2>ABOUT ME</h2>
+          <p className="cyber-section-label">ABOUT / {String(section.order + 1).padStart(2, "0")}</p><h2>关于我</h2>
           <div className="cyber-about-copy">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div>
           {email && <a href={`mailto:${email}`} className="cyber-contact-button">联系我 ↗</a>}
         </section>;
@@ -148,7 +153,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           <div className="cyber-capability-list">{section.items.map((item, index) => <div className="cyber-capability" key={item.itemId}><span>{String(index + 1).padStart(2, "0")}</span><ItemContent item={item} resolveResumeImage={resolveResumeImage} /></div>)}</div>
         </div></section>;
         if (section.kind === "projects") return <section className="cyber-projects" id={section.kind} key={section.kind} ref={projectRef}><div className="cyber-page-width">
-          <p className="cyber-section-label">SELECTED WORK / {String(section.order + 1).padStart(2, "0")}</p><h2>PROJECTS</h2>
+          <p className="cyber-section-label">SELECTED WORK / {String(section.order + 1).padStart(2, "0")}</p><h2>项目作品</h2>
           <div className="cyber-project-stack">{view.projects.map(project => <ProjectCard project={project} resolveResumeImage={resolveResumeImage} key={project.item.itemId} />)}</div>
         </div></section>;
         return <section className="cyber-generic cyber-page-width" id={section.kind} key={section.kind}><p className="cyber-section-label">EXPERIENCE / {String(section.order + 1).padStart(2, "0")}</p>

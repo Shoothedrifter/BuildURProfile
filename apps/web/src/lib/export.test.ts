@@ -104,7 +104,7 @@ it('exports cyber project mosaic with confirmed captions and full text', async (
   const {buildStaticHtml}=await import('../server/export.mjs');
   const {resumeDisplayContent}=await import('../../../../packages/contracts/src/resume-v2.mjs');
   const resume={version:'resume-v3',sections:[{kind:'projects',order:0,items:[{
-    itemId:'project_1',order:0,title:'项目甲',details:'完整正文\n第二段',facts:[],
+    itemId:'project_1',order:0,title:'项目甲',details:'完整正文\n第二段',sourceText:'项目完整原文专属',facts:[],
     supplement:{text:'用户补充说明',links:[{label:'项目链接',url:'https://example.test/project'}],
       images:['a','b','c','d'].map(imageId=>({imageId,caption:`图片${imageId}`}))}
   }]}]};
@@ -118,6 +118,8 @@ it('exports cyber project mosaic with confirmed captions and full text', async (
   expect(doc.body).toHaveTextContent('完整正文');
   expect(doc.body).toHaveTextContent('第二段');
   expect(doc.body).toHaveTextContent('用户补充说明');
+  expect(doc.querySelector('.cyber-project-detail summary')).toHaveTextContent('查看项目详情');
+  expect(doc.querySelector('.cyber-project-detail')).toHaveTextContent('项目完整原文专属');
   expect(doc.querySelector('a[href="https://example.test/project"]')).not.toBeNull();
   page.window.close();
 });

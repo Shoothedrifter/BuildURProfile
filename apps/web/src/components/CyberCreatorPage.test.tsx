@@ -96,6 +96,39 @@ describe("赛博科技固定模板", () => {
     expect(screen.getByRole("img", { name: "图片d" })).toHaveAttribute("src", "/media/d");
   });
 
+  it("frames a supplied portrait separately from the default 3D figure", () => {
+    const value = { ...config(), heroArtwork: { assetUrl: "data:image/png;base64,AQID", alt: "本人照片" } } as DesignConfigV4;
+    const { container } = render(<ShowcasePage config={value} />);
+    expect(container.querySelector(".cyber-hero-figure--photo img")).toHaveAttribute("alt", "本人照片");
+  });
+
+  it("keeps project source text behind a readable detail control", () => {
+    const value = config();
+    const sections = value.content.resume.sections.map(section => section.kind === "projects"
+      ? { ...section, items: section.items.map(item => ({ ...item, details: "简短概述", sourceText: "完整原文第一段\n完整原文第二段" })) }
+      : section);
+    const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+      resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
+    const card = container.querySelector(".cyber-project-card") as HTMLElement;
+    expect(within(card).getByText("简短概述")).toBeInTheDocument();
+    const detail = within(card).getByText("查看项目详情").closest("details");
+    expect(detail).not.toBeNull();
+    expect(detail).toHaveTextContent("完整原文第一段");
+    expect(detail).toHaveTextContent("完整原文第二段");
+    expect(card.querySelector(".cyber-project-content--text")).not.toBeNull();
+  });
+
+  it("keeps source text accessible for non-project resume sections", () => {
+    const value = config();
+    const sections = value.content.resume.sections.map(section => section.kind === "skills"
+      ? { ...section, items: section.items.map(item => ({ ...item, sourceText: "技能原文说明" })) }
+      : section);
+    const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+      resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
+    const entry = container.querySelector("#skills .cyber-entry") as HTMLElement;
+    expect(within(entry).getByText("查看详情").closest("details")).toHaveTextContent("技能原文说明");
+  });
+
   it("does not invent a project section or email action when both are absent", () => {
     const value = config();
     const sections = value.content.resume.sections.filter(section => section.kind !== "projects");
