@@ -64,6 +64,7 @@ export function cleanConfig(config) {
   const profile = config.content.profile, expertise = config.content.expertise;
   // Explicit allowlist: sourceRefs, PDF extraction data, and client-supplied ownership/payment flags are discarded.
   const clone = {
+    ...(config.templateId === undefined ? {} : { templateId: text(config.templateId) }),
     styleVector: { E: Number(config.styleVector.E), K: Number(config.styleVector.K),
       P: Number(config.styleVector.P), S: Number(config.styleVector.S), PChoice: text(config.styleVector.PChoice) },
     skin: text(config.skin),
@@ -102,6 +103,9 @@ export function cleanConfig(config) {
     !["center", "offset", "fan"].includes(clone.stackedCards.layout) ||
     !Number.isFinite(clone.marquee.speed) || !Number.isFinite(clone.stackedCards.scaleStep)) {
     throw new ServiceError(400, "Design Config 参数无效。");
+  }
+  if (clone.templateId && !["cyber-creator-v1", "warm-v1", "minimal-v1", "bold-v1"].includes(clone.templateId)) {
+    throw new ServiceError(400, "作品模板无效。");
   }
   if (clone.heroArtwork && !/^data:image\/(png|jpeg|webp|gif);base64,/i.test(clone.heroArtwork.assetUrl)) throw new ServiceError(400, "肖像图片需要先在浏览器内嵌入。");
   for (const project of clone.content.projects) {

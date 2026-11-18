@@ -64,3 +64,17 @@ def style_to_config(vector: Mapping[str, object], role: str) -> dict:
             "projects": [],
         },
     }
+
+
+TEMPLATE_VECTORS = {
+    "cyber-creator-v1": dict(E=1, K=0.75, P=0.75, S=0.75, PChoice="cool"),
+    "warm-v1": dict(E=0.75, K=0.5, P=0.5, S=0.5, PChoice="warm"),
+    "minimal-v1": dict(E=0.25, K=0.25, P=0.25, S=0.75, PChoice="neutral"),
+    "bold-v1": dict(E=1, K=1, P=1, S=0.5, PChoice="vivid"),
+}
+
+
+def template_to_config(template_id: str, role: str) -> dict:
+    if template_id not in TEMPLATE_VECTORS:
+        raise ValueError("Unknown template")
+    return {**style_to_config(TEMPLATE_VECTORS[template_id], role), "templateId": template_id}
