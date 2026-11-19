@@ -80,13 +80,19 @@ describe("赛博科技固定模板", () => {
     const sections = value.content.resume.sections.map(section => section.kind === "projects"
       ? { ...section, items: [{ ...first, details: "长正文".repeat(600) }, { ...first, itemId: "project-two", order: 1, title: "项目乙" }] }
       : section);
+    let firstCardHeight = 1600;
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(960);
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
-      return this.classList.contains("cyber-project-card") && this.textContent?.includes("长正文") ? 1600 : 500;
+      return this.textContent?.includes("长正文") ? firstCardHeight : 500;
     });
     try {
       const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
         resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
-      await waitFor(() => expect(container.querySelector(".cyber-project-card")?.classList).toContain("cyber-project-card--flow"));
+      const stack = container.querySelector(".cyber-project-stack");
+      expect(stack).not.toHaveAttribute("data-stacked");
+      firstCardHeight = 300;
+      fireEvent.resize(window);
+      await waitFor(() => expect(stack).toHaveAttribute("data-stacked"));
     } finally { vi.restoreAllMocks(); }
   });
 

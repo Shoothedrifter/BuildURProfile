@@ -46,9 +46,9 @@ function AdditionalModule({ title, entries, id }: { title: string; entries: read
   </section>;
 }
 
-export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}`, defaultPortraitUrl }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; resolveResumeImage?: ResumeImageResolver; defaultPortraitUrl?: string }) {
+export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, staticDecorations = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}`, defaultPortraitUrl }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; staticDecorations?: boolean; resolveResumeImage?: ResumeImageResolver; defaultPortraitUrl?: string }) {
   if ((config as DesignConfigV4).templateId === "cyber-creator-v1" && config.content.resume?.version === "resume-v3") {
-    return <CyberCreatorPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} />;
+    return <CyberCreatorPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} />;
   }
   return <LegacyShowcasePage config={config} allowSkinSwitch={allowSkinSwitch} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} resolveResumeImage={resolveResumeImage} />;
 }

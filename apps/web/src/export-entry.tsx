@@ -11,5 +11,5 @@ if (root && raw) {
   const config = JSON.parse(raw) as DesignConfig;
   createRoot(root).render(<ShowcasePage config={config} resolveResumeImage={id => images[id] ?? ""}
     defaultPortraitUrl={defaultPortrait || undefined}
-    touchDowngraded={"templateId" in config && config.templateId === "cyber-creator-v1"} />);
+    staticDecorations />);
 }

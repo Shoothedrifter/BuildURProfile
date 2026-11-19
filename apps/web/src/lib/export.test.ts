@@ -88,6 +88,39 @@ it('exports project sourceText verbatim into the standalone HTML', async () => {
   expect(html).toContain('导出原文样例');
 });
 
+it('stacks two compact text projects in desktop HTML while preserving their full details', async () => {
+  const {buildStaticHtml}=await import('../server/export.mjs');
+  const fixture=await import('../../../../packages/contracts/fixtures/agent-golden.v3.json');
+  const base=fixture.default.expected.config;
+  const projects=['甲','乙'].map((suffix,order)=>({
+    itemId:`project_${order}`, order, title:`项目${suffix}`, details:'项目摘要', sourceText:`项目${suffix}的完整内容`,
+    facts:[], supplement:{text:'',links:[],images:[]}
+  }));
+  const config={...base,templateId:'cyber-creator-v1',content:{...base.content,
+    resume:{...base.content.resume,sections:[...base.content.resume.sections,{kind:'projects',order:2,items:projects}]}
+  }};
+  const html=buildStaticHtml(config,undefined,undefined,()=>({mime:'image/png',bytes:Buffer.from([1,2,3])}));
+  const page=new JSDOM(html,{
+    runScripts:'dangerously',pretendToBeVisual:true,
+    beforeParse(window){
+      Object.defineProperty(window.HTMLElement.prototype,'clientWidth',{get:()=>960});
+      Object.defineProperty(window.HTMLElement.prototype,'offsetHeight',{get:()=>300});
+    }
+  });
+  try {
+    await new Promise(resolve=>setTimeout(resolve,150));
+    const stack=page.window.document.querySelector('.cyber-project-stack');
+    expect(stack).toHaveAttribute('data-stacked');
+    const details=stack!.querySelector('details')!;
+    details.open=true;
+    await new Promise(resolve=>setTimeout(resolve,50));
+    expect(stack).not.toHaveAttribute('data-stacked');
+    expect(details).toHaveTextContent('项目甲的完整内容');
+  } finally {
+    page.window.close();
+  }
+});
+
 it('embeds the cyber creator default portrait into offline HTML', async () => {
   const {buildStaticHtml}=await import('../server/export.mjs');
   const fixture=await import('../../../../packages/contracts/fixtures/agent-golden.v3.json');

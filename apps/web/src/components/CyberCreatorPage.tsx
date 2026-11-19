@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import type { DesignConfigV4, ResumeDisplayItem } from "../../../../packages/contracts/src/config";
 import { RESUME_KINDS, RESUME_LABELS } from "../../../../packages/contracts/src/resume-v2.mjs";
 import { buildCyberCreatorPresentation, type CyberProject } from "../lib/cyber-creator-presentation";
+import { observeCyberProjectStack } from "../lib/cyber-project-stack";
 import { CyberGlassBackdrop } from "./CyberGlassBackdrop";
 import { ResumeSupplement, type ResumeImageResolver } from "./ResumeDisplay";
 
@@ -11,6 +12,7 @@ type Props = {
   resolveResumeImage: ResumeImageResolver;
   preserveShareHash?: boolean;
   touchDowngraded?: boolean;
+  staticDecorations?: boolean;
   defaultPortraitUrl?: string;
 };
 
@@ -60,12 +62,12 @@ function ItemContent({ item, resolveResumeImage }: { item: ResumeDisplayItem; re
   </article>;
 }
 
-export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash = false, touchDowngraded = false, defaultPortraitUrl = "/cyber-neutral-print-anime.webp" }: Props) {
+export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash = false, touchDowngraded = false, staticDecorations = false, defaultPortraitUrl = "/cyber-neutral-print-anime.webp" }: Props) {
   const view = buildCyberCreatorPresentation(config);
   const [defaultPortraitFailed, setDefaultPortraitFailed] = useState(false);
   const [staticMode, setStaticMode] = useState(touchDowngraded);
   const marqueeRef = useRef<HTMLDivElement>(null);
-  const projectRef = useRef<HTMLElement>(null);
+  const projectStackRef = useRef<HTMLDivElement>(null);
   const { profile } = view;
   const email = profile.email.trim();
   const phone = config.content.resume.sections.find(section => section.kind === "basicInfo")?.items
@@ -93,18 +95,12 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   }, [touchDowngraded]);
 
   useEffect(() => {
-    const cards = [...(projectRef.current?.querySelectorAll<HTMLElement>(".cyber-project-card") ?? [])];
-    const update = () => cards.forEach(card => card.classList.toggle("cyber-project-card--flow",
-      card.offsetHeight > window.innerHeight - 115));
-    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(update) : null;
-    cards.forEach(card => observer?.observe(card));
-    window.addEventListener("resize", update);
-    update();
-    return () => { observer?.disconnect(); window.removeEventListener("resize", update); };
-  }, [config.content.resume]);
+    if (staticMode || !projectStackRef.current) return;
+    return observeCyberProjectStack(projectStackRef.current);
+  }, [config.content.resume, staticMode]);
 
   useEffect(() => {
-    if (staticMode) return;
+    if (staticMode || staticDecorations) return;
     let frame = 0;
     const update = () => {
       frame = 0;
@@ -113,17 +109,13 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
         const offset = (window.scrollY - (marquee.getBoundingClientRect().top + window.scrollY) + window.innerHeight) * 0.3;
         marquee.style.setProperty("--cyber-scroll", `${offset}px`);
       }
-      projectRef.current?.querySelectorAll<HTMLElement>(".cyber-project-card").forEach((card, index) => {
-        const amount = Math.max(0, Math.min(1, (110 + index * 25 - card.getBoundingClientRect().top) / window.innerHeight));
-        card.style.setProperty("--cyber-card-scale", String(1 - amount * 0.055));
-      });
     };
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
     schedule();
     return () => { window.removeEventListener("scroll", schedule); window.removeEventListener("resize", schedule); if (frame) window.cancelAnimationFrame(frame); };
-  }, [staticMode]);
+  }, [staticMode, staticDecorations]);
 
   const preserveHash = (event: MouseEvent<HTMLDivElement>) => {
     if (!preserveShareHash || !(event.target instanceof Element)) return;
@@ -132,7 +124,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
     if (id && document.getElementById(id)) { event.preventDefault(); document.getElementById(id)?.scrollIntoView(); }
   };
 
-  return <div className="cyber-creator-page" data-testid="cyber-creator-page" data-skin="dark-tech" data-static={staticMode ? "true" : undefined} onClickCapture={preserveHash}>
+  return <div className="cyber-creator-page" data-testid="cyber-creator-page" data-skin="dark-tech" data-static={staticMode || staticDecorations ? "true" : undefined} onClickCapture={preserveHash}>
     <header className="cyber-nav"><a href="#top" aria-label="返回作品集首页">✦</a>
       <nav aria-label="作品集导航">{hasAbout && <a href="#selfEvaluation">关于</a>}{hasSkills && <a href="#skills">能力</a>}{hasProjects && <a href="#projects">项目</a>}{hasContact && <a href="#contact">联系</a>}</nav></header>
     <main>
@@ -174,9 +166,9 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           <h2>能力与专长</h2>
           <div className="cyber-capability-list">{section.items.map((item, index) => <div className="cyber-capability" key={item.itemId}><span>{String(index + 1).padStart(2, "0")}</span><ItemContent item={item} resolveResumeImage={resolveResumeImage} /></div>)}</div>
         </div></section>;
-        if (section.kind === "projects") return <section className="cyber-projects" id={section.kind} key={section.kind} ref={projectRef}><div className="cyber-page-width">
+        if (section.kind === "projects") return <section className="cyber-projects" id={section.kind} key={section.kind}><div className="cyber-page-width">
           <h2>项目作品</h2>
-          <div className="cyber-project-stack">{view.projects.map(project => <ProjectCard project={project} resolveResumeImage={resolveResumeImage} key={project.item.itemId} />)}</div>
+          <div className="cyber-project-stack" ref={projectStackRef}>{view.projects.map(project => <ProjectCard project={project} resolveResumeImage={resolveResumeImage} key={project.item.itemId} />)}</div>
         </div></section>;
         return <section className="cyber-generic cyber-page-width" id={section.kind} key={section.kind}>
           <h2>{RESUME_LABELS[RESUME_KINDS.indexOf(section.kind)]}</h2><div className="cyber-entry-grid">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></section>;
