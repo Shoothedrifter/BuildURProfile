@@ -21,7 +21,8 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       error: deleted ? "作品已删除，请重新生成。" : expired ? "成图已过期，请重新上传照片生成。" : row.error,
       ...(row.status === "SUCCEEDED" && !expired && row.config_json ? { config: JSON.parse(row.config_json) } : {}),
       ...(row.status === "SUCCEEDED" && row.output_asset_id && !expired ? { heroArtwork: { assetUrl: `/api/hero-assets/${row.output_asset_id}`, styleId: row.style_id,
-        alt: "根据本人肖像生成的动画风格虚拟形象" } } : {}) };
+        alt: "根据本人肖像生成的动画风格虚拟形象",
+        ...(row.cutout_asset_id && assets.cutoutExists(row.cutout_asset_id) ? { cutoutAssetUrl: `/api/hero-assets/${row.cutout_asset_id}` } : {}) } } : {}) };
   }
   function getTask(sessionId, id) {
     const row = db.prepare("SELECT * FROM generations WHERE id=? AND owner_session_id=?").get(id, sessionId);
@@ -72,7 +73,7 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     }
     const id = randomUUID(), time = now();
     db.prepare("INSERT INTO generations(id,owner_session_id,portrait_asset_id,style_id,config_json,brief_json,idempotency_key,workflow_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,?)")
-      .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, (brief?.templateId || config?.templateId) ? "python-agent-v5" : (brief?.content?.resume?.version === "resume-v3" || config?.content?.resume?.version === "resume-v3") ? "python-agent-v4" : (brief?.content?.resume?.version === "resume-v2" || config?.content?.resume?.version === "resume-v2") ? "python-agent-v3" : WORKFLOW_VERSION, time, time);
+      .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, (brief?.templateId || config?.templateId) ? "python-agent-v6" : (brief?.content?.resume?.version === "resume-v3" || config?.content?.resume?.version === "resume-v3") ? "python-agent-v4" : (brief?.content?.resume?.version === "resume-v2" || config?.content?.resume?.version === "resume-v2") ? "python-agent-v3" : WORKFLOW_VERSION, time, time);
     return getTask(sessionId, id);
   }
   function leaseNext() {
@@ -143,19 +144,38 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
   function existingOutput(taskId) {
     return db.prepare("SELECT output_asset_id FROM generations WHERE id=?").get(taskId)?.output_asset_id ?? null;
   }
+  function storeCutout(id, image, leaseToken) {
+    let created = null;
+    try {
+      return transaction(db, () => {
+        const row = getLeasedTask(id, leaseToken);
+        if (!row || row.cancel_requested_at != null || !row.output_asset_id) throw new Error("Generation cutout lease is no longer active");
+        if (row.cutout_asset_id) return row.cutout_asset_id;
+        if (!["image/png", "image/webp"].includes(image.mime)) throw new ServiceError(415, "透明肖像格式无效。");
+        const mime = validateImage(image.bytes, image.mime, minPixels);
+        created = assets.store(row.owner_session_id, "hero_cutout", image.bytes, mime).id;
+        db.prepare("UPDATE generations SET cutout_asset_id=?,updated_at=? WHERE id=? AND cutout_asset_id IS NULL")
+          .run(created, now(), id);
+        return created;
+      });
+    } catch (error) {
+      if (created) assets.deleteFile(created);
+      throw error;
+    }
+  }
   function complete(id, { config = null, leaseToken = null } = {}) {
     return transaction(db,()=>{
       const time=now(),row=db.prepare('SELECT * FROM generations WHERE id=?').get(id);
       if(!row || row.cancel_requested_at!=null || (leaseToken ? row.status!=='RUNNING' || row.lease_token!==leaseToken || row.lease_until<=time : row.status!=='QUEUED')) return false;
       const safeConfig=config ? cleanConfig(config) : row.config_json;
-      if(['python-agent-v3','python-agent-v4','python-agent-v5'].includes(row.workflow_version)){
+      if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6'].includes(row.workflow_version)){
         const confirmedBrief=JSON.parse(row.brief_json || row.config_json), published=JSON.parse(safeConfig || 'null');
         if(!published || !isDeepStrictEqual(published.content,confirmedBrief.content)
-          || row.workflow_version==='python-agent-v5' && published.templateId!==confirmedBrief.templateId)
+          || ['python-agent-v5','python-agent-v6'].includes(row.workflow_version) && published.templateId!==confirmedBrief.templateId)
           throw new ServiceError(400,'生成结果与确认内容不一致。');
       }
       db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(safeConfig,time,id);
-      if(['python-agent-v3','python-agent-v4','python-agent-v5'].includes(row.workflow_version) && !row.portrait_asset_id){
+      if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6'].includes(row.workflow_version) && !row.portrait_asset_id){
         const projectId=randomUUID();
         db.prepare('INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at) VALUES(?,?,?,?,?)').run(projectId,row.owner_session_id,safeConfig,time,time);
         media.attachProject(row.owner_session_id,projectId,JSON.parse(safeConfig));
@@ -189,6 +209,6 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     return Boolean(db.prepare("SELECT 1 FROM worker_heartbeats WHERE touched_at>=? LIMIT 1").get(now() - maxAgeMs));
   }
   return { enqueue, getTask, cancel, leaseNext, heartbeat, isCancelRequested, getLeasedTask, acknowledgeCancel,
-    storeOutput, existingOutput, complete, fail, recoverRunning,
+    storeOutput, storeCutout, existingOutput, complete, fail, recoverRunning,
     touchWorker, workerHealthy };
 }

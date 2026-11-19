@@ -151,7 +151,17 @@ describe("赛博科技固定模板", () => {
   it("frames a supplied portrait separately from the default 3D figure", () => {
     const value = { ...config(), heroArtwork: { assetUrl: "data:image/png;base64,AQID", alt: "本人照片" } } as DesignConfigV4;
     const { container } = render(<ShowcasePage config={value} />);
-    expect(container.querySelector(".cyber-hero-figure--photo img")).toHaveAttribute("alt", "本人照片");
+    expect(container.querySelector(".cyber-hero-figure--poster img")).toHaveAttribute("alt", "本人照片");
+  });
+
+  it("places a transparent portrait on the hero stage when a cutout is available", () => {
+    const value = { ...config(), heroArtwork: { assetUrl: "data:image/png;base64,AQID",
+      cutoutAssetUrl: "data:image/webp;base64,BAUG", alt: "透明人物" } } as DesignConfigV4;
+    const { container } = render(<ShowcasePage config={value} />);
+    expect(container.querySelector(".cyber-hero-figure--cutout img")).toHaveAttribute("src", value.heroArtwork?.cutoutAssetUrl);
+    expect(container.querySelector(".cyber-hero-figure--poster")).toBeNull();
+    fireEvent.error(container.querySelector(".cyber-hero-figure--cutout img")!);
+    expect(container.querySelector(".cyber-hero-figure--poster img")).toHaveAttribute("src", value.heroArtwork?.assetUrl);
   });
 
   it("keeps project source text behind a readable detail control", () => {

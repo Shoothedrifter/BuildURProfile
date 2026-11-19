@@ -31,7 +31,7 @@ export async function handleGenerationRoutes({ req, res, url, parts, sessionId, 
     res.writeHead(200,{"content-type":asset.mime,"content-length":asset.bytes.length,"cache-control":"no-store","x-content-type-options":"nosniff"}); res.end(asset.bytes); return true;
   }
   if (req.method === "GET" && parts[1] === "hero-assets" && parts.length === 3) {
-    const asset = service.readAsset(sessionId, parts[2]);
+    const asset = service.readArtworkAsset(sessionId, parts[2]);
     res.writeHead(200, { "content-type": asset.mime, "content-length": asset.bytes.length,
       "cache-control": "private, no-store", "x-content-type-options": "nosniff" });
     res.end(asset.bytes); return true;

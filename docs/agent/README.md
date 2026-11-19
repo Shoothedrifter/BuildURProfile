@@ -20,7 +20,7 @@
 
 ## Skill 扩展
 
-当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2/v3/v4`、`resume.format.v1/v2`、`avatar.wibi.v1` 和 `artifact.qa.v1/v2/v3`。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。旧解析 Skill 保留兼容定义。细节见[解析流程 v2](resume-anchored-formatting.md)。
+当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2/v3/v4/v5`、`resume.format.v1/v2`、`avatar.wibi.v1/v2` 和 `artifact.qa.v1/v2/v3/v4`。`avatar.wibi.v2` 增加可选透明层能力，仅由 `python-agent-v6` 工作流调用；旧任务继续使用 v1。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。旧解析 Skill 保留兼容定义。细节见[解析流程 v2](resume-anchored-formatting.md)。
 
 简历解析由独立 Worker 领取 `resume-parse-v2/v3` 队列。文本页用 `pdfplumber` 提取；用户主动选择 OCR 后，`pypdfium2` 仅渲染无文字页并调用本机 Tesseract 中英文语言包，私有 `resume-source-v2` 记录来源与置信度，低置信度条目待核对。Web 通过 PDF.js 和旧浏览器解析器制定模块与条目边界。`RESUME_TEXT_PROVIDER=openai` 使用 OpenAI Responses 严格 JSON Schema；`RESUME_TEXT_PROVIDER=zai` 使用智谱 Response API 的 `json_object` 输出，再由 Agent 按同一合同校验。两者复用现有 OpenAI Python SDK，但必须使用各自的 API Key 和地址。原 PDF、页面图像、提取文本、模型提示与结果只在当前图执行内存中流转，不进入 LangGraph checkpoint 或日志。缺少模型或对应 Key 时任务返回 `PARSE_FAILED`；OCR 缺组件、缺语言包、超时和无文字有独立错误码。配置见 [Agent 样例](../../apps/agent/.env.example)。合成假模型跨端测试覆盖 Node HTTP 租约和 Python 图；真实供应商仍须单独联调。
 
@@ -38,6 +38,8 @@
 | 可选 OpenAI | `IMAGE_PROVIDER=openai`、`OPENAI_API_KEY`、可选 `OPENAI_IMAGE_MODEL`；模型可用性需独立验证 |
 
 Cloudflare 适配器使用 `@cf/black-forest-labs/flux-2-klein-4b`，经 `httpx` 发送 multipart REST 请求；调用前把肖像和风格参考图等比缩到 480 像素长边。已安装 Cloudflare SDK，但此 multipart 请求不经 SDK。
+
+首屏融合会在原图生成后尝试调用 Cloudflare AI 的 `bria/remove-background`，将原图另存为透明人物层。成图先发送给该第三方去背景模型；只从受限 HTTPS 主机下载结果，并按透明度与主体覆盖率验收。失败时保留原图，以设计化海报展示；预览编辑页会提示透明去背景未完成，Agent 日志只记录任务 ID 与 `CUTOUT_*` 错误码，不记录图片或供应商响应正文。透明人物层和原图分别存放在会话私有资产区，导出时都嵌入单文件 HTML。该调用按供应商用量计费，需要 AI Gateway 余额或 BYOK；Cloudflare 返回 HTTP 402 时记为 `CUTOUT_BILLING_REQUIRED`，补足额度或设置 BYOK 后重新生成即可得到透明人物层。已有任务若没有 `cutout_asset_id`，原图海报不会自动变成透明图。
 
 运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 资源到私有 `data/wibi-style-pinned/`。新生成任务中，赛博科技模板固定使用「低清晰印刷感动漫」；其他模板在配置各自肖像管线前不接受照片生成。该风格采用极近景构图，画面几乎不留背景。旧版「复古扁平动画头」配方仅供已入队任务兼容读取，不再提供给新生成请求。Node 校验资源哈希后，只把已批准任务的配方交给 Python。
 

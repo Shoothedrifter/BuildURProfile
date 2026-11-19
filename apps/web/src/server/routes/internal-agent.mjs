@@ -7,7 +7,7 @@ import { loadStyleRecipe } from "../../../../../packages/skills/src/wibi.ts";
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 const RETRYABLE_CODES = new Set(["PROVIDER_RATE_LIMIT", "PROVIDER_UNAVAILABLE"]);
-const SUPPORTED_GENERATION_WORKFLOWS = new Set(["python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5"]);
+const SUPPORTED_GENERATION_WORKFLOWS = new Set(["python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", "python-agent-v6"]);
 const ERROR_MESSAGES = {
   PROVIDER_RATE_LIMIT: "图像服务暂时繁忙，系统会在限定次数内重试。",
   PROVIDER_UNAVAILABLE: "图像服务暂时不可用，系统会在限定次数内重试。",
@@ -161,6 +161,15 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
     const bytes = await readBinary(req);
     const assetId = service.storeOutput(id, { bytes, mime: contentType }, leaseToken);
     sendJson(res, 200, { assetId }); return true;
+  }
+  if (req.method === "POST" && action === "cutout") {
+    const leaseToken = req.headers["x-agent-lease"];
+    requireLease(service, id, leaseToken);
+    if (!portraitEnabled || service.isCancelRequested(id, leaseToken)) throw new ServiceError(409, "任务已取消或肖像功能未启用。");
+    const contentType = req.headers["content-type"];
+    if (!["image/png", "image/webp"].includes(contentType)) throw new ServiceError(415, "透明肖像格式无效。");
+    const bytes = await readBinary(req);
+    sendJson(res, 200, { assetId: service.storeCutout(id, { bytes, mime: contentType }, leaseToken) }); return true;
   }
   if (req.method === "POST" && action === "complete") {
     const input = await bodyJson(req, 9 * 1024 * 1024);

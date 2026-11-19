@@ -20,7 +20,7 @@ from .anchored_formatter import format_anchors
 
 
 KNOWN_CAPABILITIES = frozenset({
-    "read_portrait", "load_recipe", "existing_output", "store_output", "output_exists",
+    "read_portrait", "load_recipe", "existing_output", "store_output", "store_cutout", "output_exists",
     "image_provider", "check_cancel", "text_model",
 })
 
@@ -89,6 +89,8 @@ def default_registry() -> SkillRegistry:
     registry.register(Skill("artifact.qa.v4", "4.0.0", frozenset({"output_exists"}), True, 5.0, verify_artifact_v4))
     registry.register(Skill("avatar.wibi.v1", "1.0.0", frozenset({"read_portrait", "load_recipe", "existing_output",
         "store_output", "output_exists", "image_provider", "check_cancel"}), False, 30 * 60.0, generate_avatar))
+    registry.register(Skill("avatar.wibi.v2", "2.0.0", frozenset({"read_portrait", "load_recipe", "existing_output",
+        "store_output", "store_cutout", "output_exists", "image_provider", "check_cancel"}), False, 30 * 60.0, generate_avatar))
     registry.register(Skill("artifact.qa.v1", "1.0.0", frozenset({"output_exists"}), True, 5.0, verify_artifact))
     registry.register(Skill("resume.sections.v1", "1.0.0", frozenset({"text_model"}), True, 120.0,
                             lambda inputs, grants: classify_sections(inputs["source"], grants["text_model"])))

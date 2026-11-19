@@ -140,6 +140,14 @@ class NodeAgentClient:
             raise ValueError("Invalid image asset response")
         return result["assetId"]
 
+    async def store_cutout(self, task: AgentTask, image: Any) -> str:
+        response = await self._request("POST", f"/_internal/agent/tasks/{task.id}/cutout",
+                                       lease=task.lease_token, content=image.bytes, mime=image.mime)
+        result = response.json()
+        if not isinstance(result.get("assetId"), str):
+            raise ValueError("Invalid cutout asset response")
+        return result["assetId"]
+
     async def complete(self, task: AgentTask, config: dict) -> bool:
         response = await self._request("POST", f"/_internal/agent/tasks/{task.id}/complete",
                                        json={"leaseToken": task.lease_token, "config": config})

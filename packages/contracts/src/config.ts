@@ -105,7 +105,7 @@ export type DesignConfig = Readonly<{
   stackedCards: StackedCardsConfig;
   content: ResumeContent;
   /** Session-scoped asset in preview; embedded image in saved projects. */
-  heroArtwork?: Readonly<{ assetUrl: string; styleId: string; alt: string }>;
+  heroArtwork?: Readonly<{ assetUrl: string; styleId: string; alt: string; cutoutAssetUrl?: string }>;
 }>;
 
 export type DesignConfigV4 = DesignConfig & Readonly<{

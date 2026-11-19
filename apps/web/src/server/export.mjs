@@ -27,6 +27,7 @@ export function buildStaticHtml(config, javascript, css, mediaReader) {
   if (/<\/style/i.test(css)) throw new Error("Invalid export stylesheet.");
   const images = [
     config.heroArtwork?.assetUrl,
+    config.heroArtwork?.cutoutAssetUrl,
     ...config.content.projects.map((project) => project.image),
     ...(config.marquee.items ?? []).map((item) => typeof item === "string" ? undefined : item.image)
   ];

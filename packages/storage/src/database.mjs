@@ -207,6 +207,9 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
     db.exec(`ALTER TABLE resume_files ADD COLUMN empty_pages_json TEXT;
       ALTER TABLE resume_reparse_candidates ADD COLUMN ocr_requested INTEGER NOT NULL DEFAULT 0;`);
   });
+  applyMigration(db, 13, () => {
+    db.exec("ALTER TABLE generations ADD COLUMN cutout_asset_id TEXT REFERENCES avatar_assets(id)");
+  });
   return db;
 }
 

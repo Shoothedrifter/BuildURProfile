@@ -1368,8 +1368,14 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-hero-figure { position: absolute; z-index: 4; bottom: 0; right: 5vw; width: min(40vw, 520px); height: 74%; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; filter: drop-shadow(0 25px 28px #0009); }
 .cyber-hero-figure img, .cyber-portrait-svg { width: 100%; height: 100%; display: block; object-fit: contain; object-position: bottom center; }
 .cyber-hero-figure img { max-height: 100%; }
-.cyber-hero-figure--photo { right: 6vw; bottom: 8%; width: min(35vw, 450px); height: min(64%, 500px); overflow: hidden; border: 1px solid #8f8399; border-radius: 28px; background: #16121b; box-shadow: 0 24px 70px #000a; filter: none; }
-.cyber-hero-figure--photo img { object-fit: cover; object-position: center 55%; }
+.cyber-hero-figure--poster { right: 6vw; bottom: 9%; width: min(35vw, 450px); height: min(64%, 500px); overflow: hidden; border: 1px solid #9c80b0; border-radius: 18px; background: #16121b; box-shadow: 0 24px 70px #000a; filter: none; }
+.cyber-hero-figure--poster img { object-fit: cover; object-position: center 55%; }
+.cyber-hero-figure--poster::after { content: "CHARACTER STUDY  /  01"; position: absolute; left: 16px; bottom: 14px; padding: 5px 8px; color: #fff; background: #120d1acc; font: 10px/1.2 var(--font-mono, monospace); letter-spacing: .12em; }
+.cyber-hero-figure--cutout { right: 4vw; bottom: 0; width: min(42vw, 580px); height: 78%; filter: drop-shadow(0 25px 28px #0009); }
+.cyber-hero-figure--cutout::before { content: ""; position: absolute; z-index: -1; width: 105%; height: 85%; bottom: -5%; left: -2%; border-radius: 50%; background: radial-gradient(ellipse, #78409c66 0, #49235744 42%, transparent 72%); }
+.cyber-hero-figure--cutout img { object-fit: contain; object-position: bottom center; }
+.cyber-hero--cutout::after { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: .11; background-image: radial-gradient(#c497e1 0.6px, transparent 0.6px); background-size: 7px 7px; mask-image: linear-gradient(90deg, transparent 52%, #000 100%); }
+.cyber-hero--cutout .cyber-hero-bottom, .cyber-hero--poster .cyber-hero-bottom { padding-right: min(39vw, 500px); }
 
 .cyber-hero-bottom { position: relative; z-index: 4; margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
 .cyber-hero-bottom p { max-width: 260px; margin: 0; font-size: clamp(14px, 1.5vw, 22px); line-height: 1.28; text-transform: uppercase; }
@@ -1455,7 +1461,9 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .cyber-hero { padding: 90px 20px 32px; }
   .cyber-hero h1 { margin-top: 16px; line-height: 1.08; }
   .cyber-hero-figure { right: -5vw; width: min(68vw, 390px); height: 54%; }
-  .cyber-hero-figure--photo { right: 5vw; bottom: 12%; width: min(60vw, 330px); height: 42%; border-radius: 20px; }
+  .cyber-hero-figure--poster { right: 5vw; bottom: 12%; width: min(60vw, 330px); height: 42%; border-radius: 16px; }
+  .cyber-hero-figure--cutout { right: -3vw; bottom: 0; width: min(71vw, 410px); height: 54%; }
+  .cyber-hero--cutout .cyber-hero-bottom, .cyber-hero--poster .cyber-hero-bottom { padding-right: 0; }
   .cyber-hero-bottom p { max-width: 130px; font-size: 13px; }
   .cyber-hero-side { display: none; }
   .cyber-contact-button { min-height: 49px; padding: 10px 21px; font-size: 13px; }

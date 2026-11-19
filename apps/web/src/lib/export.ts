@@ -22,18 +22,20 @@ async function inlineImage(source: string, label: string): Promise<string> {
 
 /** Only confirmed content and embedded assets are sent for delivery; the PDF remains local. */
 export async function inlineConfigImages(config: DesignConfig): Promise<DesignConfig> {
-  const [projects, items, heroArtwork] = await Promise.all([
+  const [projects, items, heroArtwork, cutoutArtwork] = await Promise.all([
     Promise.all(config.content.projects.map(async (project) => project.image
       ? { ...project, image: await inlineImage(project.image, `project “${project.title}”`) }
       : project)),
     config.marquee.items && Promise.all(config.marquee.items.map(async (item) => typeof item === "string"
       ? item
       : { ...item, image: await inlineImage(item.image, `marquee “${item.label}”`) })),
-    config.heroArtwork ? inlineImage(config.heroArtwork.assetUrl, "portrait") : undefined
+    config.heroArtwork ? inlineImage(config.heroArtwork.assetUrl, "portrait") : undefined,
+    config.heroArtwork?.cutoutAssetUrl ? inlineImage(config.heroArtwork.cutoutAssetUrl, "transparent portrait") : undefined
   ]);
   return {
     ...config,
-    ...(config.heroArtwork && heroArtwork ? { heroArtwork: { ...config.heroArtwork, assetUrl: heroArtwork } } : {}),
+    ...(config.heroArtwork && heroArtwork ? { heroArtwork: { ...config.heroArtwork, assetUrl: heroArtwork,
+      ...(cutoutArtwork ? { cutoutAssetUrl: cutoutArtwork } : {}) } } : {}),
     marquee: items ? { ...config.marquee, items } : config.marquee,
     content: { ...config.content, projects }
   };

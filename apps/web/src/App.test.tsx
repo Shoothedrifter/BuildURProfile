@@ -507,6 +507,24 @@ describe("showcase builder", () => {
     expect(screen.getByRole("button", { name: /导出文件/ })).toBeInTheDocument();
   });
 
+  it("shows the editor when a cyber portrait is still using the original poster", async () => {
+    vi.mocked(generationApi.generatePortfolio).mockImplementationOnce(async (brief) => ({
+      config: { ...rawConfig, templateId: "cyber-creator-v1",
+        content: "content" in brief ? brief.content : ({} as DesignConfig["content"]) } as DesignConfigV4,
+      heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012",
+        styleId: "lofi-print-anime", alt: "动画肖像" }
+    }));
+    render(<App />);
+    await reachStyle();
+    fireEvent.change(screen.getByLabelText("选择个人肖像照片"), {
+      target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] }
+    });
+    await screen.findByAltText("待生成的肖像照片预览");
+    fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    expect(await screen.findByText(/透明去背景未完成/)).toBeInTheDocument();
+  });
+
   it("lets a failed avatar request fall back to a text-only preview", async () => {
     vi.mocked(generationApi.generatePortfolio).mockRejectedValueOnce(new Error("图像服务暂不可用"));
     render(<App />);

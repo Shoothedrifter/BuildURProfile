@@ -76,6 +76,10 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   const hasSkills = view.sections.some(section => section.kind === "skills");
   const hasProjects = view.projects.length > 0;
   const hasArtwork = safeArtwork(config.heroArtwork?.assetUrl);
+  const [cutoutFailed, setCutoutFailed] = useState(false);
+  const hasCutout = hasArtwork && safeArtwork(config.heroArtwork?.cutoutAssetUrl) && !cutoutFailed;
+
+  useEffect(() => setCutoutFailed(false), [config.heroArtwork?.cutoutAssetUrl]);
 
   useEffect(() => {
     const pointer = window.matchMedia?.("(pointer: coarse)");
@@ -131,11 +135,12 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
     <header className="cyber-nav"><a href="#top" aria-label="返回作品集首页">PORTFOLIO<span className="cyber-nav-dot">.</span></a>
       <nav aria-label="作品集导航">{hasAbout && <a href="#selfEvaluation">关于</a>}{hasSkills && <a href="#skills">能力</a>}{hasProjects && <a href="#projects">项目</a>}{hasContact && <a href="#contact">联系</a>}</nav></header>
     <main>
-      <section className="cyber-hero" id="top" aria-labelledby="cyber-hero-title">
+      <section className={`cyber-hero${hasCutout ? " cyber-hero--cutout" : hasArtwork ? " cyber-hero--poster" : ""}`} id="top" aria-labelledby="cyber-hero-title">
         <p className="cyber-hero-kicker">CREATOR PORTFOLIO <span>✦</span> {profile.role}</p>
         <h1 id="cyber-hero-title">{greetingName(profile.name)}</h1>
-        <div className={`cyber-hero-figure${hasArtwork ? " cyber-hero-figure--photo" : ""}`}>{hasArtwork
-          ? <img src={config.heroArtwork?.assetUrl} alt={config.heroArtwork?.alt || "用户肖像"} />
+        <div className={`cyber-hero-figure${hasCutout ? " cyber-hero-figure--cutout" : hasArtwork ? " cyber-hero-figure--poster" : ""}`}>{hasArtwork
+          ? <img src={hasCutout ? config.heroArtwork?.cutoutAssetUrl : config.heroArtwork?.assetUrl} alt={config.heroArtwork?.alt || "用户肖像"}
+              onError={hasCutout ? () => setCutoutFailed(true) : undefined} />
           : defaultPortraitFailed ? <CyberPortrait />
           : <img src={defaultPortraitUrl} alt="赛博科技默认立体人物" onError={() => setDefaultPortraitFailed(true)} />}</div>
         <div className="cyber-hero-bottom"><p>{[profile.role, profile.location].filter(Boolean).join(" · ") || profile.summary || ""}</p>

@@ -149,7 +149,7 @@ function AvatarPicker({ enabled, name, photoDataUrl, photoName, generating, disa
       {photoName && <p className="proof-file-name">{photoName}</p>}
       <p className="proof-microcopy">{styleLabel ? `当前模板将自动使用${styleLabel}头像。` : "头像效果由网站模板自动决定。"}</p>
       {photoDataUrl && <ProofButton variant="quiet" aria-busy={generating || undefined} onClick={onClear}>移除照片</ProofButton>}
-      <p className="proof-microcopy">图片生成会把照片发送给配置的图像供应商。</p>
+      <p className="proof-microcopy">图片生成会把照片发送给配置的图像供应商；使用 Cloudflare 时，成图还会发送给 Bria 去背景服务。</p>
     </> : <>
       <span className="proof-avatar-placeholder" aria-hidden="true">{[...(name.trim() || "你")][0]}</span>
       <p className="proof-muted">{disabledReason ?? "当前部署未启用头像生成，可跳过并在生成后继续编辑。"}</p>
@@ -485,6 +485,8 @@ export function BuilderExperience(props: BuilderExperienceProps) {
         <div><p>STEP 5 / DELIVERY</p><strong>作品已生成。下一步选择分享或导出。</strong></div>
         <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>下一步：前往分享与付费 →</ProofButton>
       </div>
+      {"templateId" in generated && generated.templateId === "cyber-creator-v1" && generated.heroArtwork && !generated.heroArtwork.cutoutAssetUrl &&
+        <p className="proof-note" role="status">透明去背景未完成，当前首屏以带背景海报展示。请联系管理员检查图像服务，再重新生成。</p>}
       {avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId))) && <details className="proof-regenerate">
         <summary>更换照片 →</summary>
         <AvatarPicker enabled name={generated.content.profile.name} photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}

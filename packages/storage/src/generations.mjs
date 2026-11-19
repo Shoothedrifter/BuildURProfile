@@ -17,6 +17,7 @@ export function createGenerationService({ db, assetRoot = "data/avatar-assets", 
   return {
     savePortrait: assets.savePortrait,
     readAsset: assets.readAsset,
+    readArtworkAsset: assets.readArtworkAsset,
     readAssetForWorker: assets.readAssetForWorker,
     outputExists: assets.outputExists,
     purgeExpired: assets.purgeExpired,

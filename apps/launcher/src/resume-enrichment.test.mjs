@@ -51,7 +51,7 @@ test('template generation binds the selected template without hidden assessment 
  const input={resumeId:s.input.resumeId,revision:1,role:s.input.role,templateId:'cyber-creator-v1',idempotencyKey:'template-request'};
  const task=s.service.enqueueResume('owner',input);
  const row=s.db.prepare('SELECT brief_json,workflow_version FROM generations WHERE id=?').get(task.id);
- assert.equal(row.workflow_version,'python-agent-v5');
+ assert.equal(row.workflow_version,'python-agent-v6');
  const brief=JSON.parse(row.brief_json);
  assert.equal(brief.templateId,'cyber-creator-v1');
  assert.equal(brief.answers,undefined);

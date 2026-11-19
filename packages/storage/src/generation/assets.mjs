@@ -55,6 +55,11 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
     }
     return { bytes: readFileSync(/*turbopackIgnore: true*/ row.path), mime: row.mime, kind: row.kind };
   }
+  function readArtworkAsset(sessionId, id) {
+    const row = db.prepare("SELECT kind FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind IN ('hero','hero_cutout') AND expires_at>?").get(id, sessionId, now());
+    if (!row) throw new ServiceError(404, "图片不存在或无权访问。");
+    return readAsset(sessionId, id, row.kind);
+  }
   function readAssetForWorker(id) {
     const row = db.prepare("SELECT * FROM avatar_assets WHERE id=? AND kind='portrait' AND expires_at>?").get(id, now());
     if (!row) throw new ServiceError(404, "源照片已过期或不存在。");
@@ -62,6 +67,9 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
   }
   function outputExists(id) {
     return Boolean(db.prepare("SELECT 1 FROM avatar_assets WHERE id=? AND kind='hero' AND expires_at>?").get(id, now()));
+  }
+  function cutoutExists(id) {
+    return Boolean(db.prepare("SELECT 1 FROM avatar_assets WHERE id=? AND kind='hero_cutout' AND expires_at>?").get(id, now()));
   }
   function purgeExpired() {
     const rows = db.prepare("SELECT id,path FROM avatar_assets WHERE expires_at<=? AND path<>''").all(now());
@@ -71,5 +79,5 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
     }
     return rows.length;
   }
-  return { store, savePortrait, readAsset, readAssetForWorker, outputExists, purgeExpired, deleteFile };
+  return { store, savePortrait, readAsset, readArtworkAsset, readAssetForWorker, outputExists, cutoutExists, purgeExpired, deleteFile };
 }

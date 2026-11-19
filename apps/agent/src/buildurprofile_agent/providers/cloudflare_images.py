@@ -6,6 +6,7 @@ import base64
 import io
 import os
 import re
+from urllib.parse import urlparse
 
 import httpx
 from PIL import Image, ImageOps
@@ -34,6 +35,21 @@ def _reference_png(data: bytes, mime: str) -> bytes:
             return output.getvalue()
     except (OSError, ValueError, Image.DecompressionBombError) as exc:
         raise ImageProviderError("PROVIDER_REJECTED") from exc
+
+
+def _cutout_png(image: GeneratedImage) -> bytes:
+    if image.mime not in ("image/png", "image/jpeg", "image/webp") or len(image.bytes) > MAX_IMAGE_BYTES:
+        raise ImageProviderError("CUTOUT_UNAVAILABLE")
+    try:
+        with Image.open(io.BytesIO(image.bytes)) as source:
+            prepared = ImageOps.exif_transpose(source).convert("RGB")
+            output = io.BytesIO()
+            prepared.save(output, format="PNG")
+            if output.tell() > MAX_IMAGE_BYTES:
+                raise ImageProviderError("CUTOUT_UNAVAILABLE")
+            return output.getvalue()
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise ImageProviderError("CUTOUT_UNAVAILABLE") from exc
 
 
 def _decode_output(payload: object) -> bytes:
@@ -69,6 +85,48 @@ class CloudflareImageProvider:
         self.account_id = account_id if account_id is not None else os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
         self.api_token = api_token if api_token is not None else os.getenv("CLOUDFLARE_API_TOKEN", "")
         self.http = http
+
+    async def cutout(self, image: GeneratedImage) -> GeneratedImage:
+        """Request a separate transparent layer; the original render remains untouched."""
+        if not re.fullmatch(r"[0-9a-fA-F]{32}", self.account_id) or not self.api_token.strip():
+            raise ImageProviderError("PROVIDER_UNAVAILABLE")
+        encoded = base64.b64encode(_cutout_png(image)).decode("ascii")
+        owned = self.http is None
+        client = self.http or httpx.AsyncClient(timeout=120.0, trust_env=False)
+        try:
+            response = await client.post(f"{API_ROOT}/{self.account_id}/ai/run",
+                headers={"Authorization": f"Bearer {self.api_token}"},
+                json={"model": "bria/remove-background", "input": {"image": f"data:image/png;base64,{encoded}"}},
+                timeout=120.0)
+            if response.status_code == 402:
+                raise ImageProviderError("CUTOUT_BILLING_REQUIRED")
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("success") is False:
+                raise ImageProviderError("CUTOUT_UNAVAILABLE")
+            result = payload.get("result", payload)
+            if not isinstance(result, dict) or result.get("state", "Completed") != "Completed":
+                raise ImageProviderError("CUTOUT_UNAVAILABLE")
+            output = result.get("result", result)
+            url = output.get("image") if isinstance(output, dict) else None
+            parsed = urlparse(url) if isinstance(url, str) else None
+            host = (parsed.hostname or "") if parsed else ""
+            if not parsed or parsed.scheme != "https" or not (host.endswith(".bria.ai") or host.endswith(".cloudflare.com")):
+                raise ImageProviderError("CUTOUT_UNAVAILABLE")
+            download = await client.get(url, timeout=120.0)
+            download.raise_for_status()
+            if len(download.content) > MAX_IMAGE_BYTES:
+                raise ImageProviderError("CUTOUT_UNAVAILABLE")
+            with Image.open(io.BytesIO(download.content)) as decoded:
+                if decoded.format != "PNG" or "A" not in decoded.getbands():
+                    raise ImageProviderError("CUTOUT_UNAVAILABLE")
+                decoded.verify()
+            return GeneratedImage(download.content, "image/png")
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            raise ImageProviderError("CUTOUT_UNAVAILABLE") from exc
+        finally:
+            if owned:
+                await client.aclose()
 
     async def edit(self, portrait: Portrait, recipe: dict, *, task_id: str) -> GeneratedImage:
         if not re.fullmatch(r"[0-9a-fA-F]{32}", self.account_id) or not self.api_token.strip():

@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 from email.parser import BytesParser
 from email.policy import default
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ import pytest
 from PIL import Image
 
 from buildurprofile_agent.providers import create_image_provider
+from buildurprofile_agent.providers.base import GeneratedImage
 from buildurprofile_agent.providers.cloudflare_images import CloudflareImageProvider
 from buildurprofile_agent.providers.openai_images import ImageProviderError, OpenAIImageProvider
 from buildurprofile_agent.transport.node_api import Portrait
@@ -24,6 +26,57 @@ def jpeg(size=(256, 256)):
     output = io.BytesIO()
     Image.new("RGB", size, "teal").save(output, format="JPEG")
     return output.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_cutout_downloads_private_png_from_nested_result():
+    cutout = io.BytesIO()
+    Image.new("RGBA", (256, 256), (90, 40, 150, 0)).save(cutout, format="PNG")
+    seen = []
+
+    def respond(request):
+        seen.append(request)
+        if request.method == "POST":
+            return httpx.Response(200, json={"success": True, "result": {
+                "state": "Completed", "result": {"image": "https://images.bria.ai/cutout.png"}}})
+        return httpx.Response(200, content=cutout.getvalue(), headers={"content-type": "image/png"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        provider = CloudflareImageProvider(account_id="a" * 32, api_token="private-token", http=http)
+        result = await provider.cutout(GeneratedImage(png((256, 256))))
+    assert result.mime == "image/png"
+    assert result.bytes == cutout.getvalue()
+    assert len(seen) == 2
+    assert seen[0].url.path.endswith("/ai/run")
+    assert b'"model":"bria/remove-background"' in seen[0].content
+    submitted = json.loads(seen[0].content)["input"]["image"].split(",", 1)[1]
+    with Image.open(io.BytesIO(base64.b64decode(submitted))) as source:
+        assert source.size == (256, 256)
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_cutout_rejects_untrusted_download_url():
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"result": {"state": "Completed", "result": {
+            "image": "https://untrusted.example/cutout.png"}}}))) as http:
+        provider = CloudflareImageProvider(account_id="a" * 32, api_token="private-token", http=http)
+        with pytest.raises(ImageProviderError) as caught:
+            await provider.cutout(GeneratedImage(png((256, 256))))
+    assert caught.value.code == "CUTOUT_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_cutout_reports_insufficient_gateway_balance():
+    response = {"success": False, "errors": [{"code": 2021,
+        "message": "Insufficient balance; add money to your gateway or use BYOK"}]}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(402, json=response))) as http:
+        provider = CloudflareImageProvider(account_id="a" * 32, api_token="private-token", http=http)
+        with pytest.raises(ImageProviderError) as caught:
+            await provider.cutout(GeneratedImage(png((256, 256))))
+    assert caught.value.code == "CUTOUT_BILLING_REQUIRED"
+    assert not caught.value.retryable
+
 
 
 def parts(request):

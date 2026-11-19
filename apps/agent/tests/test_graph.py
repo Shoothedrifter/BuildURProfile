@@ -11,7 +11,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from PIL import Image
 
 from buildurprofile_agent.graph import build_generation_graph, task_input
+from buildurprofile_agent.skills.avatar import compact_generated_image, valid_cutout
 from buildurprofile_agent.providers.openai_images import GeneratedImage
+from buildurprofile_agent.providers.base import ImageProviderError
 from buildurprofile_agent.skills.registry import default_registry
 from buildurprofile_agent.transport.node_api import AgentTask, CancelRequested, Portrait
 from buildurprofile_agent.worker import process_task
@@ -35,6 +37,7 @@ class FakeClient:
         self.cancelled = False
         self.writes = 0
         self.stored_image = None
+        self.cutout_image = None
 
     async def check_cancel(self, task):
         if self.cancelled:
@@ -56,6 +59,10 @@ class FakeClient:
         self.stored_image = image
         self.asset_id = str(uuid4())
         return self.asset_id
+
+    async def store_cutout(self, task, image):
+        self.cutout_image = image
+        return str(uuid4())
 
     async def complete(self, task, config):
         self.completed = config
@@ -79,12 +86,44 @@ class FakeProvider:
         self.calls += 1
         return self.image
 
+    async def cutout(self, image):
+        layer = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        for y in range(32, 256):
+            for x in range(48, 208):
+                layer.putpixel((x, y), (120, 30, 200, 255))
+        stream = io.BytesIO()
+        layer.save(stream, format="PNG")
+        return GeneratedImage(stream.getvalue())
+
 
 def noisy_png() -> bytes:
     stream = io.BytesIO()
     pixels = random.Random(42).randbytes(1024 * 1024 * 3)
     Image.frombytes("RGB", (1024, 1024), pixels).save(stream, format="PNG")
     return stream.getvalue()
+
+
+def test_cutout_quality_rejects_opaque_image_and_compression_preserves_alpha():
+    assert valid_cutout(GeneratedImage(png())) is False
+    layer = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+    for y in range(64, 512):
+        for x in range(96, 416):
+            layer.putpixel((x, y), (120, 30, 200, 255))
+    stream = io.BytesIO()
+    layer.save(stream, format="PNG")
+    cutout = GeneratedImage(stream.getvalue())
+    assert valid_cutout(cutout) is True
+    with Image.open(io.BytesIO(compact_generated_image(cutout).bytes)) as saved:
+        assert saved.getchannel("A").getpixel((0, 0)) == 0
+
+
+def test_cutout_quality_accepts_a_person_whose_clothing_reaches_bottom_corners():
+    layer = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+    layer.paste((120, 30, 200, 255), (96, 64, 416, 256))
+    layer.paste((120, 30, 200, 255), (0, 256, 512, 512))
+    stream = io.BytesIO()
+    layer.save(stream, format="PNG")
+    assert valid_cutout(GeneratedImage(stream.getvalue())) is True
 
 
 def task(*, portrait=False):
@@ -115,6 +154,7 @@ async def test_avatar_skill_runs_with_capabilities_and_reuses_asset():
     assert state["output_asset_id"] == client.asset_id
     assert state["recipe_version"] == "pinned-recipe"
     assert provider.calls == client.writes == 1
+    assert client.cutout_image is None  # Old workflow keeps its original Skill contract.
     await graph.ainvoke(task_input(item), config={"configurable": {"thread_id": item.id + "-retry"}})
     assert provider.calls == client.writes == 1
 
@@ -196,3 +236,37 @@ async def test_v5_generates_selected_template_without_assessment():
     assert state['config']['skin'] == 'dark-tech'
     assert state['config']['content'] == brief['content']
     assert state['skill_plan'] == ['design.template.v1', 'resume.compose.v5', 'artifact.qa.v4']
+
+
+@pytest.mark.asyncio
+async def test_v6_portrait_runs_versioned_cutout_skill():
+    from dataclasses import replace
+    golden = json.loads((FIXTURE.parent / 'agent-golden.v3.json').read_text())
+    brief = {"role": golden["input"]["role"], "content": golden["input"]["content"],
+             "templateId": "cyber-creator-v1"}
+    item = replace(task(portrait=True), workflow_version='python-agent-v6', brief=brief)
+    client = FakeClient()
+    state = await build_generation_graph(item, client, FakeProvider(), default_registry()).ainvoke(task_input(item))
+    assert state['skill_plan'] == ['design.template.v1', 'resume.compose.v5', 'avatar.wibi.v2', 'artifact.qa.v4']
+    assert client.cutout_image is not None
+
+
+@pytest.mark.asyncio
+async def test_v6_cutout_failure_keeps_original_artwork_and_reports_reason(caplog):
+    from dataclasses import replace
+    golden = json.loads((FIXTURE.parent / 'agent-golden.v3.json').read_text())
+    brief = {"role": golden["input"]["role"], "content": golden["input"]["content"],
+             "templateId": "cyber-creator-v1"}
+
+    class FailingCutout(FakeProvider):
+        async def cutout(self, image):
+            raise ImageProviderError("CUTOUT_BILLING_REQUIRED")
+
+    item = replace(task(portrait=True), workflow_version='python-agent-v6', brief=brief)
+    client = FakeClient()
+    state = await build_generation_graph(item, client, FailingCutout(), default_registry()).ainvoke(task_input(item))
+    assert state['qa'] is True
+    assert state['output_asset_id'] == client.asset_id
+    assert client.cutout_image is None
+    assert any("CUTOUT_BILLING_REQUIRED" in record.message and item.id in record.message
+               for record in caplog.records)

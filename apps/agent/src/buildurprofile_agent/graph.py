@@ -11,8 +11,8 @@ from .skills.registry import SkillRegistry
 from .transport.node_api import AgentTask, NodeAgentClient
 
 
-WORKFLOW_VERSION = "python-agent-v5"
-SUPPORTED_WORKFLOWS = ("python-agent-v2", "python-agent-v3", "python-agent-v4", WORKFLOW_VERSION)
+WORKFLOW_VERSION = "python-agent-v6"
+SUPPORTED_WORKFLOWS = ("python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", WORKFLOW_VERSION)
 DESIGN_SKILLS = ("assessment.score.v1", "design.map.v1", "resume.compose.v2")
 AVATAR_SKILL = "avatar.wibi.v1"
 QA_SKILL = "artifact.qa.v1"
@@ -42,9 +42,10 @@ def task_input(task: AgentTask) -> GenerationState:
 
 def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: Any,
                            registry: SkillRegistry, *, checkpointer: Any = None) -> Any:
-    templated = task.workflow_version == WORKFLOW_VERSION
-    enriched = task.workflow_version in ("python-agent-v3", "python-agent-v4", WORKFLOW_VERSION)
-    ordered = task.workflow_version in ("python-agent-v4", WORKFLOW_VERSION)
+    templated = task.workflow_version in ("python-agent-v5", WORKFLOW_VERSION)
+    enriched = task.workflow_version in ("python-agent-v3", "python-agent-v4", "python-agent-v5", WORKFLOW_VERSION)
+    ordered = task.workflow_version in ("python-agent-v4", "python-agent-v5", WORKFLOW_VERSION)
+    avatar_skill = "avatar.wibi.v2" if task.workflow_version == WORKFLOW_VERSION else AVATAR_SKILL
     design_skills = ("design.template.v1", "resume.compose.v5") if templated else (*DESIGN_SKILLS[:2], "resume.compose.v4" if ordered else "resume.compose.v3") if enriched else DESIGN_SKILLS
     qa_skill = "artifact.qa.v4" if templated else "artifact.qa.v3" if ordered else "artifact.qa.v2" if enriched else QA_SKILL
 
@@ -78,7 +79,7 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
     def plan(state: GenerationState) -> dict:
         skills = list(design_skills) if state["brief"] else []
         if state["portrait_asset_id"]:
-            skills.append(AVATAR_SKILL)
+            skills.append(avatar_skill)
         skills.append(qa_skill)
         return {"skill_plan": skills,
                 "skill_versions": {skill_id: registry.describe(skill_id)["version"] for skill_id in skills}}
@@ -111,10 +112,13 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
                   "load_recipe": lambda: client.recipe(task),
                   "existing_output": existing,
                   "store_output": lambda image: client.store_output(task, image),
+                  "store_cutout": lambda image: client.store_cutout(task, image),
                   "output_exists": output_exists,
                   "image_provider": provider,
                   "check_cancel": lambda: client.check_cancel(task)}
-        result = await run_skill(AVATAR_SKILL, {"taskId": task.id, "styleId": task.style_id}, state, grants)
+        if avatar_skill == AVATAR_SKILL:
+            grants.pop("store_cutout")
+        result = await run_skill(avatar_skill, {"taskId": task.id, "styleId": task.style_id}, state, grants)
         return {"output_asset_id": result["outputAssetId"],
                 "recipe_version": result["recipeVersion"]}
 

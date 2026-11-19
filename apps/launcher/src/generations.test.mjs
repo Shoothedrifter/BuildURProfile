@@ -35,14 +35,14 @@ test("existing generation table upgrades through recorded schema migrations", ()
     )`);
     legacy.close();
     const upgraded = openDatabase(path);
-    assert.deepEqual(upgraded.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    assert.deepEqual(upgraded.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     assert.ok(upgraded.prepare("PRAGMA table_info(projects)").all().some((column) => column.name === "deleted_at"));
-    for (const name of ["brief_json", "workflow_version", "lease_token", "attempt_count", "next_attempt_at", "cancel_requested_at"]) {
+    for (const name of ["brief_json", "workflow_version", "lease_token", "attempt_count", "next_attempt_at", "cancel_requested_at", "cutout_asset_id"]) {
       assert.ok(upgraded.prepare("PRAGMA table_info(generations)").all().some((column) => column.name === name));
     }
     upgraded.close();
     const reopened = openDatabase(path);
-    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 12);
+    assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 13);
     reopened.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -58,6 +58,30 @@ test("worker heartbeat reports agent readiness without exposing task contents", 
     assert.equal(service.workerHealthy(), true);
     time += 45_001;
     assert.equal(service.workerHealthy(), false);
+  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test("generation keeps original and optional cutout as separate private assets", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99_999);
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("other", 1, Date.now() + 99_999);
+  const root = mkdtempSync(join(tmpdir(), "burp-cutout-"));
+  try {
+    const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
+    const portrait = service.savePortrait("owner", png).id;
+    const config = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v1.json", "utf8")).expected.config;
+    const task = service.enqueue("owner", { portraitAssetId: portrait, styleId: "lofi-print-anime", config, idempotencyKey: "dual-artwork" });
+    const leased = service.leaseNext();
+    const bytes = Buffer.from(png.split(",")[1], "base64");
+    const originalId = service.storeOutput(task.id, { bytes, mime: "image/png" }, leased.lease_token);
+    const cutoutId = service.storeCutout(task.id, { bytes, mime: "image/png" }, leased.lease_token);
+    assert.notEqual(originalId, cutoutId);
+    assert.equal(service.complete(task.id, { leaseToken: leased.lease_token }), true);
+    const artwork = service.getTask("owner", task.id).heroArtwork;
+    assert.equal(artwork.assetUrl, `/api/hero-assets/${originalId}`);
+    assert.equal(artwork.cutoutAssetUrl, `/api/hero-assets/${cutoutId}`);
+    assert.equal(service.readArtworkAsset("owner", cutoutId).mime, "image/png");
+    assert.throws(() => service.readArtworkAsset("other", cutoutId), /无权访问/);
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -88,7 +112,7 @@ test("a saved template config keeps the v5 workflow for later portrait regenerat
     const config = readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8");
     const saved = JSON.parse(config).expected.config;
     const task = service.enqueue("owner", { config: { ...saved, templateId: "cyber-creator-v1" }, idempotencyKey: "template-regeneration" });
-    assert.equal(db.prepare("SELECT workflow_version FROM generations WHERE id=?").get(task.id).workflow_version, "python-agent-v5");
+    assert.equal(db.prepare("SELECT workflow_version FROM generations WHERE id=?").get(task.id).workflow_version, "python-agent-v6");
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 

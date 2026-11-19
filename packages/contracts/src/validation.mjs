@@ -78,7 +78,8 @@ export function cleanConfig(config) {
       cardRadius: Number(config.stackedCards.cardRadius), enableTilt: Boolean(config.stackedCards.enableTilt),
       autoPlay: Boolean(config.stackedCards.autoPlay) },
     ...(config.heroArtwork ? { heroArtwork: { assetUrl: imageText(config.heroArtwork.assetUrl),
-      styleId: text(config.heroArtwork.styleId), alt: text(config.heroArtwork.alt) } } : {}),
+      styleId: text(config.heroArtwork.styleId), alt: text(config.heroArtwork.alt),
+      ...(config.heroArtwork.cutoutAssetUrl ? { cutoutAssetUrl: imageText(config.heroArtwork.cutoutAssetUrl) } : {}) } } : {}),
     content: {
       profile: Object.fromEntries(["name", "role", "location", "availability", "intro", "summary", "email"]
         .map((key) => [key, text(profile[key])])),
@@ -110,6 +111,7 @@ export function cleanConfig(config) {
     throw new ServiceError(400, "作品模板无效。");
   }
   if (clone.heroArtwork && !/^data:image\/(png|jpeg|webp|gif);base64,/i.test(clone.heroArtwork.assetUrl)) throw new ServiceError(400, "肖像图片需要先在浏览器内嵌入。");
+  if (clone.heroArtwork?.cutoutAssetUrl && !/^data:image\/(png|webp);base64,/i.test(clone.heroArtwork.cutoutAssetUrl)) throw new ServiceError(400, "透明肖像需要先在浏览器内嵌入。");
   for (const project of clone.content.projects) {
     if (project?.image && !/^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,/i.test(project.image)) {
       throw new ServiceError(400, "项目图片需要先在浏览器内嵌入。");

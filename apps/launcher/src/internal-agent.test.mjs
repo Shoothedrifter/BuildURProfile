@@ -89,7 +89,7 @@ test("internal Agent bridge leases a queued v5 template generation", async () =>
     assert.equal(response.status, 200);
     const leased = await response.json();
     assert.equal(leased.id, task.id);
-    assert.equal(leased.workflowVersion, "python-agent-v5");
+    assert.equal(leased.workflowVersion, "python-agent-v6");
     assert.equal(generationService.getTask("owner", task.id).status, "RUNNING");
   } finally {
     await new Promise(resolve => server.close(resolve));
@@ -133,7 +133,16 @@ test("internal Agent bridge streams only leased portrait and fences output and r
     assert.equal(generationService.existingOutput(task.id), assetId);
     const outputStatus = await (await fetch(`${base}${path}/output`, { headers })).json();
     assert.deepEqual(outputStatus, { assetId, exists: true });
+    assert.equal((await fetch(`${base}${path}/cutout`, { method: "POST", headers: {
+      authorization: `Bearer ${token}`, "x-agent-lease": "0".repeat(36), "content-type": "image/png"
+    }, body: png })).status, 409);
+    const cutout = await fetch(`${base}${path}/cutout`, { method: "POST", headers: {
+      ...headers, "content-type": "image/png" }, body: png });
+    assert.equal(cutout.status, 200);
+    const { assetId: cutoutId } = await cutout.json();
+    assert.equal(generationService.readArtworkAsset("owner", cutoutId).mime, "image/png");
     assert.equal((await post(base, `${path}/complete`, { leaseToken: leased.leaseToken, config: config() })).status, 200);
+    assert.equal(generationService.getTask("owner", task.id).heroArtwork.cutoutAssetUrl, `/api/hero-assets/${cutoutId}`);
     assert.equal((await fetch(`${base}${path}/portrait`, { headers })).status, 409);
   } finally {
     await new Promise((resolve) => server.close(resolve));
