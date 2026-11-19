@@ -21,7 +21,7 @@ const portraitMime = portraitPath ? ({ ".jpg": "image/jpeg", ".jpeg": "image/jpe
 if (!portraitMime) throw new Error("Unsupported test portrait format");
 const portrait = generationService.savePortrait("test-owner", `data:${portraitMime};base64,${portraitBytes.toString("base64")}`);
 const queuedPortrait = generationService.enqueue("test-owner", { brief, idempotencyKey: "python-bridge-photo",
-  portraitAssetId: portrait.id, styleId: "retro-flat-anime-head" });
+  portraitAssetId: portrait.id, styleId: "lofi-print-anime" });
 const resumeRepository = createResumeRepository({db,root:join(root,'resumes')});
 const ocrRequested=process.env.AGENT_TEST_OCR==='1';
 const uploadedResume = await resumeRepository.upload('test-owner',pdf(1,!ocrRequested),'synthetic.pdf','application/pdf');

@@ -1,7 +1,18 @@
-/** Browser-safe, reviewed choices for the current portrait preview. */
+import type { TemplateId } from "../../contracts/src/config";
+
+/** New portrait generation has one fixed style per supported website template. */
 export const AVATAR_STYLES = [
-  { id: "retro-flat-anime-head", label: "复古扁平动画头", description: "90 年代动画特写 · 鲜明纯色背景", hint: "动画特写 / 纯色背景" },
   { id: "lofi-print-anime", label: "低清晰印刷感动漫", description: "粉绿霓虹 · 网点套印头像", hint: "低清动漫 / 网点套印" }
 ] as const;
 
 export type AvatarStyleId = (typeof AVATAR_STYLES)[number]["id"];
+export const DEFAULT_AVATAR_STYLE_ID: AvatarStyleId = "lofi-print-anime";
+export const TEMPLATE_PORTRAIT_POLICIES: Partial<Record<TemplateId, Readonly<{
+  pipelineId: "avatar.wibi.v1";
+  styleId: AvatarStyleId;
+}>>> = {
+  "cyber-creator-v1": { pipelineId: "avatar.wibi.v1", styleId: "lofi-print-anime" }
+};
+
+/** Existing queued jobs may still refer to the retired recipe. This is not a new-generation choice. */
+export const COMPATIBLE_AVATAR_RECIPE_IDS = ["retro-flat-anime-head", "lofi-print-anime"] as const;

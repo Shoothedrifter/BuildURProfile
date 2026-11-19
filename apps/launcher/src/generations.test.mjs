@@ -141,7 +141,7 @@ test("production policy requires confirmed brief and denies portrait generation"
       allowPortraits: false, requireBrief: true });
     assert.throws(() => service.savePortrait("owner", png), /未启用肖像/);
     assert.throws(() => service.enqueue("owner", { idempotencyKey: "missing" }), /确认简历/);
-    assert.throws(() => service.enqueue("owner", { brief, portraitAssetId: "avatar", styleId: "retro-flat-anime-head",
+    assert.throws(() => service.enqueue("owner", { brief, portraitAssetId: "avatar", styleId: "lofi-print-anime",
       idempotencyKey: "portrait" }), /未启用肖像/);
     assert.equal(service.enqueue("owner", { brief, idempotencyKey: "text" }).status, "QUEUED");
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
@@ -182,7 +182,7 @@ test("stale worker cannot publish an avatar asset after a replacement lease", ()
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time, leaseMs: 1000 });
     const portrait = service.savePortrait("owner", png);
     const task = service.enqueue("owner", { brief, portraitAssetId: portrait.id,
-      styleId: "retro-flat-anime-head", idempotencyKey: "fence" });
+      styleId: "lofi-print-anime", idempotencyKey: "fence" });
     const first = service.leaseNext();
     time += 1001;
     const second = service.leaseNext();
@@ -239,7 +239,7 @@ test("running cancellation is visible and fences output; worker acknowledgment f
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
     const portrait = service.savePortrait("owner", png);
     const task = service.enqueue("owner", { brief, portraitAssetId: portrait.id,
-      styleId: "retro-flat-anime-head", idempotencyKey: "cancel-running" });
+      styleId: "lofi-print-anime", idempotencyKey: "cancel-running" });
     const lease = service.leaseNext();
     assert.equal(service.getLeasedTask(task.id, lease.lease_token)?.id, task.id);
     assert.equal(service.getLeasedTask(task.id, "wrong"), null);
@@ -335,6 +335,25 @@ test("failed asset metadata insert does not leave a private portrait file", () =
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("cyber template derives its fixed portrait style and rejects a mismatched choice", () => {
+  const db = openDatabase(":memory:");
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+  const root = mkdtempSync(join(tmpdir(), "burp-cyber-portrait-"));
+  try {
+    const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
+    const portrait = service.savePortrait("owner", png);
+    const saved = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8")).expected.config;
+    const cyber = { ...saved, templateId: "cyber-creator-v1" };
+    const task = service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id, idempotencyKey: "cyber-auto" });
+    assert.equal(db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id).style_id, "lofi-print-anime");
+    assert.equal(service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id, idempotencyKey: "cyber-auto" }).id, task.id);
+    assert.throws(() => service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id,
+      styleId: "retro-flat-anime-head", idempotencyKey: "cyber-retro" }), /头像风格|模板/);
+    assert.throws(() => service.enqueue("owner", { config: { ...saved, templateId: "warm-v1" },
+      portraitAssetId: portrait.id, idempotencyKey: "warm-photo" }), /暂不支持/);
+  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
 test("generation enqueue is idempotent and owner-only", () => {
   const db = openDatabase(":memory:");
   db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
@@ -343,10 +362,11 @@ test("generation enqueue is idempotent and owner-only", () => {
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
     const asset = service.savePortrait("a", png);
-    const task = service.enqueue("a", { portraitAssetId: asset.id, styleId: "retro-flat-anime-head", idempotencyKey: "first" });
-    assert.equal(service.enqueue("a", { portraitAssetId: asset.id, styleId: "retro-flat-anime-head", idempotencyKey: "first" }).id, task.id);
+    const task = service.enqueue("a", { portraitAssetId: asset.id, styleId: "lofi-print-anime", idempotencyKey: "first" });
+    assert.equal(service.enqueue("a", { portraitAssetId: asset.id, styleId: "lofi-print-anime", idempotencyKey: "first" }).id, task.id);
     assert.equal(service.getTask("a", task.id).status, "QUEUED");
     assert.throws(() => service.getTask("b", task.id), /不存在|无权/);
+    assert.throws(() => service.enqueue("a", { portraitAssetId: asset.id, styleId: "retro-flat-anime-head", idempotencyKey: "retired" }), /未知肖像风格/);
     assert.throws(() => service.enqueue("a", { portraitAssetId: asset.id, styleId: "yellow-hair-doodle", idempotencyKey: "second" }), /未知肖像风格/);
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
@@ -358,7 +378,7 @@ test("output storage is idempotent across worker restarts", () => {
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
     const portrait = service.savePortrait("a", png);
-    const task = service.enqueue("a", { portraitAssetId: portrait.id, styleId: "retro-flat-anime-head", idempotencyKey: "once" });
+    const task = service.enqueue("a", { portraitAssetId: portrait.id, styleId: "lofi-print-anime", idempotencyKey: "once" });
     const bytes = Buffer.from(png.split(",")[1], "base64");
     const first = service.storeOutput(task.id, { bytes, mime: "image/png" });
     assert.equal(service.storeOutput(task.id, { bytes, mime: "image/png" }), first);
@@ -385,7 +405,7 @@ test("HTTP generation endpoints require CSRF and do not expose another session's
     assert.equal((await fetch(`${base}/api/hero-assets/${id}`, { headers: { cookie } })).status, 404);
     const queued = await fetch(`${base}/api/generations`, { method: "POST", headers: {
       cookie, "x-csrf-token": csrfToken, "content-type": "application/json"
-    }, body: JSON.stringify({ brief, portraitAssetId: id, styleId: "retro-flat-anime-head", idempotencyKey: "http-hero" }) });
+    }, body: JSON.stringify({ brief, portraitAssetId: id, styleId: "lofi-print-anime", idempotencyKey: "http-hero" }) });
     assert.equal(queued.status, 201);
     const task = await queued.json();
     const heroId = generationService.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" });
@@ -406,7 +426,7 @@ test("HTTP generation endpoints require CSRF and do not expose another session's
 
 test("project config refuses an unembedded private hero asset URL", () => {
   const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json", import.meta.url)));
-  assert.throws(() => cleanConfig({ ...config, heroArtwork: { assetUrl: "/api/hero-assets/x", styleId: "retro-flat-anime-head", alt: "avatar" } }), /肖像/);
+  assert.throws(() => cleanConfig({ ...config, heroArtwork: { assetUrl: "/api/hero-assets/x", styleId: "lofi-print-anime", alt: "avatar" } }), /肖像/);
 });
 
 test("local generation allows repeated portrait tests and removes expired photo files", () => {
@@ -418,7 +438,7 @@ test("local generation allows repeated portrait tests and removes expired photo 
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
     const portrait = service.savePortrait("a", png);
     for (let i = 0; i < 7; i++) {
-      assert.equal(service.enqueue("a", { portraitAssetId: portrait.id, styleId: "retro-flat-anime-head", idempotencyKey: `try-${i}` }).status, "QUEUED");
+      assert.equal(service.enqueue("a", { portraitAssetId: portrait.id, styleId: "lofi-print-anime", idempotencyKey: `try-${i}` }).status, "QUEUED");
     }
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM generations WHERE owner_session_id='a' AND portrait_asset_id IS NOT NULL").get().count, 7);
     const path = db.prepare("SELECT path FROM avatar_assets WHERE id=?").get(portrait.id).path;
@@ -436,7 +456,7 @@ test("expired hero is not returned as a successful preview", () => {
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
     const photo = service.savePortrait("a", png);
-    const task = service.enqueue("a", { portraitAssetId: photo.id, styleId: "retro-flat-anime-head", idempotencyKey: "expiry" });
+    const task = service.enqueue("a", { portraitAssetId: photo.id, styleId: "lofi-print-anime", idempotencyKey: "expiry" });
     service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" });
     service.complete(task.id);
     time += 7 * 86400000 + 1;

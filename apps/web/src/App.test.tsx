@@ -411,6 +411,7 @@ describe("showcase builder", () => {
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
     answerAll();
+    fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
     await act(async () => finish({ config: rawConfig as DesignConfig, heroArtwork: { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "retro-flat-anime-head", alt: "已移除肖像" } }));
@@ -426,16 +427,14 @@ describe("showcase builder", () => {
     render(<App />);
     await screen.findByAltText("旧肖像");
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
-    fireEvent.click(screen.getByText("更换头像或风格 →"));
+    fireEvent.click(screen.getByText("更换照片 →"));
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "new.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
-    fireEvent.click(screen.getByRole("button", { name: /低清晰印刷感动漫/ }));
-    fireEvent.click(screen.getByRole("button", { name: /应用当前头像风格/ }));
+    fireEvent.click(screen.getByRole("button", { name: /应用新照片/ }));
     expect(await screen.findByAltText("新肖像")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
-    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].content.profile.name).toBe("Edited Person");
-    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][1]).toBe("lofi-print-anime");
-    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][2].heroArtwork).toBeUndefined();
+    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][1].content.profile.name).toBe("Edited Person");
+    expect(vi.mocked(generationApi.generateAvatar).mock.calls[0][1].heroArtwork).toBeUndefined();
   });
 
   it("restores a completed local avatar task after refresh", async () => {
@@ -452,12 +451,12 @@ describe("showcase builder", () => {
     expect((JSON.parse(json.textContent ?? "") as DesignConfig).content.profile.name).toBe("Alex Morgan");
     expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
   });
-  it("offers two portrait styles and keeps the photo local until Generate", async () => {
+  it("offers photo upload without portrait style choices", async () => {
     render(<App />);
     await reachStyle();
     expect(screen.getByText(/实时预览/)).toBeInTheDocument();
     expect(screen.getByText(/黄琬斐 \/ 个人作品集/)).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /复古扁平动画头|低清晰印刷感动漫/ })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /复古扁平动画头|低清晰印刷感动漫/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /明黄发丝涂鸦/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /蜡笔极简扁平画/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /颗粒绒感玩偶/ })).not.toBeInTheDocument();
@@ -502,6 +501,7 @@ describe("showcase builder", () => {
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
     answerAll();
+    fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     expect(await screen.findByAltText("动画肖像")).toHaveAttribute("src", "/api/hero-assets/12345678-1234-1234-1234-123456789012");
     expect(screen.getByRole("button", { name: /导出文件/ })).toBeInTheDocument();
@@ -514,6 +514,7 @@ describe("showcase builder", () => {
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
     await screen.findByAltText("待生成的肖像照片预览");
     answerAll();
+    fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     await screen.findByText("图像服务暂不可用");
     fireEvent.click(screen.getByRole("button", { name: "移除照片" }));

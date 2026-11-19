@@ -1,8 +1,6 @@
 import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
-import type { AvatarStyleId } from "../../../../packages/skills/src/avatar-catalog";
 import { toPublishedConfig } from "./publication";
 
-export type { AvatarStyleId } from "../../../../packages/skills/src/avatar-catalog";
 export type HeroArtwork = NonNullable<DesignConfig["heroArtwork"]>;
 export type GenerationBrief = { role: JobRole; answers: Record<string, number>; content: Omit<ResumeContent, "sourceRefs"> };
 export type GenerationResult = { projectId?: string; projectPaid?: boolean; config: DesignConfig; heroArtwork?: HeroArtwork };
@@ -70,7 +68,7 @@ async function waitForTask(id: string, epoch: number, onStatus?: (status: Genera
 }
 
 export const generationApi = {
-  async generatePortfolio(brief: GenerationBrief | {resumeId: string; revision: number; role: JobRole; answers: Record<string,number>} | {resumeId: string; revision: number; role: JobRole; templateId: TemplateId}, portrait?: { dataUrl: string; styleId: AvatarStyleId },
+  async generatePortfolio(brief: GenerationBrief | {resumeId: string; revision: number; role: JobRole; answers: Record<string,number>} | {resumeId: string; revision: number; role: JobRole; templateId: TemplateId}, portrait?: { dataUrl: string },
     onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
     const epoch = generationEpoch;
     let portraitAssetId: string | null = null;
@@ -80,16 +78,16 @@ export const generationApi = {
       portraitAssetId = uploaded.id;
     }
     const task = await request<{ id: string }>("/api/generations", {
-      ...("resumeId" in brief ? brief : {brief}), portraitAssetId, styleId: portrait?.styleId ?? null, idempotencyKey: crypto.randomUUID()
+      ...("resumeId" in brief ? brief : {brief}), portraitAssetId, idempotencyKey: crypto.randomUUID()
     });
     await retainTaskOrCancel(task.id, epoch);
     return waitForTask(task.id, epoch, onStatus);
   },
-  async generateAvatar(dataUrl: string, styleId: AvatarStyleId, config: DesignConfig): Promise<HeroArtwork> {
+  async generateAvatar(dataUrl: string, config: DesignConfig): Promise<HeroArtwork> {
     const epoch = generationEpoch;
     const portrait = await request<{ id: string }>("/api/portraits", { dataUrl });
     requireCurrent(epoch);
-    const task = await request<{ id: string }>("/api/generations", { portraitAssetId: portrait.id, styleId,
+    const task = await request<{ id: string }>("/api/generations", { portraitAssetId: portrait.id,
       idempotencyKey: crypto.randomUUID(), config: toPublishedConfig(config) });
     await retainTaskOrCancel(task.id, epoch);
     const result = await waitForTask(task.id, epoch);

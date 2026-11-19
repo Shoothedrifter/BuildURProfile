@@ -5,7 +5,7 @@ import type { ChangeEvent } from "react";
 import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../packages/contracts/src/config";
 import type { ResumeDraftV2 } from "../../../packages/contracts/src/resume-draft";
 import { projectConfirmedResumeV3 } from "../../../packages/contracts/src/resume-draft";
-import type { AvatarStyleId, GenerationStatus } from "./lib/generationApi";
+import type { GenerationStatus } from "./lib/generationApi";
 import type { Offer, OwnedProject } from "./lib/paymentApi";
 import type { DraftField, ResumeDraft } from "./lib/resume";
 import type { DeliveryAction, DraftGroup, ReclassifyTarget } from "./components/BuilderExperience";
@@ -21,6 +21,7 @@ import { toPublishedConfig } from "./lib/publication";
 import { generationApi } from "./lib/generationApi";
 import { preparePortrait } from "./lib/portrait";
 import { createDefaultSkillRegistry } from "../../../packages/skills/src/registry";
+import { TEMPLATE_PORTRAIT_POLICIES } from "../../../packages/skills/src/avatar-catalog";
 import { resumeApi } from "./lib/resumeApi";
 
 const workflowSkills = createDefaultSkillRegistry();
@@ -84,7 +85,6 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   const [exporting, setExporting] = useState(false);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [photoName, setPhotoName] = useState("");
-  const [avatarStyle, setAvatarStyle] = useState<AvatarStyleId>("retro-flat-anime-head");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const generationVersion = useRef(0);
   const pdfVersion = useRef(0);
@@ -380,9 +380,9 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     const { heroArtwork: _oldArtwork, ...baseConfig } = sourceConfig;
     setGeneratingAvatar(true);
     setError("");
-    setProgress("已提交肖像生成任务，正在应用所选风格…");
+    setProgress("已提交肖像生成任务，正在应用网站模板的头像风格…");
     try {
-      const heroArtwork = await generationApi.generateAvatar(photoDataUrl, avatarStyle, baseConfig);
+      const heroArtwork = await generationApi.generateAvatar(photoDataUrl, baseConfig);
       if (version !== generationVersion.current || sourcePhoto !== photoDataRef.current) return;
       if (preserveEdits) {
         setGenerated((previous) => ({ ...(previous ?? baseConfig), heroArtwork }));
@@ -405,6 +405,10 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
 
   const generate = async () => {
     if ((!draft && !agentDraft) || !selectedTemplate || (!agentDraft && !isAssessmentComplete(answers))) return;
+    if (photoDataUrl && !TEMPLATE_PORTRAIT_POLICIES[selectedTemplate]) {
+      setError("当前模板暂不支持照片生成，请移除照片或选择赛博科技。");
+      return;
+    }
     let confirmation: { problems: string[]; content?: ResumeContent };
     try {
       confirmation = agentDraft ? { problems: [], content: projectConfirmedResumeV3(agentDraft) }
@@ -430,7 +434,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       const result = await generationApi.generatePortfolio(agentDraft
         ? { resumeId: agentDraft.resumeId, revision: agentDraft.revision, role, templateId: selectedTemplate }
         : { role, answers, content },
-        avatarDemo && photoDataUrl ? { dataUrl: photoDataUrl, styleId: avatarStyle } : undefined,
+        avatarDemo && photoDataUrl ? { dataUrl: photoDataUrl } : undefined,
         (status) => {
           if (version === generationVersion.current) setProgress(agentStatusText(status));
         });
@@ -724,14 +728,12 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     exporting={exporting}
     photoDataUrl={photoDataUrl}
     photoName={photoName}
-    avatarStyle={avatarStyle}
     generatingAvatar={generatingAvatar}
     avatarDemo={avatarDemo}
     onPhaseChange={setPhase}
     onSelectFile={selectFile}
     onParseFile={() => void parseSelectedFile()}
     onPhoto={onPhoto}
-    onAvatarStyle={setAvatarStyle}
     onClearPhoto={clearPhoto}
     onUpdateSingle={updateSingle}
     onUpdateGroup={updateGroup}

@@ -46,7 +46,7 @@ async def test_real_node_bridge_text_only():
                 async def edit(self, portrait, recipe, *, task_id):
                     self.calls += 1
                     assert portrait.mime in ("image/png", "image/jpeg", "image/webp")
-                    assert recipe["id"] == "retro-flat-anime-head"
+                    assert recipe["id"] == "lofi-print-anime"
                     output = io.BytesIO()
                     with Image.open(io.BytesIO(portrait.bytes)) as source:
                         source.convert("RGB").resize((1024, 1024), Image.Resampling.LANCZOS).save(output, format="PNG")

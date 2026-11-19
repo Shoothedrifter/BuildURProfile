@@ -106,7 +106,7 @@ test("internal Agent bridge streams only leased portrait and fences output and r
   const generationService = createGenerationService({ db, assetRoot: join(root, "assets"), minPixels: 1 });
   const photo = generationService.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
   const task = generationService.enqueue("owner", { brief, idempotencyKey: "bridge-photo",
-    portraitAssetId: photo.id, styleId: "retro-flat-anime-head" });
+    portraitAssetId: photo.id, styleId: "lofi-print-anime" });
   const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: true,
     agentToken: token, secret: Buffer.alloc(32, 8), agentStyleLoader: (id) => ({ id, version: "test-v1",
       license: "test-noncommercial", sourceCommit: "test", manifestVersion: "1", attribution: "test",

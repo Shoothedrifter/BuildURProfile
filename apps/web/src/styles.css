@@ -780,20 +780,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-avatar-upload > strong { padding: 10px 18px; border: 1.5px solid var(--proof-line); border-radius: var(--proof-radius); background: var(--proof-surface); font-size: 14px; }
 .proof-avatar-upload > small { color: var(--proof-muted); font-size: 12px; }
 .proof-file-name { overflow-wrap: anywhere; }
-.proof-avatar-styles { display: grid; gap: 8px; }
-.proof-avatar-styles button {
-  padding: 10px 12px;
-  display: grid;
-  gap: 3px;
-  border: 1.5px solid #d5c6bd;
-  border-radius: var(--proof-radius);
-  background: var(--proof-bg);
-  color: var(--proof-ink);
-  text-align: left;
-  cursor: pointer;
-}
-.proof-avatar-styles button.is-selected { border-color: var(--proof-line); background: var(--proof-accent); }
-.proof-avatar-styles small { color: var(--proof-muted); font-size: 11px; }
 .proof-style-card { display: grid; gap: 18px; }
 .proof-style-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .proof-style-options button {

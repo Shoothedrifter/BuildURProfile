@@ -101,7 +101,7 @@ test("avatar Skill fences output write with lease token and reuses an existing a
 });
 
 test("Wibi adapter verifies pinned manifest and resources and exposes license", () => {
-  assert.deepEqual(listAvatarStyles().map(({ id }) => id), ["retro-flat-anime-head", "lofi-print-anime"]);
+  assert.deepEqual(listAvatarStyles().map(({ id }) => id), ["lofi-print-anime"]);
   const recipe = loadStyleRecipe("retro-flat-anime-head");
   assert.equal(recipe.license, "MIT AND LicenseRef-Wibi-Personal-NonCommercial-1.0");
   assert.equal(recipe.sourceCommit, "17880b82ea35c1fe1ec4b8f907a053d314df464f");

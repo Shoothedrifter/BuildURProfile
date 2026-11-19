@@ -39,7 +39,7 @@
 
 Cloudflare 适配器使用 `@cf/black-forest-labs/flux-2-klein-4b`，经 `httpx` 发送 multipart REST 请求；调用前把肖像和风格参考图等比缩到 480 像素长边。已安装 Cloudflare SDK，但此 multipart 请求不经 SDK。
 
-运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的两种 Wibi 资源到私有 `data/wibi-style-pinned/`。Node 校验哈希后，只把已批准任务的配方交给 Python。两种风格为复古扁平动画头、低清晰印刷感动漫，输出静态画面并保留各自风格背景；低清晰印刷感动漫采用极近景构图，画面几乎不留背景。
+运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 资源到私有 `data/wibi-style-pinned/`。新生成任务中，赛博科技模板固定使用「低清晰印刷感动漫」；其他模板在配置各自肖像管线前不接受照片生成。该风格采用极近景构图，画面几乎不留背景。旧版「复古扁平动画头」配方仅供已入队任务兼容读取，不再提供给新生成请求。Node 校验资源哈希后，只把已批准任务的配方交给 Python。
 
 照片字节和供应商密钥不进入图状态或 checkpoint；供应商失败应明确报错，不伪造成功成图。超时、取消与有限重试规则见[架构与协议](../shared/architecture.md)。
 

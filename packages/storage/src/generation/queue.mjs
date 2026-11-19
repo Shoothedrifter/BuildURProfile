@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { ServiceError, cleanConfig } from "../../../contracts/src/validation.mjs";
 import { transaction } from "../database.mjs";
 import { listAvatarStyles } from "../../../skills/src/wibi.ts";
+import { DEFAULT_AVATAR_STYLE_ID, TEMPLATE_PORTRAIT_POLICIES } from "../../../skills/src/avatar-catalog.ts";
 import { cleanGenerationBrief } from "./brief.mjs";
 import { validateImage } from "./assets.mjs";
 
@@ -46,14 +47,23 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     if (typeof idempotencyKey !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(idempotencyKey)) throw new ServiceError(400, "生成请求标识无效。");
     if (portraitAssetId && !allowPortraits) throw new ServiceError(403, "当前环境未启用肖像生成。");
     if (requireBrief && !brief) throw new ServiceError(400, "请先确认简历内容并完成测评。");
+    if (brief && config) throw new ServiceError(400, "生成请求不能同时包含已生成配置和确认内容。");
+    const safeConfig = config ? cleanConfig(config) : null;
+    const safeBrief = brief ? JSON.stringify(cleanGenerationBrief(brief)) : null;
+    const templateId = brief?.templateId ?? config?.templateId;
     if (portraitAssetId) {
+      if (templateId) {
+        const policy = TEMPLATE_PORTRAIT_POLICIES[templateId];
+        if (!policy) throw new ServiceError(400, "当前模板暂不支持照片生成。");
+        if (styleId && styleId !== policy.styleId) throw new ServiceError(400, "头像风格与网站模板不匹配。");
+        styleId = policy.styleId;
+      } else {
+        styleId ??= DEFAULT_AVATAR_STYLE_ID;
+      }
       if (!listAvatarStyles().some((style) => style.id === styleId)) throw new ServiceError(400, "未知肖像风格。");
       const asset = db.prepare("SELECT id FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind='portrait' AND expires_at>?").get(portraitAssetId, sessionId, now());
       if (!asset) throw new ServiceError(404, "照片不存在或无权访问。");
     } else if (styleId) throw new ServiceError(400, "未上传照片时不能选择生图风格。");
-    if (brief && config) throw new ServiceError(400, "生成请求不能同时包含已生成配置和确认内容。");
-    const safeConfig = config ? cleanConfig(config) : null;
-    const safeBrief = brief ? JSON.stringify(cleanGenerationBrief(brief)) : null;
     const existing = db.prepare("SELECT * FROM generations WHERE owner_session_id=? AND idempotency_key=?").get(sessionId, idempotencyKey);
     if (existing) {
       if (existing.portrait_asset_id !== portraitAssetId || existing.style_id !== styleId ||

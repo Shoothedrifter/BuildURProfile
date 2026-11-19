@@ -18,7 +18,7 @@ it("does not enqueue or retain a task after the user removes a pending portrait"
     if (path === "/api/portraits") return new Promise<Response>((resolve) => { finishUpload = resolve; });
     throw new Error(`Unexpected request: ${path}`);
   }));
-  const pending = generationApi.generateAvatar("data:image/png;base64,aGVsbG8=", "retro-flat-anime-head", rawConfig as DesignConfig);
+  const pending = generationApi.generateAvatar("data:image/png;base64,aGVsbG8=", rawConfig as DesignConfig);
   await vi.waitFor(() => expect(calls).toContain("/api/portraits"));
   generationApi.clearSavedGeneration();
   finishUpload(new Response(JSON.stringify({ id: "portrait-id" }), { status: 201 }));
@@ -45,10 +45,29 @@ it("queues a no-photo portfolio through the generation API and restores its conf
     content: config.content });
   expect(result).toEqual({ config });
   expect(submitted).toMatchObject({ brief: { role: "ui-ux-designer", answers: { "e-presence": 0 } },
-    portraitAssetId: null, styleId: null });
+    portraitAssetId: null });
+  expect(submitted).not.toHaveProperty("styleId");
   expect(calls).not.toContain("/api/portraits");
   expect(sessionStorage.getItem("burp-avatar-task")).toBe("task-1");
   expect(await generationApi.resumeGeneration()).toEqual({ config });
+});
+
+it("submits a photo without letting the browser choose its portrait style", async () => {
+  let submitted: Record<string, unknown> | undefined;
+  vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
+    if (path === "/api/session") return new Response(JSON.stringify({ csrfToken: "csrf" }), { status: 200 });
+    if (path === "/api/portraits") return new Response(JSON.stringify({ id: "portrait-id" }), { status: 201 });
+    if (path === "/api/generations") {
+      submitted = JSON.parse(options?.body as string) as Record<string, unknown>;
+      return new Response(JSON.stringify({ id: "task-photo" }), { status: 201 });
+    }
+    if (path === "/api/generations/task-photo") return new Response(JSON.stringify({ status: "SUCCEEDED", config: rawConfig }), { status: 200 });
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+  await generationApi.generatePortfolio({ resumeId: "resume-id", revision: 1, role: "ui-ux-designer",
+    templateId: "cyber-creator-v1" }, { dataUrl: "data:image/png;base64,aGVsbG8=" });
+  expect(submitted).toMatchObject({ templateId: "cyber-creator-v1", portraitAssetId: "portrait-id" });
+  expect(submitted).not.toHaveProperty("styleId");
 });
 
 it("cancels a saved queued generation through the owner API", async () => {

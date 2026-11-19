@@ -5,9 +5,8 @@ import type { ChangeEvent, DragEvent } from "react";
 import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
 import type { DraftField, ResumeDraft } from "../lib/resume";
-import type { AvatarStyleId } from "../lib/generationApi";
 import type { Offer, OwnedProject } from "../lib/paymentApi";
-import { AVATAR_STYLES } from "../../../../packages/skills/src/avatar-catalog";
+import { AVATAR_STYLES, TEMPLATE_PORTRAIT_POLICIES } from "../../../../packages/skills/src/avatar-catalog";
 import { ShowcasePage } from "../ShowcasePage";
 import { EditorPanel } from "./EditorPanel";
 import { LaunchPage } from "./LaunchPage";
@@ -124,20 +123,20 @@ const stylePresets: Array<{
   }
 ];
 
-function AvatarPicker({ enabled, name, photoDataUrl, photoName, avatarStyle, generating, onPhoto, onStyle, onClear }: {
+function AvatarPicker({ enabled, name, photoDataUrl, photoName, generating, disabledReason, styleLabel, onPhoto, onClear }: {
   enabled: boolean;
   name: string;
   photoDataUrl: string | null;
   photoName: string;
-  avatarStyle: AvatarStyleId;
   generating: boolean;
+  disabledReason?: string;
+  styleLabel?: string;
   onPhoto: (event: ChangeEvent<HTMLInputElement>) => void;
-  onStyle: (style: AvatarStyleId) => void;
   onClear: () => void;
 }) {
   return <ProofCard as="section" className="proof-avatar-card" aria-labelledby="avatar-heading">
     <h2 id="avatar-heading">个人头像</h2>
-    <p>{[...(name.trim() || "你")][0]} · 姓名首字可直接使用，也可上传照片生成风格头像。</p>
+    <p>照片可选；未上传时使用模板默认视觉。上传照片后会生成与模板匹配的头像。</p>
     {enabled ? <>
       <label className="proof-avatar-upload">
         <span className="proof-avatar-placeholder">
@@ -148,17 +147,13 @@ function AvatarPicker({ enabled, name, photoDataUrl, photoName, avatarStyle, gen
         <input aria-label="选择个人肖像照片" type="file" accept="image/png,image/jpeg,image/webp" onChange={onPhoto} />
       </label>
       {photoName && <p className="proof-file-name">{photoName}</p>}
-      <div className="proof-avatar-styles" aria-label="虚拟形象风格">
-        {AVATAR_STYLES.map((style) => <button key={style.id} type="button" aria-pressed={avatarStyle === style.id}
-          className={avatarStyle === style.id ? "is-selected" : ""} onClick={() => onStyle(style.id)}>
-          <strong>{style.label}</strong><small>{style.hint}</small>
-        </button>)}
-      </div>
+      <p className="proof-microcopy">{styleLabel ? `当前模板将自动使用${styleLabel}头像。` : "头像效果由网站模板自动决定。"}</p>
       {photoDataUrl && <ProofButton variant="quiet" aria-busy={generating || undefined} onClick={onClear}>移除照片</ProofButton>}
       <p className="proof-microcopy">图片生成会把照片发送给配置的图像供应商。</p>
     </> : <>
       <span className="proof-avatar-placeholder" aria-hidden="true">{[...(name.trim() || "你")][0]}</span>
-      <p className="proof-muted">当前部署未启用头像生成，可跳过并在生成后继续编辑。</p>
+      <p className="proof-muted">{disabledReason ?? "当前部署未启用头像生成，可跳过并在生成后继续编辑。"}</p>
+      {photoDataUrl && <ProofButton variant="quiet" onClick={onClear}>移除照片</ProofButton>}
     </>}
   </ProofCard>;
 }
@@ -205,14 +200,12 @@ export type BuilderExperienceProps = {
   exporting: boolean;
   photoDataUrl: string | null;
   photoName: string;
-  avatarStyle: AvatarStyleId;
   generatingAvatar: boolean;
   avatarDemo: boolean;
   onPhaseChange: (phase: WorkflowPhase) => void;
   onSelectFile: (file: File) => void;
   onParseFile: () => void;
   onPhoto: (event: ChangeEvent<HTMLInputElement>) => void;
-  onAvatarStyle: (style: AvatarStyleId) => void;
   onClearPhoto: () => void;
   onUpdateSingle: (key: "name" | "email", value: string) => void;
   onUpdateGroup: (key: DraftGroup, index: number, change: Partial<DraftField>) => void;
@@ -243,9 +236,11 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const {
     phase, fileName, selectedFile, progress, error, draft, role, generated, isTouch, share, savedShares,
     projects, projectId, projectPaid, offer, quotedAmountYuan, paymentIntent, shareSnapshot, resultError, exporting, photoDataUrl, photoName,
-    avatarStyle, generatingAvatar, avatarDemo
+    generatingAvatar, avatarDemo
   } = props;
   const selectedPreset = stylePresets.find(preset => preset.templateId === props.selectedTemplate)?.id ?? null;
+  const portraitPolicy = props.selectedTemplate ? TEMPLATE_PORTRAIT_POLICIES[props.selectedTemplate] : undefined;
+  const portraitStyleLabel = AVATAR_STYLES.find((style) => style.id === portraitPolicy?.styleId)?.label;
   useEffect(() => { if (phase === "result") setPublishConfirmed(false); }, [phase]);
   useEffect(() => { if (phase === "delivery" && share) setPublishConfirmed(true); }, [phase, share]);
 
@@ -434,15 +429,17 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <h2>实时预览 / {stylePresets.find((preset) => preset.id === selectedPreset)?.label ?? "风格示意"}</h2>
           <PortfolioSnapshot name={draft?.name.value ?? props.confirmedContent?.profile.name ?? ""} role={roles.find((entry) => entry.value === role)?.label ?? ""}
             intro={draft?.selfEvaluation[0]?.value ?? props.confirmedContent?.profile.summary ?? ""} project={draft?.projects[0]?.value ?? props.confirmedContent?.projects[0]?.title ?? ""}
-            photo={photoDataUrl} tone={selectedPreset ?? "minimal"} />
-          <p>首屏样张会随选择更新；完整网站以生成后的预览为准。</p>
+            photo={!props.selectedTemplate || portraitPolicy ? photoDataUrl : null} tone={selectedPreset ?? "minimal"} />
+          <p>首屏样张会随选择更新；上传的照片在这里仅显示原图，头像效果以生成后的预览为准。</p>
         </ProofCard>
         <div className="proof-style-controls">
-        <AvatarPicker enabled={avatarDemo} name={draft?.name.value ?? ""} photoDataUrl={photoDataUrl} photoName={photoName} avatarStyle={avatarStyle}
-          generating={generatingAvatar} onPhoto={props.onPhoto} onStyle={props.onAvatarStyle} onClear={props.onClearPhoto} />
+        <AvatarPicker enabled={avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
+          disabledReason={avatarDemo ? "当前模板暂不支持照片生成；移除照片后可继续生成。" : undefined}
+          name={draft?.name.value ?? props.confirmedContent?.profile.name ?? ""} photoDataUrl={photoDataUrl} photoName={photoName}
+          styleLabel={portraitStyleLabel} generating={generatingAvatar} onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
         <ProofCard className="proof-style-card">
           <h2>网站风格</h2>
-          <p>选择一个网站模板。更换模板会保留已确认的资料与头像。</p>
+          <p>选择一个网站模板。更换模板会保留已确认的资料；照片风格化目前支持赛博科技。</p>
           <div className="proof-style-options">
             {stylePresets.map((preset) => <button type="button" key={preset.id} className={isPresetSelected(preset.id) ? "is-selected" : ""}
               aria-pressed={isPresetSelected(preset.id)} onClick={() => applyPreset(preset)}>
@@ -464,7 +461,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           if (match) window.location.assign(`/editor/${match[1]}`);
           else go("confirm");
         }}>← 返回资料</ProofButton>
-        <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar} onClick={props.onGenerate}>
+        <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar || Boolean(photoDataUrl && !portraitPolicy)} onClick={props.onGenerate}>
           {generatingAvatar ? "正在生成作品…" : "生成我的 Showcase →"}
         </ProofButton>
       </div>
@@ -488,12 +485,13 @@ export function BuilderExperience(props: BuilderExperienceProps) {
         <div><p>STEP 5 / DELIVERY</p><strong>作品已生成。下一步选择分享或导出。</strong></div>
         <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>下一步：前往分享与付费 →</ProofButton>
       </div>
-      {avatarDemo && <details className="proof-regenerate">
-        <summary>更换头像或风格 →</summary>
-        <AvatarPicker enabled name={generated.content.profile.name} photoDataUrl={photoDataUrl} photoName={photoName} avatarStyle={avatarStyle} generating={generatingAvatar}
-          onPhoto={props.onPhoto} onStyle={props.onAvatarStyle} onClear={props.onClearPhoto} />
+      {avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId))) && <details className="proof-regenerate">
+        <summary>更换照片 →</summary>
+        <AvatarPicker enabled name={generated.content.profile.name} photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}
+          styleLabel={AVATAR_STYLES.find((style) => style.id === generated.heroArtwork?.styleId)?.label ?? AVATAR_STYLES[0].label}
+          onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
         <ProofButton variant="primary" disabled={!photoDataUrl || generatingAvatar} onClick={props.onRunAvatarGeneration}>
-          {generatingAvatar ? "正在生成头像…" : "应用当前头像风格 →"}
+          {generatingAvatar ? "正在生成头像…" : "应用新照片 →"}
         </ProofButton>
         {progress && <p className="proof-status" role="status">{progress}</p>}
       </details>}

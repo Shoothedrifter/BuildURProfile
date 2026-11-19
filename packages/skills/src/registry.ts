@@ -2,7 +2,7 @@ import type { DesignConfig, JobRole, ResumeContent, StructuredResumeV1, StyleVec
 import type { ResumeCandidateV2 } from "../../contracts/src/resume-candidate.ts";
 import { isAssessmentComplete, scoreAnswers } from "./assessment.ts";
 import { styleToConfig } from "./mapping.ts";
-import { AVATAR_STYLES } from "./avatar-catalog.ts";
+import { COMPATIBLE_AVATAR_RECIPE_IDS } from "./avatar-catalog.ts";
 
 export type SkillRuntime = "browser" | "api" | "worker";
 export type SkillUsage = "preview" | "commercial";
@@ -242,8 +242,8 @@ export function createDefaultSkillRegistry() {
   registry.register({ id: "avatar.wibi.v1", version: "1.0.0", runtime: ["worker"],
     capabilities: ["readPortrait", "storeOutput", "outputExists", "existingOutput", "imageProvider", "loadStyleRecipe"],
     timeoutMs: 30 * 60 * 1_000, license: wibi,
-    validateInput: (input) => isRecord(input) && isString(input.taskId) && isString(input.portraitAssetId) &&
-      AVATAR_STYLES.some(({ id }) => id === input.styleId),
+    validateInput: (input) => isRecord(input) && isString(input.taskId) && isString(input.portraitAssetId) && isString(input.styleId) &&
+      COMPATIBLE_AVATAR_RECIPE_IDS.some((id) => id === input.styleId),
     validateOutput: (output) => isRecord(output) && isString(output.outputAssetId) && isString(output.recipeVersion),
     execute: async ({ taskId, portraitAssetId, styleId, leaseToken }: { taskId: string; portraitAssetId: string; styleId: string; leaseToken?: string },
       tools: any, { signal }: { signal: AbortSignal }) => {
