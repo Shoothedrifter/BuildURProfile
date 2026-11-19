@@ -1364,7 +1364,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .skin-swatch--dark-tech { background: linear-gradient(135deg, #0c0b10 50%, #bc81ee 50%); }
 
 /* Cyber Creator v1: fixed layout for confirmed resume-v3 content. */
-.cyber-creator-page { --cyber-ink: #0c0c0c; --cyber-paper: #f6f5f2; --cyber-mist: #d7e2ea; --cyber-accent: #b832c3; background: var(--cyber-ink); color: var(--cyber-mist); min-height: 100vh; overflow-x: clip; font-family: Kanit, "Noto Sans SC", "Arial Narrow", sans-serif; }
+.cyber-creator-page { position: relative; isolation: isolate; --cyber-ink: #0c0c0c; --cyber-paper: #f6f5f2; --cyber-mist: #d7e2ea; --cyber-accent: #b832c3; background: var(--cyber-ink); color: var(--cyber-mist); min-height: 100vh; overflow-x: clip; font-family: Kanit, "Noto Sans SC", "Arial Narrow", sans-serif; }
 .cyber-creator-page *, .cyber-creator-page *::before, .cyber-creator-page *::after { box-sizing: border-box; }
 .cyber-creator-page a { color: inherit; }
 .cyber-page-width { width: min(calc(100% - 80px), 1160px); margin-inline: auto; }
