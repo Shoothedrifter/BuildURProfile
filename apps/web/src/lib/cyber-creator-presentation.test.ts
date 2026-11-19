@@ -27,18 +27,17 @@ describe("赛博科技展示映射", () => {
     expect(result.projects[0].link?.url).toBe("https://example.test/work");
     expect(result.projects[1].images.map(image => image.imageId)).toEqual(["b1"]);
     expect(result.projects[1].layout).toBe("single");
-    expect(result.marquee.labels).toEqual(["实习/工作经历", "设计实习生"]);
+    expect(result.sections[1].items[0].title).toBe("设计实习生");
     expect(result.sections[1].items[0].details).toBe("原文\n第二段");
   });
 
-  it("shows no experience marquee when confirmed work is absent", () => {
+  it("omits sections without confirmed content", () => {
     const result = buildCyberCreatorPresentation(config([
       { kind: "skills", order: 0, items: [{ ...item("skill", [], "TypeScript"), order: 0 }] },
       { kind: "projects", order: 1, items: [] }
     ]));
     expect(result.projects).toEqual([]);
     expect(result.sections.map(section => section.kind)).toEqual(["skills"]);
-    expect(result.marquee.labels).toEqual([]);
   });
 
   it("selects text, single, double and mosaic layouts without losing full descriptions", () => {

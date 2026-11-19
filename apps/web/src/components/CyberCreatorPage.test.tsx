@@ -145,10 +145,9 @@ describe("赛博科技固定模板", () => {
     ] } } } as DesignConfigV4;
     const { container } = render(<ShowcasePage config={withExperience} />);
     expect(container.querySelector(".cyber-section-label")).toBeNull();
-    expect(screen.getByRole("heading", { name: "实习/工作经历" })).toBeInTheDocument();
-    expect(within(container.querySelector(".cyber-marquee") as HTMLElement).getByText("实习/工作经历")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "实习与工作经历" })).toBeInTheDocument();
     expect(container.querySelectorAll("#workExperience h2")).toHaveLength(1);
-    expect(within(container.querySelector(".cyber-marquee") as HTMLElement).getByText("实习经历")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "实习经历" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "项目作品" })).toBeInTheDocument();
   });
 
@@ -167,18 +166,30 @@ describe("赛博科技固定模板", () => {
     }
   });
 
-  it("keeps the experience marquee tied to confirmed work entries", () => {
+  it("presents confirmed work in order without duplicating titles or guessing dates", () => {
     const value = config();
+    const supplement = { text: "", links: [], images: [] };
     const sections = [...value.content.resume.sections,
-      { kind: "workExperience" as const, order: 4, items: [{ itemId: "work", order: 0, title: "前端开发实习生", details: "完成项目交付", facts: [], supplement: { text: "", links: [], images: [] } }] }];
-    const { container, rerender } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+      { kind: "workExperience" as const, order: 4, items: [
+        { itemId: "work-b", order: 1, title: "岗位经历", details: "协助团队完成设计", facts: [], supplement },
+        { itemId: "work-a", order: 0, title: "示例公司 - 前端开发实习生", details: "完成项目交付",
+          sourceText: "协助业务团队交付完整项目", facts: [{ key: "dateRange", label: "任职时间", value: "2024.06 至 2024.09" }], supplement }
+      ] }];
+    const { rerender } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
       resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
-    const marquee = container.querySelector(".cyber-marquee") as HTMLElement;
-    expect(within(marquee).getByText("实习/工作经历")).toBeInTheDocument();
-    expect(within(marquee).getByText("前端开发实习生")).toBeInTheDocument();
-    expect(within(marquee).queryByText("前端开发")).not.toBeInTheDocument();
+    const region = within(screen.getByRole("region", { name: "实习与工作经历" }));
+    const [first, second] = region.getAllByRole("listitem");
+    expect(within(first).getByRole("heading", { name: "示例公司" })).toBeInTheDocument();
+    expect(region.getAllByText("前端开发实习生")).toHaveLength(1);
+    expect(within(first).getByText("2024.06 至 2024.09")).toBeInTheDocument();
+    expect(within(second).getByRole("heading", { name: "岗位经历" })).toBeInTheDocument();
+    expect(within(second).queryByText(/2024/)).not.toBeInTheDocument();
+    const detail = within(first).getByText("查看详情");
+    fireEvent.click(detail);
+    expect(detail.closest("details")).toHaveAttribute("open");
+    expect(within(first).getByText("协助业务团队交付完整项目")).toBeVisible();
     rerender(<ShowcasePage config={value} />);
-    expect(container.querySelector(".cyber-marquee")).toBeNull();
+    expect(screen.queryByRole("region", { name: "实习与工作经历" })).not.toBeInTheDocument();
   });
 
   it("renders a three-image mosaic and keeps additional images accessible", () => {

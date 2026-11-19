@@ -5,6 +5,7 @@ import { RESUME_KINDS, RESUME_LABELS } from "../../../../packages/contracts/src/
 import { buildCyberCreatorPresentation, type CyberProject } from "../lib/cyber-creator-presentation";
 import { observeCyberProjectStack } from "../lib/cyber-project-stack";
 import { CyberGlassBackdrop } from "./CyberGlassBackdrop";
+import { CyberWorkTimeline } from "./CyberWorkTimeline";
 import { ResumeSupplement, type ResumeImageResolver } from "./ResumeDisplay";
 
 type Props = {
@@ -66,7 +67,6 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   const view = buildCyberCreatorPresentation(config);
   const [defaultPortraitFailed, setDefaultPortraitFailed] = useState(false);
   const [staticMode, setStaticMode] = useState(touchDowngraded);
-  const marqueeRef = useRef<HTMLDivElement>(null);
   const projectStackRef = useRef<HTMLDivElement>(null);
   const { profile } = view;
   const email = profile.email.trim();
@@ -99,24 +99,6 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
     return observeCyberProjectStack(projectStackRef.current);
   }, [config.content.resume, staticMode]);
 
-  useEffect(() => {
-    if (staticMode || staticDecorations) return;
-    let frame = 0;
-    const update = () => {
-      frame = 0;
-      const marquee = marqueeRef.current;
-      if (marquee) {
-        const offset = (window.scrollY - (marquee.getBoundingClientRect().top + window.scrollY) + window.innerHeight) * 0.3;
-        marquee.style.setProperty("--cyber-scroll", `${offset}px`);
-      }
-    };
-    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
-    schedule();
-    return () => { window.removeEventListener("scroll", schedule); window.removeEventListener("resize", schedule); if (frame) window.cancelAnimationFrame(frame); };
-  }, [staticMode, staticDecorations]);
-
   const preserveHash = (event: MouseEvent<HTMLDivElement>) => {
     if (!preserveShareHash || !(event.target instanceof Element)) return;
     const link = event.target.closest("a[href^='#']");
@@ -143,13 +125,8 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
 
       {view.sections.map(section => {
         if (section.kind === "basicInfo") return null;
-        if (section.kind === "workExperience") return <section className="cyber-work" id={section.kind} key={section.kind} aria-label="实习/工作经历">
-          <div className="cyber-marquee" ref={marqueeRef}>
-            <div className="cyber-marquee-text">{view.marquee.labels.map((label, index) => index === 0
-              ? <h2 key={index}>{label}</h2> : <span key={`${label}-${index}`}>{label}</span>)}</div>
-          </div>
-          <div className="cyber-page-width cyber-work-entries"><div className="cyber-entry-grid">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></div>
-        </section>;
+        if (section.kind === "workExperience") return <CyberWorkTimeline key={section.kind}
+          items={section.items} resolveResumeImage={resolveResumeImage} animate={!staticMode} />;
         if (section.kind === "jobIntent") {
           const items = section.items.filter(item => item.facts.some(fact => fact.value.trim() && !["name", "email", "location", "targetRole"].includes(fact.key))
             || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length);
