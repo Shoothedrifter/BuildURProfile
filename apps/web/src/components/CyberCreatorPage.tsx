@@ -58,6 +58,10 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   const projectRef = useRef<HTMLElement>(null);
   const { profile } = view;
   const email = profile.email.trim();
+  const phone = config.content.resume.sections.find(section => section.kind === "basicInfo")?.items
+    .flatMap(item => item.facts).find(fact => fact.key === "phone")?.value.trim() ?? "";
+  const phoneHref = `tel:${phone.replace(/[^+\d]/g, "")}`;
+  const hasContact = Boolean(email || phone);
   const hasAbout = view.sections.some(section => section.kind === "selfEvaluation");
   const hasSkills = view.sections.some(section => section.kind === "skills");
   const hasProjects = view.projects.length > 0;
@@ -115,7 +119,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
 
   return <div className="cyber-creator-page" data-testid="cyber-creator-page" data-skin="dark-tech" data-static={staticMode ? "true" : undefined} onClickCapture={preserveHash}>
     <header className="cyber-nav"><a href="#top" aria-label={`${profile.name} 首页`}>{profile.name || "PORTFOLIO"}<span className="cyber-nav-dot">.</span></a>
-      <nav aria-label="作品集导航">{hasAbout && <a href="#selfEvaluation">关于</a>}{hasSkills && <a href="#skills">能力</a>}{hasProjects && <a href="#projects">项目</a>}{email && <a href="#contact">联系</a>}</nav></header>
+      <nav aria-label="作品集导航">{hasAbout && <a href="#selfEvaluation">关于</a>}{hasSkills && <a href="#skills">能力</a>}{hasProjects && <a href="#projects">项目</a>}{hasContact && <a href="#contact">联系</a>}</nav></header>
     <main>
       <section className="cyber-hero" id="top" aria-labelledby="cyber-hero-title">
         <p className="cyber-hero-kicker">CREATOR PORTFOLIO <span>✦</span> {profile.role}</p>
@@ -125,7 +129,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           : defaultPortraitFailed ? <CyberPortrait />
           : <img src={defaultPortraitUrl} alt="赛博科技默认立体人物" onError={() => setDefaultPortraitFailed(true)} />}</div>
         <div className="cyber-hero-bottom"><p>{[profile.role, profile.location].filter(Boolean).join(" · ") || profile.summary || ""}</p>
-          {email && <a href={`mailto:${email}`} className="cyber-contact-button">联系我 ↗</a>}</div>
+          {hasContact && <a href="#contact" className="cyber-contact-button">联系我 ↗</a>}</div>
         <span className="cyber-hero-side">SCROLL TO EXPLORE ↓</span>
       </section>
 
@@ -136,7 +140,8 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
       </section>}
 
       {view.sections.map(section => {
-        if (section.kind === "basicInfo" || section.kind === "jobIntent") {
+        if (section.kind === "basicInfo") return null;
+        if (section.kind === "jobIntent") {
           const items = section.items.filter(item => item.facts.some(fact => fact.value.trim() && !["name", "email", "location", "targetRole"].includes(fact.key))
             || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length);
           if (!items.length) return null;
@@ -146,7 +151,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
         if (section.kind === "selfEvaluation") return <section className="cyber-about cyber-page-width" id={section.kind} key={section.kind}>
           <h2>关于我</h2>
           <div className="cyber-about-copy">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div>
-          {email && <a href={`mailto:${email}`} className="cyber-contact-button">联系我 ↗</a>}
+          {hasContact && <a href="#contact" className="cyber-contact-button">联系我 ↗</a>}
         </section>;
         if (section.kind === "skills") return <section className="cyber-capabilities" id={section.kind} key={section.kind}><div className="cyber-page-width">
           <h2>能力与专长</h2>
@@ -160,6 +165,6 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           <h2>{RESUME_LABELS[RESUME_KINDS.indexOf(section.kind)]}</h2><div className="cyber-entry-grid">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></section>;
       })}
     </main>
-    <footer className="cyber-footer" id="contact"><span>{profile.name}</span>{email && <a href={`mailto:${email}`}>{email} ↗</a>}<a href="#top">返回顶部 ↑</a></footer>
+    <footer className="cyber-footer" id="contact"><span>{profile.name}</span><div className="cyber-contact-links">{email && <a href={`mailto:${email}`}>{email} ↗</a>}{phone && <a href={phoneHref}>{phone} ↗</a>}</div><a href="#top">返回顶部 ↑</a></footer>
   </div>;
 }

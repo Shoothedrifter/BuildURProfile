@@ -59,6 +59,10 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
   const touchMode = touchDowngraded || touchDetected;
   const enriched = config.content.resume?.version === "resume-v2" || config.content.resume?.version === "resume-v3" ? config.content.resume : undefined;
   const ordered = enriched?.version === "resume-v3";
+  const fixedTemplate = "templateId" in config;
+  const phone = fixedTemplate ? enriched?.sections.find(section => section.kind === "basicInfo")?.items
+    .flatMap(item => item.facts).find(fact => fact.key === "phone")?.value.trim() ?? "" : "";
+  const hasContact = Boolean(config.content.profile.email.trim() || phone);
   const content = enriched ? resumeDisplayContent(enriched) as DesignConfig["content"] : config.content;
   const { profile, expertise, projects, workExperience = [], campusExperience = [], education = [] } = content;
   const visibleProjects = projects.filter((project) => {
@@ -86,7 +90,7 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
   const hasSelfEvaluation = Boolean(resume?.selfEvaluation.some((entry) => entry.details.trim() || entry.title.trim() && entry.title !== "自我评价"));
   const hasAbout = Boolean(expertise.summary.trim() || staticSkills.length || disciplines.length || (!hasSelfEvaluation && profile.summary.trim()));
   const exploreTarget = hasAbout ? "#about" : visibleProjects.length ? "#work" : hasSelfEvaluation ? "#self-evaluation" :
-    visibleAwards ? "#awards" : visibleOther ? "#other" : profile.email.trim() ? "#contact" : "#top";
+    visibleAwards ? "#awards" : visibleOther ? "#other" : hasContact ? "#contact" : "#top";
   const nameParts = profile.name.trim().split(/\s+/);
   const firstName = nameParts[0] ?? "";
   const restOfName = nameParts.slice(1).join(" ");
@@ -120,7 +124,7 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
     <div className="showcase-page" data-testid="showcase-page" data-skin={skin} data-palette={config.styleVector.PChoice} onClickCapture={preserveShareHash ? handleSectionClick : undefined}>
       <header className="site-header page-container">
         <a className="brand" href="#top" aria-label="BuildURProfile home"><span className="brand-symbol">b<span>u</span>.</span><span className="brand-word">BUILD YOUR<br />PROFILE</span></a>
-        <nav className="main-nav" aria-label="Main navigation">{hasAbout && <a href="#about">Skills</a>}{visibleProjects.length > 0 && <a href="#work">Projects</a>}{profile.email.trim() && <a href="#contact">Contact</a>}</nav>
+        <nav className="main-nav" aria-label="Main navigation">{hasAbout && <a href="#about">Skills</a>}{visibleProjects.length > 0 && <a href="#work">Projects</a>}{hasContact && <a href="#contact">Contact</a>}</nav>
         <span className="header-status"><span className="status-dot" /> SHOWCASE</span>
       </header>
 
@@ -136,7 +140,7 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
               {profile.intro.trim() && <p className="cyber-tagline">{profile.intro}</p>}
               <div className="cyber-hero-links">
                 {visibleProjects.length > 0 && <a href="#work">查看项目 <span aria-hidden="true">↗</span></a>}
-                {profile.email.trim() && <a href={`mailto:${profile.email}`}>联系我 <span aria-hidden="true">↗</span></a>}
+                {hasContact && <a href={fixedTemplate ? "#contact" : `mailto:${profile.email}`}>联系我 <span aria-hidden="true">↗</span></a>}
               </div>
             </div>
             <div className="cyber-stage" role="group" aria-label="赛博科技立体视觉">
@@ -177,8 +181,8 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
 
         {!ordered && projectSection}
         {ordered ? enriched.sections.map(section => <Fragment key={section.kind}>
-          {section.kind === 'projects' ? projectSection : <ResumeDisplay resume={{...enriched,sections:[section]}} resolveImage={resolveResumeImage}/>}
-        </Fragment>) : enriched && <ResumeDisplay resume={enriched} resolveImage={resolveResumeImage}/>}
+          {section.kind === 'projects' ? projectSection : <ResumeDisplay resume={{...enriched,sections:[section]}} resolveImage={resolveResumeImage} skipBasicInfo={fixedTemplate}/>}
+        </Fragment>) : enriched && <ResumeDisplay resume={enriched} resolveImage={resolveResumeImage} skipBasicInfo={fixedTemplate}/>}
         {visibleWork.length > 0 && <section className="resume-section page-container" aria-label="实习/工作经历">
           <div className="section-marker"><span>03 / EXPERIENCE</span><span className="marker-line" /></div>
           <h2>实习/工作经历</h2>
@@ -203,7 +207,7 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
           <AdditionalModule id="other" title="其他内容" entries={resume.other} />
         </>}
 
-        {profile.email.trim() && <section className="contact-section page-container" id="contact" aria-labelledby="contact-title"><div className="section-marker"><span>04 / CONTACT</span><span className="marker-line" /></div><p className="section-overline">CONTACT</p><h2 id="contact-title">Get in<br /><em>touch.</em></h2><a className="contact-link" href={`mailto:${profile.email}`}><span className="contact-link-address">{profile.email}</span><span className="contact-link-arrow" aria-hidden="true">↗</span></a></section>}
+        {hasContact && <section className="contact-section page-container" id="contact" aria-labelledby="contact-title"><div className="section-marker"><span>04 / CONTACT</span><span className="marker-line" /></div><p className="section-overline">CONTACT</p><h2 id="contact-title">Get in<br /><em>touch.</em></h2><div className="contact-links">{profile.email.trim() && <a className="contact-link" href={`mailto:${profile.email}`}><span className="contact-link-address">{profile.email}</span><span className="contact-link-arrow" aria-hidden="true">↗</span></a>}{phone && <a className="contact-link" href={`tel:${phone.replace(/[^+\d]/g, "")}`}><span className="contact-link-address">{phone}</span><span className="contact-link-arrow" aria-hidden="true">↗</span></a>}</div></section>}
       </main>
 
       <footer className="site-footer page-container"><span>{profile.name}</span><span>BUILD YOUR PROFILE</span><a href="#top">BACK TO TOP ↑</a></footer>

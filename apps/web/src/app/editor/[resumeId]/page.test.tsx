@@ -87,7 +87,7 @@ it("edits the entry source text shown in the showcase detail expansion", async (
   vi.mocked(resumeApi.save).mockImplementation(async (_id,next) => ({draft:next,revision:2,expiresAt:'2026-12-09T00:00:00Z'}));
   render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
   const basic = (await screen.findByRole('heading',{name:'基本信息'})).closest('section')!;
-  expect(within(basic).getByText('此内容将展示在作品集的详情展开中（来自 PDF 原文，可删改）')).toBeInTheDocument();
+  expect(within(basic).getByText('基本信息原文仅留在草稿中供核对，不进入作品集。')).toBeInTheDocument();
   const sourceText = within(basic).getByLabelText(/详情原文/);
   expect(sourceText).toHaveDisplayValue('既有原文');
   expect(within(basic).getByText('4/12000')).toBeInTheDocument();
@@ -142,6 +142,30 @@ it('reviews an isolated fill-empty candidate before applying it to the same resu
   expect(sessionStorage.getItem('burp-reparse-candidate-resume-1')).toBeNull();
 });
 
+it("does not require the basic-info module switch when selected identity fields remain", async () => {
+  const draft = structuredClone(fixture);
+  draft.sections.find(section => section.kind === "basicInfo")!.visible = false;
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: draft as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  await screen.findByRole("heading", { name: "基本信息" });
+  expect(screen.queryByRole("checkbox", { name: "显示基本信息" })).not.toBeInTheDocument();
+  expect(screen.getByText(/姓名用于作品集首屏/)).toBeInTheDocument();
+  expect(screen.queryByText(/请在基本信息中勾选姓名，以及邮箱或电话，再继续。/)).not.toBeInTheDocument();
+});
+
+it("marks age as private draft data rather than a publishable contact field", async () => {
+  const draft = structuredClone(fixture);
+  draft.sections.find(section => section.kind === "basicInfo")!.items[0].facts.push({ key: "age", label: "年龄", value: "30", included: true });
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: draft as never, revision: 1,
+    expiresAt: "2026-12-09T00:00:00Z" });
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: "resume-1" })} />);
+  const basic = (await screen.findByRole("heading", { name: "基本信息" })).closest("section")!;
+  const age = within(basic).getByDisplayValue("30").closest(".proof-fact-row")!;
+  expect(within(age as HTMLElement).queryByRole("checkbox")).toBeNull();
+  expect(age).toHaveTextContent("不进入作品集");
+});
+
 it("explains missing contact selection beside the confirm action", async () => {
   const draft = structuredClone(fixture);
   const basic = draft.sections.find((section) => section.kind === "basicInfo")!;
@@ -161,14 +185,14 @@ it("explains missing contact selection beside the confirm action", async () => {
   expect(vi.mocked(resumeApi.save)).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
   const basicModule = screen.getByRole("heading", { name: "基本信息" }).closest("section")!;
-  const factChecks = within(basicModule).getAllByRole("checkbox", { name: "展示" });
+  const factChecks = within(basicModule).getAllByRole("checkbox", { name: "用于网站" });
   fireEvent.click(factChecks[0]);
   fireEvent.click(factChecks[1]);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByText(/请在基本信息中勾选姓名，以及邮箱或电话，再继续。/)).not.toBeInTheDocument();
 });
 
-it("uses the module switch for every entry while preserving field-level privacy controls", async () => {
+it("keeps field-level privacy controls for required identity", async () => {
   const draft = structuredClone(fixture);
   const basic = draft.sections.find((section) => section.kind === "basicInfo")!;
   basic.visible = true;
@@ -183,7 +207,7 @@ it("uses the module switch for every entry while preserving field-level privacy 
 
   await screen.findByRole("heading", { name: "基本信息" });
   expect(screen.queryByText("展示此条")).not.toBeInTheDocument();
-  expect(screen.getAllByRole("checkbox", { name: "展示" })).toHaveLength(3);
+  expect(screen.getAllByRole("checkbox", { name: "用于网站" })).toHaveLength(3);
   expect(screen.queryByText(/请在基本信息中勾选姓名，以及邮箱或电话，再继续。/)).not.toBeInTheDocument();
 });
 

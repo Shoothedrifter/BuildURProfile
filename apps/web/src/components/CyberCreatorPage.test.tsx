@@ -21,17 +21,20 @@ function config(images: string[] = []): DesignConfigV4 {
 }
 
 describe("赛博科技固定模板", () => {
-  it("shows confirmed location in the hero and other selected basic facts in the body", () => {
+  it("uses selected contact fields at the footer without a basic-info resume section", () => {
     const value = config();
     const sections = value.content.resume.sections.map(section => section.kind === "basicInfo"
       ? { ...section, items: section.items.map(item => ({ ...item, facts: [
-        ...item.facts, { key: "location", label: "所在地", value: "上海" },
-        { key: "phone", label: "电话", value: "123456789" }
+        ...item.facts, { key: "phone", label: "电话", value: "123456789" },
+        { key: "age", label: "年龄", value: "30" }
       ] })) } : section);
     const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
       resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
-    expect(within(container.querySelector(".cyber-hero") as HTMLElement).getByText(/上海/)).toBeInTheDocument();
-    expect(within(container.querySelector("#basicInfo") as HTMLElement).getByText("123456789")).toBeInTheDocument();
+    expect(container.querySelector("#basicInfo")).toBeNull();
+    expect(within(container.querySelector("#contact") as HTMLElement).getByRole("link", { name: /123456789/ })).toHaveAttribute("href", "tel:123456789");
+    expect(within(container.querySelector("#contact") as HTMLElement).getByRole("link", { name: /lin@example.test/ })).toHaveAttribute("href", "mailto:lin@example.test");
+    expect(screen.queryByText("30")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /联系我/ })[0]).toHaveAttribute("href", "#contact");
   });
 
   it("puts over-height desktop project cards in document flow", async () => {

@@ -6,6 +6,21 @@ import { ShowcasePage } from "./ShowcasePage";
 
 const defaultConfig = rawConfig as DesignConfig;
 
+describe("fixed template contact placement", () => {
+  it("uses phone-only contact without rendering a basic-info section", () => {
+    const config = { ...defaultConfig, templateId: "warm-v1", content: { ...defaultConfig.content,
+      profile: { ...defaultConfig.content.profile, name: "林青", email: "" },
+      resume: { version: "resume-v3", sections: [{ kind: "basicInfo", order: 0, items: [{ itemId: "basic", order: 0,
+        title: "", details: "", facts: [{ key: "name", label: "姓名", value: "林青" },
+          { key: "phone", label: "电话", value: "123456789" }],
+        supplement: { text: "", links: [], images: [] } }] }] } } } as unknown as DesignConfig;
+    render(<ShowcasePage config={config} />);
+    expect(screen.queryByRole("heading", { name: "基本信息" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /123456789/ })).toHaveAttribute("href", "tel:123456789");
+    expect(screen.getByRole("link", { name: "Contact" })).toHaveAttribute("href", "#contact");
+  });
+});
+
 describe("ShowcasePage image content", () => {
   it("renders an abstract 3D focal point without inventing a portrait", () => {
     const { container } = render(<ShowcasePage config={{ ...defaultConfig, heroArtwork: undefined }} />);

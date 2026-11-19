@@ -111,7 +111,14 @@ export function projectConfirmedResume(raw: ResumeDraftV1 | ResumeDraftV2): Resu
 
 export function projectConfirmedResumeV3(raw: ResumeDraftV2): ResumeContent {
   const draft = normalizeResumeDraft(raw);
-  const previous = projectConfirmedResume(draft);
+  // Site identity is independent of the optional resume-style basic-info module.
+  // Only explicitly selected name and contact facts may enter the public v3 content.
+  const siteDraft = { ...draft, sections: draft.sections.map(section => section.kind === 'basicInfo'
+    ? { ...section, visible: true, items: section.items.map(item => ({ ...item,
+      facts: item.facts.map(fact => ({ ...fact, included: fact.included && ['name','email','phone'].includes(fact.key) })),
+      supplements: { text: '', links: [], images: [] } })) }
+    : section) };
+  const previous = projectConfirmedResume(siteDraft);
   const v2 = previous.resume as StructuredResumeV2;
   const sections = v2.sections.map(section => {
     const privateSection = draft.sections.find(entry => entry.kind === section.kind)!;

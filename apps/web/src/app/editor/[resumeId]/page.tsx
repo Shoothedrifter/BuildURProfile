@@ -74,7 +74,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [mergeChoice, setMergeChoice] = useState<'combine' | 'first' | 'second'>('combine');
   const dragged = useRef<{kind:'section';section:ResumeModuleKind} | {kind:'item';section:ResumeModuleKind;itemId:string} | null>(null);
   const basicSection = draft?.sections.find((section) => section.kind === "basicInfo");
-  const selectedBasicFacts = basicSection?.visible ? basicSection.items
+  const selectedBasicFacts = basicSection ? basicSection.items
     .flatMap((item) => item.facts).filter((fact) => fact.included && fact.value.trim()) : [];
   const hasName = selectedBasicFacts.some((fact) => fact.key === "name");
   const hasContact = selectedBasicFacts.some((fact) => fact.key === "email" || fact.key === "phone");

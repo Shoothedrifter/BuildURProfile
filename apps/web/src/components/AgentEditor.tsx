@@ -56,15 +56,16 @@ export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onV
       <span className="proof-module-badge" data-pending={pending || undefined}>
         {section.items.length === 0 ? "空" : pending ? "待确认" : `已识别 ${section.items.length} 条`}
       </span>
-      <label className="proof-module-switch">
-        <input type="checkbox" checked={section.visible} aria-label={`显示${label}`}
-          onChange={(event) => onVisibleChange(event.target.checked)} />
-        显示
-      </label>
+      {kind !== "basicInfo" && <label className="proof-module-switch">
+          <input type="checkbox" checked={section.visible} aria-label={`显示${label}`}
+            onChange={(event) => onVisibleChange(event.target.checked)} />
+          显示
+        </label>}
       <ProofButton variant="quiet" aria-expanded={expanded} aria-controls={`module-${kind}-body`}
         onClick={onToggleExpand}>{expanded ? "收起 ⌃" : "展开 ⌄"}</ProofButton>
     </div>
-    {!section.visible && <div className="proof-hidden-note">
+    {kind === "basicInfo" && <p className="proof-module-identity-note">姓名用于作品集首屏；已勾选的邮箱或电话仅用于页尾联系。其他字段与补充内容只留在草稿，不进入网站。</p>}
+    {!section.visible && kind !== "basicInfo" && <div className="proof-hidden-note">
       <p>已隐藏，不进入生成网站；数据仍保留。</p>
       <ProofButton variant="quiet" onClick={() => onVisibleChange(true)}>显示模块</ProofButton>
     </div>}
@@ -146,7 +147,7 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
         onChange={(event) => onPatchItem({ details: event.target.value })} /></label>
     {/* 详情原文：Agent 从 PDF 逐字填充的原文摘录，作品集详情展开按此展示，可删改，超 12000 字符截断 */}
     <label className="proof-field"><span>详情原文</span>
-      <span className="proof-microcopy">此内容将展示在作品集的详情展开中（来自 PDF 原文，可删改）</span>
+      <span className="proof-microcopy">{kind === "basicInfo" ? "基本信息原文仅留在草稿中供核对，不进入作品集。" : "此内容将展示在作品集的详情展开中（来自 PDF 原文，可删改）"}</span>
       <textarea rows={Math.min(9, Math.max(4, (item.sourceText ?? "").split("\n").length + 1))}
         value={item.sourceText ?? ""}
         onChange={(event) => onPatchItem({ sourceText: [...event.target.value].slice(0, 12000).join("") })} /></label>
@@ -154,8 +155,10 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     {item.facts.map((fact) => <div key={fact.key} className="proof-fact-row">
       <label className="proof-field"><span>{fact.label}</span>
         <input value={fact.value} onChange={(event) => onPatchFactValue(fact.key, event.target.value)} /></label>
-      <label className="proof-fact-check"><input type="checkbox" checked={fact.included}
-        onChange={(event) => onIncludeFact(fact.key, event.target.checked)} />展示</label>
+      {kind === "basicInfo" && !["name", "email", "phone"].includes(fact.key)
+        ? <span className="proof-fact-private">不进入作品集</span>
+        : <label className="proof-fact-check"><input type="checkbox" checked={fact.included}
+          onChange={(event) => onIncludeFact(fact.key, event.target.checked)} />用于网站</label>}
     </div>)}
     {canAddFacts && <ProofButton variant="quiet" onClick={onAddFact}>添加字段</ProofButton>}
     {customFacts.map((fact) => <label key={`${fact.key}-label`} className="proof-field"><span>字段名称</span>

@@ -31,6 +31,23 @@ it('projects a reordered private draft into source-free resume-v3 order', () => 
   expect(JSON.stringify(content)).not.toMatch(/sourceBlockIds|confidence|editedFields|fileId/);
 });
 
+it('keeps selected site identity and contact when the basic module is hidden', () => {
+  const draft = contracts.normalizeResumeDraft(fixture);
+  const basic = draft.sections.find(section => section.kind === 'basicInfo')!;
+  basic.visible = false;
+  basic.items[0].facts.find(fact => fact.key === 'email')!.included = false;
+  basic.items[0].facts.find(fact => fact.key === 'phone')!.included = true;
+  basic.items[0].facts.push({ key: 'age', label: '年龄', value: '30', included: true });
+  const content = contracts.projectConfirmedResumeV3(draft);
+  expect(content.profile.name).toBe('合成用户');
+  expect(content.profile.email).toBe('');
+  expect(content.resume?.version).toBe('resume-v3');
+  if (content.resume?.version !== 'resume-v3') throw new Error('v3 required');
+  const facts = content.resume.sections.find(section => section.kind === 'basicInfo')!.items.flatMap(item => item.facts);
+  expect(facts.map(fact => fact.key)).toEqual(['name', 'phone']);
+  expect(JSON.stringify(content)).not.toContain('年龄');
+});
+
 it('rejects noncontiguous order, duplicate IDs and forged edit fields in v2', () => {
   const draft = contracts.normalizeResumeDraft(fixture);
   draft.sections[0].order = 99;

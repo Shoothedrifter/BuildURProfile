@@ -24,6 +24,13 @@ function setup(t){
  const input={resumeId:draft.resumeId,revision:1,role:'frontend-creative-developer',answers,idempotencyKey:'request1'};
  return {db,queue,service,draft,input,advance:()=>{time+=31*86400000;}};
 }
+function addSyntheticProject(draft){
+ const basic=draft.sections.find(section=>section.kind==='basicInfo').items[0];
+ const item={...structuredClone(basic),itemId:'synthetic_project',order:0,title:'合成项目',details:'合成项目正文',
+   facts:[],needsReview:false,included:true,supplements:{text:'',links:[],images:[]}};
+ draft.sections.find(section=>section.kind==='projects').items=[item];
+ return item;
+}
 test('new confirmed generation carries user module order in v4 brief',t=>{
  const s=setup(t),draft=normalizeResumeDraft(s.draft);
  const projects=draft.sections.find(section=>section.kind==='projects');
@@ -53,8 +60,8 @@ test('template generation binds the selected template without hidden assessment 
  assert.throws(()=>s.service.enqueueResume('other',{...input,idempotencyKey:'other'}));
 });
 test('server projects exact revision, materializes only selected media atomically and isolates owners',t=>{
- const s=setup(t),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,s.draft.sections[0].items[0].itemId).imageId;
- s.draft.sections[0].items[0].supplements={text:'说明',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图'}]};
+ const s=setup(t),item=addSyntheticProject(s.draft),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
+ item.supplements={text:'说明',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图'}]};
  const saved=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});s.input.revision=saved.revision;
  assert.throws(()=>s.service.enqueueResume('other',s.input));
  assert.throws(()=>s.service.enqueueResume('owner',{...s.input,revision:1}));
@@ -70,7 +77,7 @@ test('server projects exact revision, materializes only selected media atomicall
  assert.equal(s.db.prepare('SELECT count(*) n FROM showcase_media').get().n,0);
 });
 test('invalid bytes, per-item limits, review and foreign image references fail without copies',t=>{
- const s=setup(t),item=s.draft.sections[0].items[0];
+ const s=setup(t),item=addSyntheticProject(s.draft);
  assert.throws(()=>s.queue.saveImage('owner',s.draft.resumeId,'image/png',Buffer.from('fake'),item.itemId));
  for(let i=0;i<6;i++)s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId);
  assert.throws(()=>s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId));
@@ -83,8 +90,8 @@ test('invalid bytes, per-item limits, review and foreign image references fail w
 });
 
 test('successful v3 task creates exactly one unpaid project and retains media beyond PDF expiry',async t=>{
- const s=setup(t),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png).imageId;
- s.draft.sections[0].items[0].supplements={text:'正文补充',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图片说明'}]};
+ const s=setup(t),item=addSyntheticProject(s.draft),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
+ item.supplements={text:'正文补充',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图片说明'}]};
  s.input.revision=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft}).revision;
  const task=s.service.enqueueResume('owner',s.input), leased=s.service.leaseNext();
  const base=JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/agent-golden.v1.json',import.meta.url))).expected.config;
@@ -127,7 +134,7 @@ test('history protects saved images until pruning while unsaved uploads can be c
  assert.throws(()=>s.queue.readImage('owner',s.draft.resumeId,b));
 });
 test('upload budget checks total bytes/count and selected copies reject corrupt legacy image bytes',t=>{
- const s=setup(t),id=s.draft.resumeId;
+ const s=setup(t),id=s.draft.resumeId,project=addSyntheticProject(s.draft);
  const large=Buffer.concat([png,Buffer.alloc(5*1024*1024-png.length)]);
  assert.throws(()=>s.queue.saveImage('owner',id,'image/png',Buffer.concat([large,Buffer.from('x')])));
  for(let i=0;i<10;i++)s.queue.saveImage('owner',id,'image/png',large);
@@ -137,7 +144,7 @@ test('upload budget checks total bytes/count and selected copies reject corrupt 
  assert.throws(()=>s.queue.saveImage('owner',id,'image/png',png));
  s.db.prepare('DELETE FROM resume_images').run();
  s.db.prepare('INSERT INTO resume_images(id,resume_id,content_type,data,created_at) VALUES(?,?,?,?,0)').run('old_bad',id,'image/png',Buffer.from('bad'));
- s.draft.sections[0].items[0].supplements={text:'',links:[],images:[{imageId:'old_bad',caption:''}]};
+ project.supplements={text:'',links:[],images:[{imageId:'old_bad',caption:''}]};
  s.db.prepare('UPDATE resumes SET draft_json=?').run(JSON.stringify(s.draft));
  assert.throws(()=>s.service.enqueueResume('owner',s.input));
  assert.equal(s.db.prepare('SELECT count(*) n FROM generations').get().n,0);
@@ -169,11 +176,15 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  const lease=repository.queue.lease('fake_parser');
  const parsedSource={...structuredClone(source),fileId:file.fileId,uploadedAt:lease.uploadedAt,expiresAt:lease.expiresAt};
  const parsedDraft={...structuredClone(fixture),resumeId:parsed.resumeId,fileId:file.fileId,revision:1};
+ const projectSection=parsedDraft.sections.find(section=>section.kind==='projects');
+ const projectItem={...structuredClone(parsedDraft.sections[0].items[0]),itemId:'synthetic_project',order:0,
+   title:'合成项目',details:'合成项目正文',facts:[],needsReview:false,included:true};
+ projectSection.items=[projectItem];
  for(const s of parsedDraft.sections) for(const i of s.items)i.included=false;
  repository.queue.complete(lease.id,lease.leaseToken,parsedSource,parsedDraft);
  const original=await request(`/api/resumes/${parsed.resumeId}/source`);assert.equal(original.status,200);assert.deepEqual(Buffer.from(await original.arrayBuffer()),pdf());
- const imageResponse=await request(`/api/resumes/${parsed.resumeId}/images`,'POST',png,{'content-type':'image/png','x-resume-item':parsedDraft.sections[0].items[0].itemId});assert.equal(imageResponse.status,201);const {imageId}=await imageResponse.json();
- const i=parsedDraft.sections[0].items[0];i.included=true;i.needsReview=false;i.supplements={text:'合成补充正文',links:[{label:'合成主页',url:'https://example.test/work'}],images:[{imageId,caption:'合成图片说明'}]};
+ const imageResponse=await request(`/api/resumes/${parsed.resumeId}/images`,'POST',png,{'content-type':'image/png','x-resume-item':projectItem.itemId});assert.equal(imageResponse.status,201);const {imageId}=await imageResponse.json();
+ const i=projectItem;i.included=true;i.needsReview=false;i.supplements={text:'合成补充正文',links:[{label:'合成主页',url:'https://example.test/work'}],images:[{imageId,caption:'合成图片说明'}]};
  const saved=await(await request(`/api/resumes/${parsed.resumeId}`,'PATCH',{revision:1,draft:parsedDraft})).json();assert.equal(saved.revision,2);
  assert.equal((await request('/api/generations','POST',{resumeId:parsed.resumeId,revision:1,role:'frontend-creative-developer',answers,idempotencyKey:'stale'})).status,409);
  const queued=await(await request('/api/generations','POST',{resumeId:parsed.resumeId,revision:2,role:'frontend-creative-developer',answers,idempotencyKey:'generation'})).json();assert.ok(queued.id);
@@ -193,7 +204,7 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  const shared=await request(`/api/shares/${share.token}/media/${imageId}`,'GET',undefined,{},true);assert.equal(shared.status,200);assert.equal(shared.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await shared.arrayBuffer()),png);
  assert.equal((await request(`/api/shares/${share.token}/media/not_referenced`,'GET',undefined,{},true)).status,404);
  // Updating the current config must not break the already published snapshot.
- const withoutImage=structuredClone(result.config);withoutImage.content.resume.sections[0].items[0].supplement.images=[];
+ const withoutImage=structuredClone(result.config);withoutImage.content.resume.sections.find(section=>section.kind==='projects').items[0].supplement.images=[];
  payments.updateProject(owner,project.id,withoutImage);
  assert.equal((await request(`/api/shares/${share.token}/media/${imageId}`,'GET',undefined,{},true)).status,200);
  payments.updateProject(owner,project.id,result.config);
