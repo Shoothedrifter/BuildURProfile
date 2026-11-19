@@ -1419,7 +1419,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-project-top h3 { margin: 0; font-size: clamp(29px, 3vw, 44px); line-height: 1.24; font-weight: 750; overflow-wrap: anywhere; }
 .cyber-project-top > a { display: inline-flex; align-items: center; max-width: 100%; min-width: 0; padding: 12px 20px; border: 2px solid #d7e2ea; border-radius: 999px; text-decoration: none; font-size: 14px; text-transform: uppercase; overflow-wrap: anywhere; }
 .cyber-project-card--flow, .cyber-creator-page[data-static="true"] .cyber-project-card { position: relative; top: auto; transform: none !important; }
-.cyber-creator-page[data-static="true"] .cyber-marquee-text { transform: none !important; }
+.cyber-creator-page[data-static="true"] .cyber-marquee-text { animation: cyber-marquee-drift 18s ease-in-out infinite alternate; }
+@keyframes cyber-marquee-drift { from { transform: translateX(0); } to { transform: translateX(-18%); } }
 .cyber-creator-page[data-static="true"] .cyber-hero-figure { animation: none; }
 .cyber-project-content { display: grid; grid-template-columns: minmax(250px, .42fr) minmax(0, .58fr); gap: 32px; margin-top: 28px; }
 .cyber-project-card[data-layout="text"] { position: relative; top: auto; min-height: 0; transform: none !important; }
@@ -1487,7 +1488,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 @media (prefers-reduced-motion: reduce) {
   .cyber-creator-page *, .cyber-creator-page *::before, .cyber-creator-page *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .cyber-project-card { transform: none !important; }
-  .cyber-marquee-text { transform: none !important; will-change: auto; }
+  .cyber-marquee-text { animation: none !important; transform: none !important; will-change: auto; }
 }
 @media (forced-colors: active) {
   .cyber-hero h1, .cyber-about h2, .cyber-capabilities h2, .cyber-projects h2, .cyber-generic h2, .cyber-marquee-text h2, .cyber-marquee-text span { background: none; color: CanvasText; -webkit-text-fill-color: currentColor; }
