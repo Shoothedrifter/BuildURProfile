@@ -14,11 +14,7 @@ export type CyberPresentation = Readonly<{
   profile: DesignConfigV4["content"]["profile"];
   sections: readonly (Omit<OrderedSection, "items"> & { kind: ResumeModuleKindV2; items: readonly OrderedItem[] })[];
   projects: readonly CyberProject[];
-  marquee: Readonly<{
-    mode: "images" | "text";
-    images: readonly { imageId: string; caption: string; projectTitle: string }[];
-    labels: readonly string[];
-  }>;
+  marquee: Readonly<{ labels: readonly string[] }>;
 }>;
 
 /** Keep the confirmed v3 tree as the only source of text, order, links and image IDs. */
@@ -34,15 +30,14 @@ export function buildCyberCreatorPresentation(config: DesignConfigV4): CyberPres
       const link = item.supplement.links.find(candidate => validHttpUrl(candidate.url));
       return { item, index: index + 1, images, layout, ...(link ? { link } : {}) };
     });
-  const images = projects.flatMap(project => project.images.map(image => ({
-    imageId: image.imageId, caption: image.caption, projectTitle: project.item.title
-  })));
-  const labels = sections.filter(section => section.kind === "skills")
-    .flatMap(section => section.items.map(item => item.title || item.details).filter(Boolean));
+  const work = sections.filter(section => section.kind === "workExperience").flatMap(section => section.items);
+  const labels = work.length > 0
+    ? ["实习/工作经历", ...work.map(item => item.title.trim()).filter(Boolean)]
+    : [];
   return {
     profile: resumeDisplayContent(resume).profile,
     sections,
     projects,
-    marquee: { mode: images.length >= 2 ? "images" : "text", images: images.length >= 2 ? images : [], labels }
+    marquee: { labels }
   };
 }

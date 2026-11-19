@@ -19,7 +19,7 @@ describe("赛博科技展示映射", () => {
     const result = buildCyberCreatorPresentation(config([
       { kind: "projects", order: 0, items: [{ ...item("a", ["a1", "a2", "a3", "a4", "a5", "a6"]), order: 0 },
         { ...item("b", ["b1"]), order: 1 }] },
-      { kind: "workExperience", order: 1, items: [{ ...item("work", [], "原文\n第二段"), order: 0 }] }
+      { kind: "workExperience", order: 1, items: [{ ...item("work", [], "原文\n第二段"), title: "设计实习生", order: 0 }] }
     ]));
     expect(result.sections.map(section => section.kind)).toEqual(["projects", "workExperience"]);
     expect(result.projects[0].images.map(image => image.imageId)).toEqual(["a1", "a2", "a3", "a4", "a5", "a6"]);
@@ -27,19 +27,18 @@ describe("赛博科技展示映射", () => {
     expect(result.projects[0].link?.url).toBe("https://example.test/work");
     expect(result.projects[1].images.map(image => image.imageId)).toEqual(["b1"]);
     expect(result.projects[1].layout).toBe("single");
-    expect(result.marquee.mode).toBe("images");
+    expect(result.marquee.labels).toEqual(["实习/工作经历", "设计实习生"]);
     expect(result.sections[1].items[0].details).toBe("原文\n第二段");
   });
 
-  it("uses text instead of fabricated images for empty projects", () => {
+  it("shows no experience marquee when confirmed work is absent", () => {
     const result = buildCyberCreatorPresentation(config([
       { kind: "skills", order: 0, items: [{ ...item("skill", [], "TypeScript"), order: 0 }] },
       { kind: "projects", order: 1, items: [] }
     ]));
     expect(result.projects).toEqual([]);
     expect(result.sections.map(section => section.kind)).toEqual(["skills"]);
-    expect(result.marquee.mode).toBe("text");
-    expect(result.marquee.images).toEqual([]);
+    expect(result.marquee.labels).toEqual([]);
   });
 
   it("selects text, single, double and mosaic layouts without losing full descriptions", () => {

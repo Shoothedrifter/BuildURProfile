@@ -31,6 +31,8 @@ describe("赛博科技固定模板", () => {
     const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
       resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
     expect(container.querySelector("#basicInfo")).toBeNull();
+    expect(within(container.querySelector("#contact") as HTMLElement).getByText("林青")).toBeInTheDocument();
+    expect(container.querySelector(".cyber-nav")).not.toHaveTextContent("林青");
     expect(within(container.querySelector("#contact") as HTMLElement).getByRole("link", { name: /123456789/ })).toHaveAttribute("href", "tel:123456789");
     expect(within(container.querySelector("#contact") as HTMLElement).getByRole("link", { name: /lin@example.test/ })).toHaveAttribute("href", "mailto:lin@example.test");
     expect(screen.queryByText("30")).not.toBeInTheDocument();
@@ -81,7 +83,7 @@ describe("赛博科技固定模板", () => {
   it("uses a full-screen figure hero and confirmed sections in user order", () => {
     const { container } = render(<ShowcasePage config={config()} />);
     expect(screen.getByTestId("cyber-creator-page")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "林青" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "你好，我是林青" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "赛博科技默认立体人物" })).toBeInTheDocument();
     expect(Array.from(container.querySelectorAll("main > section[id]")).map(section => section.id))
       .toEqual(["top", "selfEvaluation", "skills", "projects"]);
@@ -103,7 +105,39 @@ describe("赛博科技固定模板", () => {
     const { container } = render(<ShowcasePage config={withExperience} />);
     expect(container.querySelector(".cyber-section-label")).toBeNull();
     expect(screen.getByRole("heading", { name: "实习/工作经历" })).toBeInTheDocument();
+    expect(within(container.querySelector(".cyber-marquee") as HTMLElement).getByText("实习/工作经历")).toBeInTheDocument();
+    expect(container.querySelectorAll("#workExperience h2")).toHaveLength(1);
+    expect(within(container.querySelector(".cyber-marquee") as HTMLElement).getByText("实习经历")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "项目作品" })).toBeInTheDocument();
+  });
+
+  it("uses the given name in the hero and keeps the full name only in contact", () => {
+    for (const [fullName, greeting] of [["林青", "你好，我是林青"], ["高艺云", "你好，我是艺云"], ["欧阳艺云", "你好，我是艺云"]]) {
+      const value = config();
+      const sections = value.content.resume.sections.map(section => section.kind === "basicInfo"
+        ? { ...section, items: section.items.map(item => ({ ...item, facts: item.facts.map(fact => fact.key === "name" ? { ...fact, value: fullName } : fact) })) }
+        : section);
+      const { container, unmount } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+        resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
+      expect(within(container).getByRole("heading", { level: 1, name: greeting })).toBeInTheDocument();
+      expect(container.querySelector(".cyber-nav")).not.toHaveTextContent(fullName);
+      expect(within(container.querySelector("#contact") as HTMLElement).getByText(fullName)).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("keeps the experience marquee tied to confirmed work entries", () => {
+    const value = config();
+    const sections = [...value.content.resume.sections,
+      { kind: "workExperience" as const, order: 4, items: [{ itemId: "work", order: 0, title: "前端开发实习生", details: "完成项目交付", facts: [], supplement: { text: "", links: [], images: [] } }] }];
+    const { container, rerender } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+      resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
+    const marquee = container.querySelector(".cyber-marquee") as HTMLElement;
+    expect(within(marquee).getByText("实习/工作经历")).toBeInTheDocument();
+    expect(within(marquee).getByText("前端开发实习生")).toBeInTheDocument();
+    expect(within(marquee).queryByText("前端开发")).not.toBeInTheDocument();
+    rerender(<ShowcasePage config={value} />);
+    expect(container.querySelector(".cyber-marquee")).toBeNull();
   });
 
   it("renders a three-image mosaic and keeps additional images accessible", () => {

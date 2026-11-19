@@ -18,6 +18,16 @@ function safeArtwork(value: string | undefined): boolean {
   return Boolean(value && /^(?:\/api\/hero-assets\/[0-9a-f-]{36}|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(value));
 }
 
+function greetingName(fullName: string): string {
+  const name = fullName.trim().replace(/\s+/g, " ");
+  if (!name) return "你好";
+  const compact = name.replace(/\s/g, "");
+  const familiar = /^\p{Script=Han}+$/u.test(compact)
+    ? Array.from(compact).slice(-2).join("")
+    : name.split(" ")[0];
+  return `你好，我是${familiar}`;
+}
+
 function ProjectCard({ project, resolveResumeImage }: { project: CyberProject; resolveResumeImage: ResumeImageResolver }) {
   const { item, images, layout, link } = project;
   const primary = images.slice(0, 3);
@@ -54,7 +64,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   const view = buildCyberCreatorPresentation(config);
   const [defaultPortraitFailed, setDefaultPortraitFailed] = useState(false);
   const [staticMode, setStaticMode] = useState(touchDowngraded);
-  const marqueeRef = useRef<HTMLElement>(null);
+  const marqueeRef = useRef<HTMLDivElement>(null);
   const projectRef = useRef<HTMLElement>(null);
   const { profile } = view;
   const email = profile.email.trim();
@@ -118,12 +128,12 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   };
 
   return <div className="cyber-creator-page" data-testid="cyber-creator-page" data-skin="dark-tech" data-static={staticMode ? "true" : undefined} onClickCapture={preserveHash}>
-    <header className="cyber-nav"><a href="#top" aria-label={`${profile.name} 首页`}>{profile.name || "PORTFOLIO"}<span className="cyber-nav-dot">.</span></a>
+    <header className="cyber-nav"><a href="#top" aria-label="返回作品集首页">PORTFOLIO<span className="cyber-nav-dot">.</span></a>
       <nav aria-label="作品集导航">{hasAbout && <a href="#selfEvaluation">关于</a>}{hasSkills && <a href="#skills">能力</a>}{hasProjects && <a href="#projects">项目</a>}{hasContact && <a href="#contact">联系</a>}</nav></header>
     <main>
       <section className="cyber-hero" id="top" aria-labelledby="cyber-hero-title">
         <p className="cyber-hero-kicker">CREATOR PORTFOLIO <span>✦</span> {profile.role}</p>
-        <h1 id="cyber-hero-title">{profile.name}</h1>
+        <h1 id="cyber-hero-title">{greetingName(profile.name)}</h1>
         <div className={`cyber-hero-figure${hasArtwork ? " cyber-hero-figure--photo" : ""}`}>{hasArtwork
           ? <img src={config.heroArtwork?.assetUrl} alt={config.heroArtwork?.alt || "用户肖像"} />
           : defaultPortraitFailed ? <CyberPortrait />
@@ -133,14 +143,15 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
         <span className="cyber-hero-side">SCROLL TO EXPLORE ↓</span>
       </section>
 
-      {(view.marquee.mode === "images" || view.marquee.labels.length > 0) && <section className="cyber-marquee" aria-label="作品与能力预览" ref={marqueeRef}>
-        {view.marquee.mode === "images" ? [0, 1].map(row => <div className={`cyber-marquee-row cyber-marquee-row--${row}`} key={row}>
-          {[...view.marquee.images, ...view.marquee.images].map((image, index) => <figure key={`${row}-${index}`} aria-hidden="true"><img loading="lazy" src={resolveResumeImage(image.imageId)} alt="" /><figcaption>{image.projectTitle}</figcaption></figure>)}
-        </div>) : <div className="cyber-marquee-text">{view.marquee.labels.map((label, index) => <span key={`${label}-${index}`}>{label} ✦</span>)}</div>}
-      </section>}
-
       {view.sections.map(section => {
         if (section.kind === "basicInfo") return null;
+        if (section.kind === "workExperience") return <section className="cyber-work" id={section.kind} key={section.kind} aria-label="实习/工作经历">
+          <div className="cyber-marquee" ref={marqueeRef}>
+            <div className="cyber-marquee-text">{view.marquee.labels.map((label, index) => index === 0
+              ? <h2 key={index}>{label}</h2> : <span key={`${label}-${index}`}>{label}</span>)}</div>
+          </div>
+          <div className="cyber-page-width cyber-work-entries"><div className="cyber-entry-grid">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></div>
+        </section>;
         if (section.kind === "jobIntent") {
           const items = section.items.filter(item => item.facts.some(fact => fact.value.trim() && !["name", "email", "location", "targetRole"].includes(fact.key))
             || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length);
