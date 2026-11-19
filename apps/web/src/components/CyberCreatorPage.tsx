@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import type { DesignConfigV4, ResumeDisplayItem } from "../../../../packages/contracts/src/config";
 import { RESUME_KINDS, RESUME_LABELS } from "../../../../packages/contracts/src/resume-v2.mjs";
 import { buildCyberCreatorPresentation, type CyberProject } from "../lib/cyber-creator-presentation";
+import { CyberGlassBackdrop } from "./CyberGlassBackdrop";
 import { ResumeSupplement, type ResumeImageResolver } from "./ResumeDisplay";
 
 type Props = {
@@ -136,6 +137,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
       <nav aria-label="作品集导航">{hasAbout && <a href="#selfEvaluation">关于</a>}{hasSkills && <a href="#skills">能力</a>}{hasProjects && <a href="#projects">项目</a>}{hasContact && <a href="#contact">联系</a>}</nav></header>
     <main>
       <section className={`cyber-hero${hasCutout ? " cyber-hero--cutout" : hasArtwork ? " cyber-hero--poster" : ""}`} id="top" aria-labelledby="cyber-hero-title">
+        <CyberGlassBackdrop hero />
         {profile.role && <p className="cyber-hero-kicker">{profile.role}</p>}
         <h1 id="cyber-hero-title">{greetingName(profile.name)}</h1>
         <div className={`cyber-hero-figure${hasCutout ? " cyber-hero-figure--cutout" : hasArtwork ? " cyber-hero-figure--poster" : ""}`}>{hasArtwork
@@ -182,6 +184,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
     </main>
     <footer className="cyber-contact" id="contact">
       {hasContact && <section className="cyber-contact-cta" aria-labelledby="cyber-contact-heading">
+        <CyberGlassBackdrop />
         <div className="cyber-contact-content">
           <h2 id="cyber-contact-heading"><span>一起做点</span><span>有意思的事。</span></h2>
           <p>欢迎聊聊项目、合作与新的想法。</p>

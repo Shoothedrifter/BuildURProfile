@@ -1357,10 +1357,9 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-nav nav { display: flex; align-items: center; gap: clamp(15px, 3.5vw, 60px); }
 .cyber-nav nav a { text-decoration: none; transition: opacity .2s; }
 .cyber-nav nav a:hover { opacity: .7; }
-.cyber-hero { min-height: min(82svh, 780px); position: relative; isolation: isolate; display: flex; flex-direction: column; overflow: hidden; padding: 110px 5vw 48px; background: radial-gradient(circle at 72% 60%, #32213d 0, #17121e 30%, #0c0c0c 68%); }
-.cyber-hero::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(transparent 70%, #08080a 100%); }
+.cyber-hero { min-height: min(82svh, 780px); position: relative; isolation: isolate; display: flex; flex-direction: column; overflow: hidden; padding: 110px 5vw 48px; background: var(--cyber-ink); }
 .cyber-hero-kicker { color: #b6b1bf; font-size: clamp(11px, 1.15vw, 16px); font-weight: 500; letter-spacing: .18em; text-transform: uppercase; }
-.cyber-hero h1 { position: relative; z-index: 3; max-width: 100%; margin: clamp(18px, 3cqw, 48px) 0 0; font-size: clamp(42px, 10.5cqw, 158px); font-weight: 900; line-height: 1.02; letter-spacing: -.065em; overflow-wrap: anywhere; text-shadow: 0 2px 25px #08080acc; }
+.cyber-hero h1 { position: relative; z-index: 3; max-width: 100%; margin: clamp(18px, 3cqw, 48px) 0 0; font-size: clamp(42px, 10.5cqw, 158px); font-weight: 900; line-height: 1.02; letter-spacing: -.065em; overflow-wrap: anywhere; }
 .cyber-hero-figure { position: absolute; z-index: 4; bottom: 0; right: 5vw; width: min(40vw, 520px); height: 74%; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; filter: drop-shadow(0 25px 28px #0009); }
 .cyber-hero-figure img { width: 100%; height: 100%; display: block; object-fit: contain; object-position: bottom center; }
 .cyber-hero-figure img { max-height: 100%; }
@@ -1370,7 +1369,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-hero-figure--cutout { right: 4vw; bottom: 0; width: min(42vw, 580px); height: 78%; filter: drop-shadow(0 25px 28px #0009); }
 .cyber-hero-figure--cutout::before { content: ""; position: absolute; z-index: -1; width: 105%; height: 85%; bottom: -5%; left: -2%; border-radius: 50%; background: radial-gradient(ellipse, #78409c66 0, #49235744 42%, transparent 72%); }
 .cyber-hero-figure--cutout img { object-fit: contain; object-position: bottom center; }
-.cyber-hero--cutout::after { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: .11; background-image: radial-gradient(#c497e1 0.6px, transparent 0.6px); background-size: 7px 7px; mask-image: linear-gradient(90deg, transparent 52%, #000 100%); }
 .cyber-hero--cutout .cyber-hero-bottom, .cyber-hero--poster .cyber-hero-bottom { padding-right: min(39vw, 500px); }
 
 .cyber-hero-bottom { position: relative; z-index: 4; margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
@@ -1450,8 +1448,21 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-entry .resume-image-grid img { width: 100%; }
 .cyber-contact { background: #0c0c0c; }
 .cyber-contact-cta { position: relative; isolation: isolate; overflow: hidden; display: grid; place-items: center; min-height: clamp(480px, 58vw, 660px); padding: clamp(108px, 12vw, 160px) 24px; text-align: center; }
-.cyber-contact-cta::before { content: ""; position: absolute; inset: -20%; z-index: -2; background: radial-gradient(ellipse at 24% 54%, #8e35a888 0, transparent 38%), radial-gradient(ellipse at 76% 35%, #4d328088 0, transparent 37%), radial-gradient(ellipse at 57% 78%, #235b6966 0, transparent 38%), #0c0c0c; animation: cyber-contact-glow 16s ease-in-out infinite alternate; }
-.cyber-contact-cta::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(180deg, #0c0c0c, transparent 26%, transparent 72%, #0c0c0c), radial-gradient(#ffffff27 .5px, transparent .5px); background-size: auto, 6px 6px; }
+.cyber-hero::before, .cyber-contact-cta::before { content: ""; position: absolute; inset: -20%; z-index: -3; pointer-events: none; background: radial-gradient(ellipse at 24% 54%, #8e35a888 0, transparent 38%), radial-gradient(ellipse at 76% 35%, #4d328088 0, transparent 37%), radial-gradient(ellipse at 57% 78%, #235b6966 0, transparent 38%), #0c0c0c; animation: cyber-contact-glow 16s ease-in-out infinite alternate; }
+.cyber-hero::after, .cyber-contact-cta::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(180deg, #0c0c0c, transparent 26%, transparent 72%, #0c0c0c), radial-gradient(#ffffff27 .5px, transparent .5px); background-size: auto, 6px 6px; }
+.cyber-glass-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  opacity: .93;
+  pointer-events: none;
+}
+.cyber-hero .cyber-glass-backdrop { opacity: .77; }
+.cyber-contact-cta:has(.cyber-glass-backdrop[data-ready])::after {
+  background-image: linear-gradient(180deg, #0c0c0c, #100c1780 47%, #100c1740 70%, #0c0c0c), radial-gradient(#ffffff27 .5px, transparent .5px);
+}
 @keyframes cyber-contact-glow { from { transform: translate3d(-2%, 0, 0) scale(1.02); } to { transform: translate3d(2%, -2%, 0) scale(1.08); } }
 .cyber-contact-content { position: relative; z-index: 1; width: min(100%, 1000px); }
 .cyber-contact-content h2 { margin: 0; font-size: clamp(42px, 7vw, 96px); font-weight: 800; line-height: 1.08; letter-spacing: -.045em; background: linear-gradient(180deg, #fff 10%, #d9c8e5 85%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
@@ -1464,7 +1475,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-footer { display: flex; justify-content: space-between; gap: 25px; align-items: center; padding: 45px 4vw; border-top: 1px solid #d7e2ea44; font-size: clamp(14px, 1.4vw, 21px); }
 .cyber-footer a { text-decoration: none; }
 .cyber-contact-links { display: flex; flex-wrap: wrap; gap: 12px 30px; }
-.cyber-creator-page[data-static="true"] .cyber-contact-cta::before { animation: none; }
+.cyber-creator-page[data-static="true"] .cyber-hero::before, .cyber-creator-page[data-static="true"] .cyber-contact-cta::before { animation: none; }
 @keyframes cyber-portrait-arrive { from { opacity: 0; transform: translate(-50%, 35px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (max-width: 760px) {
   .cyber-page-width { width: min(calc(100% - 36px), 1360px); }
@@ -1497,11 +1508,12 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 }
 @media (prefers-reduced-motion: reduce) {
   .cyber-creator-page *, .cyber-creator-page *::before, .cyber-creator-page *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
-  .cyber-contact-cta::before { animation: none !important; }
+  .cyber-hero::before, .cyber-contact-cta::before { animation: none !important; }
   .cyber-project-card { transform: none !important; }
   .cyber-marquee-text { animation: none !important; transform: none !important; will-change: auto; }
 }
 @media (forced-colors: active) {
+  .cyber-glass-backdrop { display: none; }
   .cyber-hero h1, .cyber-about h2, .cyber-capabilities h2, .cyber-projects h2, .cyber-generic h2, .cyber-contact-content h2, .cyber-marquee-text h2, .cyber-marquee-text span { background: none; color: CanvasText; -webkit-text-fill-color: currentColor; }
 }
 .skin-swatch--light-minimal { background: linear-gradient(135deg, #f8f8f5 50%, #2457ff 50%); }
