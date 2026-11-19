@@ -117,7 +117,8 @@ describe("showcase builder", () => {
       await screen.findByRole("heading", { name: "04 头像与网站风格" });
       expect(screen.getByText("合成用户 / 个人作品集")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
-      expect(within(screen.getByLabelText("首屏实时预览")).queryByRole("img")).not.toBeInTheDocument();
+      expect(within(screen.getByLabelText("首屏实时预览")).getByRole("img", { name: "赛博科技默认中性动漫形象" }))
+        .toHaveAttribute("src", "/cyber-neutral-print-anime.webp");
       expect(screen.queryAllByRole("radio")).toHaveLength(0);
       fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
       expect(await screen.findByTestId("cyber-creator-page")).toBeInTheDocument();
@@ -469,6 +470,9 @@ describe("showcase builder", () => {
     expect(within(screen.getByLabelText("首屏实时预览")).queryByRole("img")).not.toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "个人头像" })).queryByRole("img")).not.toBeInTheDocument();
     expect(generationApi.generateAvatar).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
+    expect(within(screen.getByLabelText("首屏实时预览")).getByRole("img", { name: "赛博科技默认中性动漫形象" }))
+      .toHaveAttribute("src", "/cyber-neutral-print-anime.webp");
     fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
     expect(screen.queryByText("me.png")).not.toBeInTheDocument();
   });
@@ -480,7 +484,8 @@ describe("showcase builder", () => {
     expect(screen.getByRole("button", { name: /赛博科技/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("heading", { name: "实时预览 / 赛博科技" })).toBeInTheDocument();
     const sample = screen.getByLabelText("首屏实时预览");
-    expect(within(sample).queryByRole("img")).not.toBeInTheDocument();
+    expect(within(sample).getByRole("img", { name: "赛博科技默认中性动漫形象" }))
+      .toHaveAttribute("src", "/cyber-neutral-print-anime.webp");
     expect(within(sample).getByText(/精选项目/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     const page = await screen.findByTestId("showcase-page");

@@ -154,16 +154,16 @@ function AvatarPicker({ enabled, photoDataUrl, photoName, generating, disabledRe
     : <ProofCard as="section" className="proof-avatar-card" aria-labelledby="avatar-heading">{content}</ProofCard>;
 }
 
-function PortfolioSnapshot({ name, role, intro, project, projectDescription = "", photo, tone = "minimal", hidePortrait = false }: {
-  name: string; role: string; intro: string; project: string; projectDescription?: string; photo?: string | null; tone?: StylePresetId; hidePortrait?: boolean;
+function PortfolioSnapshot({ name, role, intro, project, projectDescription = "", photo, tone = "minimal", draftPreview = false, hidePortrait = false }: {
+  name: string; role: string; intro: string; project: string; projectDescription?: string; photo?: string | null; tone?: StylePresetId; draftPreview?: boolean; hidePortrait?: boolean;
 }) {
   const displayName = name.trim() || "你的名字";
-  return <div className={`proof-portfolio-snapshot proof-portfolio-snapshot--${tone}${hidePortrait ? " proof-portfolio-snapshot--draft" : ""}`} >
+  return <div className={`proof-portfolio-snapshot proof-portfolio-snapshot--${tone}${draftPreview ? " proof-portfolio-snapshot--draft" : ""}${draftPreview && photo && !hidePortrait ? " proof-portfolio-snapshot--draft-portrait" : ""}`}>
     <span>{displayName} / 个人作品集</span>
     <small>{role.trim() || "个人作品集"}</small>
     <strong>{displayName}</strong>
     <h3>{intro.trim() || "用你的经历，讲述自己的故事。"}</h3>
-    <div className="proof-snapshot-avatar" aria-hidden={hidePortrait || undefined}>{hidePortrait ? null : photo ? <img src={photo} alt="作品集头像预览" /> : <span aria-label="姓名首字头像">{[...displayName][0]}</span>}</div>
+    <div className="proof-snapshot-avatar" aria-hidden={hidePortrait || undefined}>{hidePortrait ? null : photo ? <img src={photo} alt={draftPreview && tone === "cyber" ? "赛博科技默认中性动漫形象" : "作品集头像预览"} /> : <span aria-label="姓名首字头像">{[...displayName][0]}</span>}</div>
     <b>精选项目&nbsp; 01</b>
     <h4>{project.trim() || "你的精选项目"}</h4>
     {projectDescription.trim() && <p className="proof-snapshot-project-description">{projectDescription.trim()}</p>}
@@ -428,8 +428,9 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <h2>实时预览 / {stylePresets.find((preset) => preset.id === selectedPreset)?.label ?? "风格示意"}</h2>
           <PortfolioSnapshot name={draft?.name.value ?? props.confirmedContent?.profile.name ?? ""} role={roles.find((entry) => entry.value === role)?.label ?? ""}
             intro={draft?.selfEvaluation[0]?.value ?? props.confirmedContent?.profile.summary ?? ""}
-            project={previewProjectTitle} projectDescription={previewProjectDescription} tone={selectedPreset ?? "minimal"} hidePortrait />
-          <p>完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。</p>
+            project={previewProjectTitle} projectDescription={previewProjectDescription} tone={selectedPreset ?? "minimal"}
+            photo={selectedPreset === "cyber" ? "/cyber-neutral-print-anime.webp" : null} draftPreview hidePortrait={selectedPreset !== "cyber"} />
+          <p>{selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
         </ProofCard>
         <ProofCard as="section" className="proof-style-controls" aria-label="头像与网站模板">
         <AvatarPicker inline enabled={avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}

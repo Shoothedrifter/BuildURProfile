@@ -903,6 +903,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-portfolio-snapshot--cyber.proof-portfolio-snapshot--draft > strong { margin-top: 14px; font-size: clamp(42px, 5vw, 76px); line-height: 1.08; }
 .proof-portfolio-snapshot--cyber.proof-portfolio-snapshot--draft h3 { position: static; max-width: none; display: block; overflow: visible; font-size: clamp(20px, 2vw, 27px); }
 .proof-portfolio-snapshot--cyber.proof-portfolio-snapshot--draft .proof-snapshot-avatar { position: static; height: clamp(96px, 10vw, 140px); }
+.proof-portfolio-snapshot--cyber.proof-portfolio-snapshot--draft-portrait .proof-snapshot-avatar { width: min(80%, 380px); height: clamp(240px, 30vw, 360px); justify-self: end; margin-top: -24px; margin-bottom: -12px; }
 .proof-portfolio-snapshot--cyber.proof-portfolio-snapshot--draft > b, .proof-portfolio-snapshot--cyber.proof-portfolio-snapshot--draft > h4 { display: block; }
 
 .proof-portfolio-snapshot > span { font-size: 14px; font-weight: 700; }
