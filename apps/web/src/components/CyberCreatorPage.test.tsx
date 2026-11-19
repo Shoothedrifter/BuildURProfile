@@ -21,6 +21,40 @@ function config(images: string[] = []): DesignConfigV4 {
 }
 
 describe("赛博科技固定模板", () => {
+  it("ends with a contact CTA linked to confirmed email and projects", () => {
+    const { container } = render(<ShowcasePage config={config()} />);
+    const cta = container.querySelector(".cyber-contact-cta") as HTMLElement;
+    expect(cta).not.toBeNull();
+    expect(within(cta).getByRole("heading", { name: "一起做点有意思的事。" })).toBeInTheDocument();
+    expect(within(cta).getByRole("link", { name: "联系我 ↗" })).toHaveAttribute("href", "mailto:lin@example.test");
+    expect(within(cta).getByRole("link", { name: "查看项目 ↗" })).toHaveAttribute("href", "#projects");
+    expect(container.querySelector("#contact")).toContainElement(cta);
+  });
+
+  it("uses the confirmed phone for the CTA when email is absent", () => {
+    const value = config();
+    const sections = value.content.resume.sections.map(section => section.kind === "basicInfo"
+      ? { ...section, items: section.items.map(item => ({ ...item, facts: [
+        { key: "name", label: "姓名", value: "林青" }, { key: "phone", label: "电话", value: "123456789" }
+      ] })) } : section);
+    const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+      resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
+    const cta = container.querySelector(".cyber-contact-cta") as HTMLElement;
+    expect(within(cta).getByRole("link", { name: "联系我 ↗" })).toHaveAttribute("href", "tel:123456789");
+  });
+
+  it("omits the contact CTA when no confirmed contact method exists", () => {
+    const value = config();
+    const sections = value.content.resume.sections.map(section => section.kind === "basicInfo"
+      ? { ...section, items: section.items.map(item => ({ ...item, facts: [
+        { key: "name", label: "姓名", value: "林青" }
+      ] })) } : section);
+    const { container } = render(<ShowcasePage config={{ ...value, content: { ...value.content,
+      resume: { version: "resume-v3", sections } } } as DesignConfigV4} />);
+    expect(container.querySelector(".cyber-contact-cta")).toBeNull();
+    expect(within(container.querySelector("#contact") as HTMLElement).getByText("林青")).toBeInTheDocument();
+  });
+
   it("uses selected contact fields at the footer without a basic-info resume section", () => {
     const value = config();
     const sections = value.content.resume.sections.map(section => section.kind === "basicInfo"

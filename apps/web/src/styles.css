@@ -1375,8 +1375,10 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 
 .cyber-hero-bottom { position: relative; z-index: 4; margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
 .cyber-hero-bottom p { max-width: 260px; margin: 0; font-size: clamp(14px, 1.5vw, 22px); line-height: 1.28; text-transform: uppercase; }
-.cyber-contact-button { display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 12px 34px; border: 2px solid #fff; outline: 2px solid #fff; outline-offset: -7px; border-radius: 999px; background: linear-gradient(123deg, #18011f 7%, #b600a8 37%, #7621b0 72%, #be4c00 100%); color: #fff !important; font-weight: 600; letter-spacing: .1em; text-decoration: none; text-transform: uppercase; box-shadow: inset 4px 4px 12px #7721b1, 0 10px 30px #7c248066; transition: transform .25s ease; }
-.cyber-contact-button:hover { transform: translateY(-4px); }
+.cyber-contact-button { position: relative; isolation: isolate; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 12px 34px; border: 1px solid #ffffff80; border-radius: 999px; background: #25122db8; color: #fff !important; font-weight: 600; letter-spacing: .08em; text-decoration: none; text-transform: uppercase; -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); box-shadow: 0 12px 32px #0009, inset 0 1px 1px #ffffff55, inset 0 0 24px #ae5ac933; transition: transform .25s ease, background-color .25s ease, box-shadow .25s ease; }
+.cyber-contact-button::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; background: linear-gradient(180deg, #ffffffb8, #ffffff33 28%, transparent 48%, transparent 60%, #dc7df566 83%, #ffffffa6); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+.cyber-contact-button:hover { transform: translateY(-4px); background: #613273bf; box-shadow: 0 16px 38px #000a, inset 0 1px 1px #ffffff80, inset 0 0 30px #c878e866; }
+.cyber-contact-button:focus-visible, .cyber-contact-secondary:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
 .cyber-hero-side { position: absolute; right: 4vw; top: 48%; font-size: 11px; letter-spacing: .2em; writing-mode: vertical-rl; }
 .cyber-marquee { overflow: hidden; padding: clamp(58px, 8cqw, 130px) 0 clamp(48px, 6cqw, 90px); --cyber-scroll: 0px; }
 .cyber-marquee-text { display: flex; width: max-content; align-items: center; white-space: nowrap; font-size: clamp(56px, 10.5cqw, 148px); font-weight: 900; line-height: 1.12; letter-spacing: -.065em; text-transform: uppercase; transform: translateX(calc(-4% - var(--cyber-scroll))); will-change: transform; }
@@ -1446,9 +1448,23 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-entry p { margin: 0 0 14px; }
 .cyber-entry .resume-supplement { color: inherit; }
 .cyber-entry .resume-image-grid img { width: 100%; }
+.cyber-contact { background: #0c0c0c; }
+.cyber-contact-cta { position: relative; isolation: isolate; overflow: hidden; display: grid; place-items: center; min-height: clamp(480px, 58vw, 660px); padding: clamp(108px, 12vw, 160px) 24px; text-align: center; }
+.cyber-contact-cta::before { content: ""; position: absolute; inset: -20%; z-index: -2; background: radial-gradient(ellipse at 24% 54%, #8e35a888 0, transparent 38%), radial-gradient(ellipse at 76% 35%, #4d328088 0, transparent 37%), radial-gradient(ellipse at 57% 78%, #235b6966 0, transparent 38%), #0c0c0c; animation: cyber-contact-glow 16s ease-in-out infinite alternate; }
+.cyber-contact-cta::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(180deg, #0c0c0c, transparent 26%, transparent 72%, #0c0c0c), radial-gradient(#ffffff27 .5px, transparent .5px); background-size: auto, 6px 6px; }
+@keyframes cyber-contact-glow { from { transform: translate3d(-2%, 0, 0) scale(1.02); } to { transform: translate3d(2%, -2%, 0) scale(1.08); } }
+.cyber-contact-content { position: relative; z-index: 1; width: min(100%, 1000px); }
+.cyber-contact-content h2 { margin: 0; font-size: clamp(42px, 7vw, 96px); font-weight: 800; line-height: 1.08; letter-spacing: -.045em; background: linear-gradient(180deg, #fff 10%, #d9c8e5 85%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.cyber-contact-content h2 span { white-space: nowrap; }
+.cyber-contact-content p { max-width: 44ch; margin: 24px auto 0; color: #e4dce8; font-size: clamp(15px, 1.5vw, 19px); line-height: 1.7; }
+.cyber-contact-actions { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 36px; }
+.cyber-contact-actions a { min-width: 170px; }
+.cyber-contact-secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 56px; padding: 12px 30px; border: 1px solid #fff; border-radius: 999px; background: #f6f5f2; color: #17121e !important; font-weight: 600; text-decoration: none; transition: transform .25s ease, background-color .25s ease; }
+.cyber-contact-secondary:hover { transform: translateY(-4px); background: #fff; }
 .cyber-footer { display: flex; justify-content: space-between; gap: 25px; align-items: center; padding: 45px 4vw; border-top: 1px solid #d7e2ea44; font-size: clamp(14px, 1.4vw, 21px); }
 .cyber-footer a { text-decoration: none; }
 .cyber-contact-links { display: flex; flex-wrap: wrap; gap: 12px 30px; }
+.cyber-creator-page[data-static="true"] .cyber-contact-cta::before { animation: none; }
 @keyframes cyber-portrait-arrive { from { opacity: 0; transform: translate(-50%, 35px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (max-width: 760px) {
   .cyber-page-width { width: min(calc(100% - 36px), 1360px); }
@@ -1463,6 +1479,10 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   .cyber-hero-bottom p { max-width: 130px; font-size: 13px; }
   .cyber-hero-side { display: none; }
   .cyber-contact-button { min-height: 49px; padding: 10px 21px; font-size: 13px; }
+  .cyber-contact-cta { min-height: 460px; padding: 96px 20px; }
+  .cyber-contact-content h2 { font-size: clamp(42px, 10vw, 64px); }
+  .cyber-contact-actions { gap: 12px; }
+  .cyber-contact-actions a { min-height: 49px; }
   .cyber-about { min-height: 0; }
   .cyber-capability { grid-template-columns: 70px 1fr; gap: 20px; }
   .cyber-project-card { position: relative; top: auto; min-height: 0; transform: none !important; }
@@ -1477,11 +1497,12 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 }
 @media (prefers-reduced-motion: reduce) {
   .cyber-creator-page *, .cyber-creator-page *::before, .cyber-creator-page *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  .cyber-contact-cta::before { animation: none !important; }
   .cyber-project-card { transform: none !important; }
   .cyber-marquee-text { animation: none !important; transform: none !important; will-change: auto; }
 }
 @media (forced-colors: active) {
-  .cyber-hero h1, .cyber-about h2, .cyber-capabilities h2, .cyber-projects h2, .cyber-generic h2, .cyber-marquee-text h2, .cyber-marquee-text span { background: none; color: CanvasText; -webkit-text-fill-color: currentColor; }
+  .cyber-hero h1, .cyber-about h2, .cyber-capabilities h2, .cyber-projects h2, .cyber-generic h2, .cyber-contact-content h2, .cyber-marquee-text h2, .cyber-marquee-text span { background: none; color: CanvasText; -webkit-text-fill-color: currentColor; }
 }
 .skin-swatch--light-minimal { background: linear-gradient(135deg, #f8f8f5 50%, #2457ff 50%); }
 .skin-swatch--high-saturation { background: linear-gradient(135deg, #171024 50%, #ff5c35 50%); }

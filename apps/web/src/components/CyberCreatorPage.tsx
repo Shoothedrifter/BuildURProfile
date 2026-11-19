@@ -180,6 +180,18 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           <h2>{RESUME_LABELS[RESUME_KINDS.indexOf(section.kind)]}</h2><div className="cyber-entry-grid">{section.items.map(item => <ItemContent item={item} resolveResumeImage={resolveResumeImage} key={item.itemId} />)}</div></section>;
       })}
     </main>
-    <footer className="cyber-footer" id="contact"><span>{profile.name}</span><div className="cyber-contact-links">{email && <a href={`mailto:${email}`}>{email} ↗</a>}{phone && <a href={phoneHref}>{phone} ↗</a>}</div><a href="#top">返回顶部 ↑</a></footer>
+    <footer className="cyber-contact" id="contact">
+      {hasContact && <section className="cyber-contact-cta" aria-labelledby="cyber-contact-heading">
+        <div className="cyber-contact-content">
+          <h2 id="cyber-contact-heading"><span>一起做点</span><span>有意思的事。</span></h2>
+          <p>欢迎聊聊项目、合作与新的想法。</p>
+          <div className="cyber-contact-actions">
+            <a className="cyber-contact-button" href={email ? `mailto:${email}` : phoneHref}>联系我 ↗</a>
+            {hasProjects && <a className="cyber-contact-secondary" href="#projects">查看项目 ↗</a>}
+          </div>
+        </div>
+      </section>}
+      <div className="cyber-footer"><span>{profile.name}</span><div className="cyber-contact-links">{email && <a href={`mailto:${email}`}>{email} ↗</a>}{phone && <a href={phoneHref}>{phone} ↗</a>}</div><a href="#top">返回顶部 ↑</a></div>
+    </footer>
   </div>;
 }
