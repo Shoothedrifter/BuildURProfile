@@ -84,7 +84,8 @@ describe("赛博科技固定模板", () => {
     const { container } = render(<ShowcasePage config={config()} />);
     expect(screen.getByTestId("cyber-creator-page")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "你好，我是林青" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "赛博科技默认立体人物" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "赛博科技默认中性动漫形象" })).toHaveAttribute("src", "/cyber-neutral-print-anime.webp");
+    expect(screen.queryByText(/CREATOR PORTFOLIO|PORTFOLIO\./)).not.toBeInTheDocument();
     expect(Array.from(container.querySelectorAll("main > section[id]")).map(section => section.id))
       .toEqual(["top", "selfEvaluation", "skills", "projects"]);
     expect(screen.getByRole("heading", { name: "能力与专长" })).toBeInTheDocument();

@@ -3,7 +3,6 @@ import type { MouseEvent } from "react";
 import type { DesignConfigV4, ResumeDisplayItem } from "../../../../packages/contracts/src/config";
 import { RESUME_KINDS, RESUME_LABELS } from "../../../../packages/contracts/src/resume-v2.mjs";
 import { buildCyberCreatorPresentation, type CyberProject } from "../lib/cyber-creator-presentation";
-import { CyberPortrait } from "./CyberPortrait";
 import { ResumeSupplement, type ResumeImageResolver } from "./ResumeDisplay";
 
 type Props = {
@@ -60,7 +59,7 @@ function ItemContent({ item, resolveResumeImage }: { item: ResumeDisplayItem; re
   </article>;
 }
 
-export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash = false, touchDowngraded = false, defaultPortraitUrl = "/cyber-creator-bust.webp" }: Props) {
+export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash = false, touchDowngraded = false, defaultPortraitUrl = "/cyber-neutral-print-anime.webp" }: Props) {
   const view = buildCyberCreatorPresentation(config);
   const [defaultPortraitFailed, setDefaultPortraitFailed] = useState(false);
   const [staticMode, setStaticMode] = useState(touchDowngraded);
@@ -80,6 +79,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   const hasCutout = hasArtwork && safeArtwork(config.heroArtwork?.cutoutAssetUrl) && !cutoutFailed;
 
   useEffect(() => setCutoutFailed(false), [config.heroArtwork?.cutoutAssetUrl]);
+  useEffect(() => setDefaultPortraitFailed(false), [defaultPortraitUrl]);
 
   useEffect(() => {
     const pointer = window.matchMedia?.("(pointer: coarse)");
@@ -132,17 +132,16 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
   };
 
   return <div className="cyber-creator-page" data-testid="cyber-creator-page" data-skin="dark-tech" data-static={staticMode ? "true" : undefined} onClickCapture={preserveHash}>
-    <header className="cyber-nav"><a href="#top" aria-label="返回作品集首页">PORTFOLIO<span className="cyber-nav-dot">.</span></a>
+    <header className="cyber-nav"><a href="#top" aria-label="返回作品集首页">✦</a>
       <nav aria-label="作品集导航">{hasAbout && <a href="#selfEvaluation">关于</a>}{hasSkills && <a href="#skills">能力</a>}{hasProjects && <a href="#projects">项目</a>}{hasContact && <a href="#contact">联系</a>}</nav></header>
     <main>
       <section className={`cyber-hero${hasCutout ? " cyber-hero--cutout" : hasArtwork ? " cyber-hero--poster" : ""}`} id="top" aria-labelledby="cyber-hero-title">
-        <p className="cyber-hero-kicker">CREATOR PORTFOLIO <span>✦</span> {profile.role}</p>
+        {profile.role && <p className="cyber-hero-kicker">{profile.role}</p>}
         <h1 id="cyber-hero-title">{greetingName(profile.name)}</h1>
         <div className={`cyber-hero-figure${hasCutout ? " cyber-hero-figure--cutout" : hasArtwork ? " cyber-hero-figure--poster" : ""}`}>{hasArtwork
           ? <img src={hasCutout ? config.heroArtwork?.cutoutAssetUrl : config.heroArtwork?.assetUrl} alt={config.heroArtwork?.alt || "用户肖像"}
               onError={hasCutout ? () => setCutoutFailed(true) : undefined} />
-          : defaultPortraitFailed ? <CyberPortrait />
-          : <img src={defaultPortraitUrl} alt="赛博科技默认立体人物" onError={() => setDefaultPortraitFailed(true)} />}</div>
+          : !defaultPortraitFailed && <img src={defaultPortraitUrl} alt="赛博科技默认中性动漫形象" onError={() => setDefaultPortraitFailed(true)} />}</div>
         <div className="cyber-hero-bottom"><p>{[profile.role, profile.location].filter(Boolean).join(" · ") || profile.summary || ""}</p>
           {hasContact && <a href="#contact" className="cyber-contact-button">联系我 ↗</a>}</div>
         <span className="cyber-hero-side">SCROLL TO EXPLORE ↓</span>

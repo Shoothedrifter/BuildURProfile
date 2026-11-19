@@ -95,10 +95,11 @@ it('embeds the cyber creator default portrait into offline HTML', async () => {
   const html=buildStaticHtml(config,undefined,undefined,()=>({mime:'image/png',bytes:Buffer.from([1,2,3])}));
   const page=new JSDOM(html,{runScripts:'dangerously',pretendToBeVisual:true});
   await new Promise(resolve=>setTimeout(resolve,150));
-  const image=page.window.document.querySelector('img[alt="赛博科技默认立体人物"]');
+  const image=page.window.document.querySelector('img[alt="赛博科技默认中性动漫形象"]');
   expect(image?.getAttribute('src')).toMatch(/^data:image\/webp;base64,/);
   expect(page.window.document.querySelector('[data-testid="cyber-creator-page"]')?.getAttribute('data-static')).toBe('true');
-  expect(html).not.toContain('src="/cyber-creator-bust.webp"');
+  expect(html).not.toContain('src="/cyber-neutral-print-anime.webp"');
+  expect(html).not.toContain('CREATOR PORTFOLIO');
   page.window.close();
 });
 

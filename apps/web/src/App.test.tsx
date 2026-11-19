@@ -117,7 +117,7 @@ describe("showcase builder", () => {
       await screen.findByRole("heading", { name: "04 头像与网站风格" });
       expect(screen.getByText("合成用户 / 个人作品集")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
-      expect(screen.getByRole("img", { name: "赛博科技默认立体人物预览" })).toBeInTheDocument();
+      expect(within(screen.getByLabelText("首屏实时预览")).queryByRole("img")).not.toBeInTheDocument();
       expect(screen.queryAllByRole("radio")).toHaveLength(0);
       fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
       expect(await screen.findByTestId("cyber-creator-page")).toBeInTheDocument();
@@ -409,7 +409,7 @@ describe("showcase builder", () => {
     render(<App />);
     await reachStyle();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
-    await screen.findByAltText("待生成的肖像照片预览");
+    await screen.findByText("me.png");
     answerAll();
     fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
@@ -429,7 +429,7 @@ describe("showcase builder", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
     fireEvent.click(screen.getByText("更换照片 →"));
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "new.png", { type: "image/png" })] } });
-    await screen.findByAltText("待生成的肖像照片预览");
+    await screen.findByText("new.png");
     fireEvent.click(screen.getByRole("button", { name: /应用新照片/ }));
     expect(await screen.findByAltText("新肖像")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
@@ -454,6 +454,10 @@ describe("showcase builder", () => {
   it("offers photo upload without portrait style choices", async () => {
     render(<App />);
     await reachStyle();
+    const appearancePanel = screen.getByRole("region", { name: "头像与网站模板" });
+    expect(within(appearancePanel).getByRole("heading", { name: "网站模板" })).toBeInTheDocument();
+    expect(within(appearancePanel).getByRole("button", { name: /生成我的 Showcase/ })).toBeInTheDocument();
+    expect(within(appearancePanel).queryByText(/点击生成前只保留|当前模板将自动使用|图像供应商/)).not.toBeInTheDocument();
     expect(screen.getByText(/实时预览/)).toBeInTheDocument();
     expect(screen.getByText(/黄琬斐 \/ 个人作品集/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /复古扁平动画头|低清晰印刷感动漫/ })).not.toBeInTheDocument();
@@ -461,10 +465,12 @@ describe("showcase builder", () => {
     expect(screen.queryByRole("button", { name: /蜡笔极简扁平画/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /颗粒绒感玩偶/ })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
-    expect(await screen.findByAltText("待生成的肖像照片预览")).toBeInTheDocument();
+    expect(await screen.findByText("me.png")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("首屏实时预览")).queryByRole("img")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "个人头像" })).queryByRole("img")).not.toBeInTheDocument();
     expect(generationApi.generateAvatar).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
-    expect(screen.queryByAltText("待生成的肖像照片预览")).not.toBeInTheDocument();
+    expect(screen.queryByText("me.png")).not.toBeInTheDocument();
   });
 
   it("offers the cyber technology template and carries it into the generated showcase", async () => {
@@ -473,6 +479,9 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
     expect(screen.getByRole("button", { name: /赛博科技/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("heading", { name: "实时预览 / 赛博科技" })).toBeInTheDocument();
+    const sample = screen.getByLabelText("首屏实时预览");
+    expect(within(sample).queryByRole("img")).not.toBeInTheDocument();
+    expect(within(sample).getByText(/精选项目/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     const page = await screen.findByTestId("showcase-page");
     expect(page).toHaveAttribute("data-skin", "dark-tech");
@@ -499,7 +508,7 @@ describe("showcase builder", () => {
     render(<App />);
     await reachStyle();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
-    await screen.findByAltText("待生成的肖像照片预览");
+    await screen.findByText("me.png");
     answerAll();
     fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
@@ -519,7 +528,7 @@ describe("showcase builder", () => {
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), {
       target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] }
     });
-    await screen.findByAltText("待生成的肖像照片预览");
+    await screen.findByText("me.png");
     fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     expect(await screen.findByText(/透明去背景未完成/)).toBeInTheDocument();
@@ -530,7 +539,7 @@ describe("showcase builder", () => {
     render(<App />);
     await reachStyle();
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "me.png", { type: "image/png" })] } });
-    await screen.findByAltText("待生成的肖像照片预览");
+    await screen.findByText("me.png");
     answerAll();
     fireEvent.click(screen.getByRole("button", { name: /赛博科技/ }));
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
