@@ -5,6 +5,7 @@ import { RESUME_KINDS, RESUME_LABELS } from "../../../../packages/contracts/src/
 import { buildCyberCreatorPresentation, type CyberProject } from "../lib/cyber-creator-presentation";
 import { observeCyberProjectStack } from "../lib/cyber-project-stack";
 import { CyberGlassBackdrop } from "./CyberGlassBackdrop";
+import { CyberAwardsSection, CyberCampusSection } from "./CyberOptionalSections";
 import { CyberWorkTimeline } from "./CyberWorkTimeline";
 import { ResumeSupplement, type ResumeImageResolver } from "./ResumeDisplay";
 
@@ -126,6 +127,10 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
       {view.sections.map(section => {
         if (section.kind === "basicInfo") return null;
         if (section.kind === "workExperience") return <CyberWorkTimeline key={section.kind}
+          items={section.items} resolveResumeImage={resolveResumeImage} animate={!staticMode} />;
+        if (section.kind === "campusExperience") return <CyberCampusSection key={section.kind}
+          items={section.items} resolveResumeImage={resolveResumeImage} animate={!staticMode} />;
+        if (section.kind === "awards") return <CyberAwardsSection key={section.kind}
           items={section.items} resolveResumeImage={resolveResumeImage} animate={!staticMode} />;
         if (section.kind === "jobIntent") {
           const items = section.items.filter(item => item.facts.some(fact => fact.value.trim() && !["name", "email", "location", "targetRole"].includes(fact.key))

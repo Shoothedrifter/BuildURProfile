@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DesignConfigV4, ResumeDisplayItem, StructuredResumeV3 } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
 import { buildCyberCreatorPresentation } from "./cyber-creator-presentation";
+import { presentOptionalEntry } from "./cyber-optional-content";
 
 const item = (id: string, images: string[] = [], details = "完整项目说明\n第二行"): ResumeDisplayItem & { order: number } => ({
   itemId: id, order: 0, title: `项目${id}`, details, facts: [],
@@ -46,5 +47,27 @@ describe("赛博科技展示映射", () => {
     const result = buildCyberCreatorPresentation(config([{ kind: "projects", order: 0, items: projects }]));
     expect(result.projects.map(project => project.layout)).toEqual(["text", "single", "double", "mosaic"]);
     expect(result.projects.every(project => project.item.details === "第一段\n第二段")).toBe(true);
+  });
+
+  it("promotes stated campus outcomes and keeps an explicit date available", () => {
+    const entry = { ...item("campus", [], "2022.10-2024.09 任宣传组成员\n实现粉丝增长25%，互动量增长40%\n预计转化率增长30%，50%"),
+      title: "宣传组成员", sourceText: "阅读量增长80%" };
+    const presentation = presentOptionalEntry(entry, "campusExperience");
+    expect(presentation.period).toBe("2022.10-2024.09");
+    expect(presentation.summary).toContain("任宣传组成员");
+    expect(presentation.highlights).toEqual([
+      { label: "粉丝增长", value: "25%" }, { label: "互动量增长", value: "40%" }
+    ]);
+  });
+
+  it("uses explicit award totals and tiers without making an aggregate", () => {
+    const entry = { ...item("awards", [], "GPA：4.04/4.5 (TOP 2%)，2024 年毕业\n本科期间共获学科竞赛奖项60项，其中国家级18项，省级33项，国际级9项"),
+      title: "成绩与竞赛" };
+    expect(presentOptionalEntry(entry, "awards").highlights).toEqual([
+      { label: "学科竞赛奖项", value: "60项", total: true }, { label: "国家级", value: "18项" },
+      { label: "省级", value: "33项" }, { label: "国际级", value: "9项" }
+    ]);
+    expect(presentOptionalEntry({ ...entry, details: "国家级奖项18项、省级奖项33项" }, "awards").highlights)
+      .toEqual([{ label: "国家级", value: "18项" }, { label: "省级", value: "33项" }]);
   });
 });

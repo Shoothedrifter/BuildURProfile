@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { DesignConfig, DesignConfigV4 } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4, StructuredResumeV3 } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
 import { ShowcasePage } from "../ShowcasePage";
 
@@ -21,6 +21,51 @@ function config(images: string[] = []): DesignConfigV4 {
 }
 
 describe("赛博科技固定模板", () => {
+  it("skips empty optional sections and shows a compact campus entry without invented content", () => {
+    const base = config();
+    const empty = { itemId: "blank", order: 0, title: " ", details: "", facts: [], supplement: { text: "", links: [], images: [] } };
+    const withSections = (sections: StructuredResumeV3["sections"]): DesignConfigV4 => ({
+      ...base,
+      content: { ...base.content, resume: { ...base.content.resume, sections: [...base.content.resume.sections, ...sections] } }
+    });
+    const { container, rerender } = render(<ShowcasePage config={base} />);
+    expect(container.querySelector("#campusExperience, #awards")).toBeNull();
+    rerender(<ShowcasePage config={withSections([
+      { kind: "awards", order: 4, items: [empty] },
+      { kind: "campusExperience", order: 5, items: [{ ...empty, itemId: "campus", title: "志愿服务队", details: "负责现场协调。" }] }
+    ])} />);
+    const campus = within(screen.getByRole("region", { name: "校园经历" }));
+    expect(campus.getByRole("heading", { name: "志愿服务队" })).toBeVisible();
+    expect(campus.getByText("负责现场协调。")).toBeVisible();
+    expect(campus.queryByText("查看详情")).not.toBeInTheDocument();
+    expect(campus.queryByRole("list")).not.toBeInTheDocument();
+    expect(container.querySelector("#awards, a[href='#awards']")).toBeNull();
+  });
+
+  it("keeps award order and attaches evidence to the correct entry", () => {
+    const base = config();
+    const empty = { details: "", facts: [], supplement: { text: "", links: [], images: [] } };
+    const awards = { kind: "awards" as const, order: 4, items: [
+      { ...empty, itemId: "text-award", order: 1, title: "设计竞赛优胜奖", details: "2024 年获奖" },
+      { ...empty, itemId: "evidence-award", order: 0, title: "", sourceText: "活动主办方发布的详细说明",
+        supplement: { text: "", links: [{ label: "获奖名单", url: "https://example.test/results" }],
+          images: [{ imageId: "award-image", caption: "获奖证书" }] } }
+    ] };
+    render(<ShowcasePage config={{ ...base, content: { ...base.content, resume: {
+      ...base.content.resume, sections: [...base.content.resume.sections, awards]
+    } } }} resolveResumeImage={id => `/media/${id}`} />);
+    const region = within(screen.getByRole("region", { name: "荣誉奖项" }));
+    const [evidence, text] = region.getAllByRole("article");
+    expect(within(text).queryByText("查看补充资料")).not.toBeInTheDocument();
+    fireEvent.click(within(evidence).getByText("查看补充资料"));
+    expect(region.getByRole("img", { name: "获奖证书" })).toHaveAttribute("src", "/media/award-image");
+    expect(within(evidence).getByRole("link", { name: "获奖名单" })).toHaveAttribute("href", "https://example.test/results");
+    expect(within(text).getByRole("heading", { name: "设计竞赛优胜奖" })).toBeVisible();
+    expect(within(text).queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "校园经历" })).not.toBeInTheDocument();
+    fireEvent.click(within(evidence).getByText("查看详情"));
+    expect(within(evidence).getByText("活动主办方发布的详细说明")).toBeVisible();
+  });
   it("ends with a contact CTA linked to confirmed email and projects", () => {
     const { container } = render(<ShowcasePage config={config()} />);
     const cta = container.querySelector(".cyber-contact-cta") as HTMLElement;

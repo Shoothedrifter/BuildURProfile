@@ -3,6 +3,8 @@ import rawConfig from "../demo/config.json";
 import type { DesignConfig } from "../../../../packages/contracts/src/config";
 import { inlineConfigImages } from "./export";
 import { JSDOM } from "jsdom";
+import { normalizeResumeDraft, projectConfirmedResumeV3 } from "../../../../packages/contracts/src/resume-draft";
+import draftFixture from "../../../../packages/contracts/fixtures/resume-draft.v1.json";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -116,6 +118,34 @@ it('stacks two compact text projects in desktop HTML while preserving their full
     await new Promise(resolve=>setTimeout(resolve,50));
     expect(stack).not.toHaveAttribute('data-stacked');
     expect(details).toHaveTextContent('项目甲的完整内容');
+  } finally {
+    page.window.close();
+  }
+});
+
+it("exports visible campus evidence and excludes hidden awards", async () => {
+  const { buildStaticHtml } = await import("../server/export.mjs");
+  const draft = normalizeResumeDraft(structuredClone(draftFixture));
+  const initial = draft.sections.flatMap(section => section.items)[0];
+  draft.sections = draft.sections.filter(section => section.kind !== "campusExperience" && section.kind !== "awards");
+  draft.sections.push(
+    { id: "awards", kind: "awards", visible: false, order: 6, mappedDesignModule: "award-badges",
+      items: [{ ...initial, itemId: "hidden-award", title: "私有奖项样例", details: "", sourceText: "", facts: [] }] },
+    { id: "campusExperience", kind: "campusExperience", visible: true, order: 7, mappedDesignModule: "campus-timeline",
+      items: [{ ...initial, itemId: "campus-evidence", title: "", details: "", sourceText: "公开的实践说明", facts: [],
+        supplements: { text: "", links: [], images: [{ imageId: "image_synthetic", caption: "活动留档" }] } }] }
+  );
+  const config = { ...rawConfig, templateId: "cyber-creator-v1", content: projectConfirmedResumeV3(draft) };
+  const html = buildStaticHtml(config, undefined, undefined, () => ({ mime: "image/png", bytes: Buffer.from([1, 2, 3]) }));
+  expect(html).not.toContain("私有奖项样例");
+  const page = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 150));
+    const doc = page.window.document;
+    expect(doc.querySelector("#awards, a[href='#awards']")).toBeNull();
+    const campus = doc.querySelector("#campusExperience");
+    expect(campus?.querySelector("details:not(.cyber-optional-evidence)")?.textContent).toContain("公开的实践说明");
+    expect(campus?.querySelector("img[alt='活动留档']")?.getAttribute("src")).toBe("data:image/png;base64,AQID");
   } finally {
     page.window.close();
   }
