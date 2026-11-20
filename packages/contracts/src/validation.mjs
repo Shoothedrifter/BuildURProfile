@@ -107,8 +107,11 @@ export function cleanConfig(config) {
     !Number.isFinite(clone.marquee.speed) || !Number.isFinite(clone.stackedCards.scaleStep)) {
     throw new ServiceError(400, "Design Config 参数无效。");
   }
-  if (clone.templateId && !["cyber-creator-v1", "warm-v1", "minimal-v1", "bold-v1"].includes(clone.templateId)) {
+  if (clone.templateId && !["cyber-creator-v1", "pixel-world-v1", "warm-v1", "minimal-v1", "bold-v1"].includes(clone.templateId)) {
     throw new ServiceError(400, "作品模板无效。");
+  }
+  if (clone.templateId === "pixel-world-v1" && clone.content.resume?.version !== "resume-v3") {
+    throw new ServiceError(400, "像素世界风需要已确认的新版简历。");
   }
   if (clone.heroArtwork && !/^data:image\/(png|jpeg|webp|gif);base64,/i.test(clone.heroArtwork.assetUrl)) throw new ServiceError(400, "肖像图片需要先在浏览器内嵌入。");
   if (clone.heroArtwork?.cutoutAssetUrl && !/^data:image\/(png|webp);base64,/i.test(clone.heroArtwork.cutoutAssetUrl)) throw new ServiceError(400, "透明肖像需要先在浏览器内嵌入。");

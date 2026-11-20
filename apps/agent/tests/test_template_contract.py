@@ -38,15 +38,29 @@ def test_v4_config_is_explicit_and_old_v3_remains_valid():
         DesignConfigV4.model_validate({**config, "templateId": "unlisted"})
 
 
+def test_pixel_world_contract_round_trips():
+    config = json.loads((ROOT / "packages/contracts/fixtures/agent-golden.v3.json").read_text())["expected"]["config"]
+    content = {**config["content"], "resume": json.loads(
+        (ROOT / "packages/contracts/fixtures/resume-enrichment.v3.json").read_text())}
+    brief = {"role": "frontend-creative-developer", "templateId": "pixel-world-v1", "content": content}
+    assert GenerationBriefV4.model_validate(brief).templateId == "pixel-world-v1"
+    assert DesignConfigV4.model_validate({**config, "templateId": "pixel-world-v1", "content": content}).templateId == "pixel-world-v1"
+    with pytest.raises(ValidationError):
+        DesignConfigV4.model_validate({**config, "templateId": "pixel-world-v1",
+                                       "content": {key: value for key, value in content.items() if key != "resume"}})
+
+
 def test_template_mapping_parity_and_schema_files():
     script = """import { templateToConfig } from './packages/skills/src/mapping.ts';
-      const ids=['cyber-creator-v1','warm-v1','minimal-v1','bold-v1'];
+      const ids=['cyber-creator-v1','pixel-world-v1','warm-v1','minimal-v1','bold-v1'];
       const roles=['ui-ux-designer','frontend-creative-developer','brand-motion-copy'];
       process.stdout.write(JSON.stringify(ids.flatMap(id=>roles.map(role=>({id,role,config:templateToConfig(id,role)})))));"""
     cases = json.loads(subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT,
                                       capture_output=True, text=True, check=True).stdout)
     for case in cases:
         assert template_to_config(case["id"], case["role"]) == case["config"]
-    assert len(cases) == 12
+    assert len(cases) == 15
+    pixel = template_to_config("pixel-world-v1", "frontend-creative-developer")
+    assert (pixel["templateId"], pixel["skin"], pixel["marquee"]["speed"]) == ("pixel-world-v1", "dark-tech", 55)
     for filename, model in (("generation-brief.v4.json", GenerationBriefV4), ("design-config.v4.json", DesignConfigV4)):
         assert json.loads((ROOT / "packages/contracts/schema" / filename).read_text()) == model.model_json_schema()

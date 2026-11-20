@@ -743,6 +743,7 @@
     "templateId": {
       "enum": [
         "cyber-creator-v1",
+        "pixel-world-v1",
         "warm-v1",
         "minimal-v1",
         "bold-v1"

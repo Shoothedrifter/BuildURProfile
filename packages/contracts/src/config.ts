@@ -1,5 +1,5 @@
 export type SkinId = "dark-tech" | "light-minimal" | "high-saturation";
-export type TemplateId = "cyber-creator-v1" | "warm-v1" | "minimal-v1" | "bold-v1";
+export type TemplateId = "cyber-creator-v1" | "pixel-world-v1" | "warm-v1" | "minimal-v1" | "bold-v1";
 export type PaletteTone = "cool" | "neutral" | "warm" | "vivid";
 export type JobRole = "ui-ux-designer" | "frontend-creative-developer" | "brand-motion-copy";
 

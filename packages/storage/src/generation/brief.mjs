@@ -5,7 +5,7 @@ const ROLES = new Set(["ui-ux-designer", "frontend-creative-developer", "brand-m
 const PROFILE_FIELDS = ["name", "role", "location", "availability", "intro", "summary", "email"];
 const EXPERTISE_FIELDS = ["eyebrow", "headline", "summary", "skills", "disciplines"];
 const PROJECT_FIELDS = ["id", "index", "title", "category", "year", "description", "tags", "visual", "image", "link", "sourceText"];
-const TEMPLATE_IDS = new Set(["cyber-creator-v1", "warm-v1", "minimal-v1", "bold-v1"]);
+const TEMPLATE_IDS = new Set(["cyber-creator-v1", "pixel-world-v1", "warm-v1", "minimal-v1", "bold-v1"]);
 
 function record(value, keys, label) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||

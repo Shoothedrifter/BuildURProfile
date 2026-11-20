@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "../../web/src/server/database.mjs";
-import { createGenerationService } from "../../web/src/server/generations.mjs";
+import { cleanGenerationBrief, createGenerationService } from "../../web/src/server/generations.mjs";
 import { createAssetStore } from "../../../packages/storage/src/generation/assets.mjs";
 import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
 import { cleanConfig } from "../../web/src/server/service.mjs";
@@ -21,6 +21,20 @@ const brief = {
     projects: []
   }
 };
+
+test("Pixel World contract requires confirmed content and preserves its template ID", () => {
+  const config = JSON.parse(readFileSync(new URL("../../../packages/contracts/fixtures/agent-golden.v3.json", import.meta.url))).expected.config;
+  const resume = JSON.parse(readFileSync(new URL("../../../packages/contracts/fixtures/resume-enrichment.v3.json", import.meta.url)));
+  const content = { ...config.content, resume };
+  const request = { role: brief.role, templateId: "pixel-world-v1", content };
+  assert.equal(cleanGenerationBrief(request).templateId, "pixel-world-v1");
+  const clean = JSON.parse(cleanConfig({ ...config, templateId: "pixel-world-v1", content, html: "<script>" }));
+  assert.equal(clean.templateId, "pixel-world-v1");
+  assert.equal(clean.html, undefined);
+  const { resume: _resume, ...unconfirmedContent } = content;
+  assert.throws(() => cleanConfig({ ...config, templateId: "pixel-world-v1", content: unconfirmedContent }), /新版简历/);
+  assert.throws(() => cleanGenerationBrief({ ...request, answers: {} }), /字段无效/);
+});
 
 test("existing generation table upgrades through recorded schema migrations", () => {
   const root = mkdtempSync(join(tmpdir(), "burp-schema-migration-"));

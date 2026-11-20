@@ -533,7 +533,7 @@ class DesignConfigV3(DesignConfigV1):
     content: ResumeContentV3
 
 
-TemplateId = Literal["cyber-creator-v1", "warm-v1", "minimal-v1", "bold-v1"]
+TemplateId = Literal["cyber-creator-v1", "pixel-world-v1", "warm-v1", "minimal-v1", "bold-v1"]
 
 
 class GenerationBriefV4(StrictModel):
