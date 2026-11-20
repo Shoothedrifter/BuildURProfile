@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from . import WORKFLOW_VERSION
 from .contracts import clean_brief, clean_config, GenerationBriefV2, DesignConfigV2, GenerationBriefV3, DesignConfigV3, GenerationBriefV4, DesignConfigV4
 from .skills.registry import SkillRegistry
+from .skills.pixel_avatar import STYLE_ID as PIXEL_STYLE_ID
 from .transport.node_api import AgentTask, NodeAgentClient
 
 
@@ -41,12 +42,12 @@ def task_input(task: AgentTask) -> GenerationState:
 
 
 def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: Any,
-                           registry: SkillRegistry, *, checkpointer: Any = None) -> Any:
+                           registry: SkillRegistry, *, checkpointer: Any = None, pixel_provider: Any = None) -> Any:
     pixel = task.workflow_version == WORKFLOW_VERSION
     templated = task.workflow_version in ("python-agent-v5", "python-agent-v6", WORKFLOW_VERSION)
     enriched = templated or task.workflow_version in ("python-agent-v3", "python-agent-v4")
     ordered = templated or task.workflow_version == "python-agent-v4"
-    avatar_skill = "avatar.wibi.v2" if task.workflow_version == "python-agent-v6" else AVATAR_SKILL
+    avatar_skill = "avatar.pixel.v1" if pixel else "avatar.wibi.v2" if task.workflow_version == "python-agent-v6" else AVATAR_SKILL
     template_skill = "design.template.v2" if pixel else "design.template.v1"
     design_skills = (template_skill, "resume.compose.v5") if templated else (*DESIGN_SKILLS[:2], "resume.compose.v4" if ordered else "resume.compose.v3") if enriched else DESIGN_SKILLS
     qa_skill = "artifact.qa.v4" if templated else "artifact.qa.v3" if ordered else "artifact.qa.v2" if enriched else QA_SKILL
@@ -69,6 +70,8 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
             raise ValueError("INVALID_BRIEF")
         template_id = (state["brief"] or state["config"] or {}).get("templateId")
         if pixel != (template_id == "pixel-world-v1"):
+            raise ValueError("INVALID_BRIEF")
+        if pixel and state["portrait_asset_id"] and (state["brief"] or state["style_id"] != PIXEL_STYLE_ID):
             raise ValueError("INVALID_BRIEF")
         if enriched:
             brief_model = GenerationBriefV4 if templated else GenerationBriefV3 if ordered else GenerationBriefV2
@@ -119,9 +122,9 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
                   "store_output": lambda image: client.store_output(task, image),
                   "store_cutout": lambda image: client.store_cutout(task, image),
                   "output_exists": output_exists,
-                  "image_provider": provider,
+                  "image_provider": pixel_provider if pixel else provider,
                   "check_cancel": lambda: client.check_cancel(task)}
-        if avatar_skill == AVATAR_SKILL:
+        if avatar_skill != "avatar.wibi.v2":
             grants.pop("store_cutout")
         result = await run_skill(avatar_skill, {"taskId": task.id, "styleId": task.style_id}, state, grants)
         return {"output_asset_id": result["outputAssetId"],

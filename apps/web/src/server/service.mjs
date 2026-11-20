@@ -2,7 +2,7 @@ import { createResumeMediaStore } from '../../../../packages/storage/src/generat
 import { randomBytes, randomUUID } from "node:crypto";
 import { transaction } from "./database.mjs";
 import { fenToYuan } from "./config.mjs";
-import { ServiceError, cleanConfig } from "../../../../packages/contracts/src/validation.mjs";
+import { assertDeliverableConfig, ServiceError, cleanConfig } from "../../../../packages/contracts/src/validation.mjs";
 export { ServiceError, cleanConfig } from "../../../../packages/contracts/src/validation.mjs";
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -81,7 +81,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   }
   async function checkout(sessionId, projectId, action) {
     if (action !== "share") throw new ServiceError(400, "仅分享发布需要结账，导出免费。");
-    ownedProject(db, sessionId, projectId);
+    assertDeliverableConfig(JSON.parse(ownedProject(db, sessionId, projectId).config_json));
     if (db.prepare("SELECT 1 FROM entitlements WHERE project_id=? AND status='ACTIVE'").get(projectId)) {
       db.prepare("UPDATE projects SET pending_action=? WHERE id=?").run(action, projectId);
       return { alreadyPaid: true, project: getProject(sessionId, projectId) };
@@ -197,6 +197,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   }
   function publish(sessionId, projectId) {
     const project = ownedProject(db, sessionId, projectId);
+    assertDeliverableConfig(JSON.parse(project.config_json));
     requirePaid(db, projectId);
     try { return transaction(db, () => {
       const existing = db.prepare("SELECT * FROM shares WHERE project_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1")
@@ -222,7 +223,9 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     if (!record || record.deleted_at != null || record.revoked_at || record.expires_at <= now() || record.entitlement_status !== "ACTIVE") {
       throw new ServiceError(404, "分享链接已失效。");
     }
-    return { config: JSON.parse(record.config_json), expiresAt: record.expires_at };
+    const config = JSON.parse(record.config_json);
+    assertDeliverableConfig(config);
+    return { config, expiresAt: record.expires_at };
   }
   function listShares(sessionId, projectId) {
     ownedProject(db, sessionId, projectId);
@@ -236,6 +239,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   }
   function issueDownload(sessionId, projectId) {
     const project = ownedProject(db, sessionId, projectId);
+    assertDeliverableConfig(JSON.parse(project.config_json));
     const value = token(), expiry = now() + DOWNLOAD_TTL;
     db.prepare("INSERT INTO downloads(token,project_id,revision,expires_at) VALUES(?,?,?,?)")
       .run(value, projectId, project.revision, expiry);
@@ -249,7 +253,9 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   function getDownload(sessionId, value) {
     const record = db.prepare("SELECT downloads.*,projects.config_json,projects.owner_session_id,projects.deleted_at FROM downloads JOIN projects ON projects.id=downloads.project_id WHERE downloads.token=?").get(value);
     if (!record || record.owner_session_id !== sessionId || record.deleted_at != null || record.expires_at <= now()) notFound();
-    return { projectId: record.project_id, config: JSON.parse(record.config_json) };
+    const config = JSON.parse(record.config_json);
+    assertDeliverableConfig(config);
+    return { projectId: record.project_id, config };
   }
   function markDownload(projectId, value) {
     db.prepare("UPDATE downloads SET used_at=? WHERE token=?").run(now(), value);

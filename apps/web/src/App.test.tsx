@@ -19,6 +19,7 @@ import { skillShortLabels } from "./lib/resume";
 
 vi.mock("./lib/pdf", () => ({ extractPdfText: vi.fn() }));
 vi.mock("./lib/generationApi", () => ({ generationApi: { generatePortfolio: vi.fn(), generateAvatar: vi.fn(),
+  generatePixelAvatar: vi.fn(), pixelAvatarEnabled: vi.fn().mockResolvedValue(false),
   resumeGeneration: vi.fn().mockResolvedValue(null), clearSavedGeneration: vi.fn(),
   cancelSavedGeneration: vi.fn().mockResolvedValue(null) } }));
 vi.mock("./lib/resumeApi", () => ({ resumeApi: { read: vi.fn() } }));
@@ -88,6 +89,8 @@ beforeEach(() => {
       content: brief.content } };
   });
   vi.mocked(generationApi.generateAvatar).mockReset();
+  vi.mocked(generationApi.generatePixelAvatar).mockReset();
+  vi.mocked(generationApi.pixelAvatarEnabled).mockReset().mockResolvedValue(false);
   vi.mocked(generationApi.resumeGeneration).mockReset().mockResolvedValue(null);
   vi.mocked(resumeApi.read).mockReset();
   vi.mocked(generationApi.clearSavedGeneration).mockClear();
@@ -103,6 +106,68 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("Pixel World generates a private candidate and applies it only after selection", async () => {
+    window.history.replaceState(null, "", "/style/resume_synthetic");
+    const draft = { ...normalizeResumeDraft(resumeDraftFixture), revision: 1 };
+    vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft, revision: 1, expiresAt: "2026-12-09T00:00:00Z" });
+    const config = { ...rawConfig, templateId: "pixel-world-v1", content: projectConfirmedResumeV3(draft) } as DesignConfigV4;
+    vi.mocked(generationApi.generatePortfolio).mockResolvedValueOnce({ config });
+    vi.mocked(generationApi.pixelAvatarEnabled).mockResolvedValue(true);
+    const artwork = { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "pixel-halfbody-v1", alt: "个人像素头像" };
+    vi.mocked(generationApi.generatePixelAvatar).mockResolvedValueOnce(artwork);
+    try {
+      render(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
+      fireEvent.click(await screen.findByRole("button", { name: /像素世界风/ }));
+      fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+      const preview = within(await screen.findByTestId("pixel-world-page"));
+      const input = await screen.findByLabelText("选择个人像素头像照片");
+      expect(screen.getByText(/照片会发送给 Cloudflare Workers AI/)).toHaveTextContent(/1 天.*7 天/);
+      fireEvent.change(input, { target: { files: [new File(["photo"], "synthetic.png", { type: "image/png" })] } });
+      await waitFor(() => expect(screen.getByRole("button", { name: "生成像素头像" })).toBeEnabled());
+      expect(generationApi.generatePixelAvatar).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "生成像素头像" }));
+      expect(await screen.findByRole("img", { name: "生成的像素头像候选" })).toBeInTheDocument();
+      expect(preview.getByRole("img", { name: "像素世界风默认角色" })).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "使用此头像" }));
+      expect(preview.getByRole("img", { name: artwork.alt })).toHaveAttribute("src", artwork.assetUrl);
+      expect(screen.getByText(/分享和导出将使用默认角色/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "恢复默认角色" }));
+      expect(preview.getByRole("img", { name: "像素世界风默认角色" })).toBeVisible();
+      expect(JSON.parse(screen.getByTestId("design-config-json").textContent || "{}")).not.toHaveProperty("heroArtwork");
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("selecting Pixel World generates the confirmed resume without a portrait", async () => {
+    window.history.replaceState(null, "", "/style/resume_synthetic");
+    const draft = { ...normalizeResumeDraft(resumeDraftFixture), revision: 1 };
+    vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft, revision: 1, expiresAt: "2026-12-09T00:00:00Z" });
+    let finish!: (result: Awaited<ReturnType<typeof generationApi.generatePortfolio>>) => void;
+    vi.mocked(generationApi.generatePortfolio).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    try {
+      render(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
+      fireEvent.click(await screen.findByRole("button", { name: /像素世界风/ }));
+      fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+      expect(screen.getByRole("button", { name: /赛博科技/ })).toBeDisabled();
+      expect(screen.getByRole("combobox", { name: "展示方向" })).toBeDisabled();
+      finish({ config: { ...rawConfig, templateId: "pixel-world-v1", content: projectConfirmedResumeV3(draft) } as DesignConfigV4 });
+      expect(await screen.findByTestId("pixel-world-page")).toBeInTheDocument();
+      expect(screen.queryByLabelText("选择个人像素头像照片")).toBeNull();
+      expect(vi.mocked(generationApi.generatePortfolio).mock.calls[0].slice(0, 2)).toEqual([{
+        resumeId: "resume_synthetic", revision: 1, role: "frontend-creative-developer", templateId: "pixel-world-v1"
+      }, undefined]);
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("keeps Pixel World out of the legacy browser-only choices", async () => {
+    render(<App />);
+    await reachStyle();
+    expect(screen.queryByRole("button", { name: /像素世界风/ })).toBeNull();
+  });
+
   it("submits an explicit cyber template from a confirmed Agent resume without preference answers", async () => {
     window.history.replaceState(null, "", "/style/resume_synthetic");
     const nextDraft = { ...normalizeResumeDraft(resumeDraftFixture), revision: 1 };

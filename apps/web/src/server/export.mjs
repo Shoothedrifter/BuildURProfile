@@ -1,6 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resumeImageIds } from '../../../../packages/contracts/src/resume-v2.mjs';
+import { assertDeliverableConfig } from '../../../../packages/contracts/src/validation.mjs';
+
+const defaultPortraitFiles = new Map([
+  ["cyber-creator-v1", "cyber-neutral-print-anime.webp"],
+  ["pixel-world-v1", "pixel-world-default.webp"]
+]);
+
+function repoRoot() {
+  return existsSync(join(process.cwd(), "packages/contracts/package.json")) ? process.cwd() : resolve(process.cwd(), "../..");
+}
 
 function escapeHtml(text) {
   return String(text ?? "")
@@ -11,7 +21,7 @@ function escapeHtml(text) {
 }
 
 function exportAssets() {
-  const root = existsSync(join(process.cwd(), "packages/contracts/package.json")) ? process.cwd() : resolve(process.cwd(), "../..");
+  const root = repoRoot();
   return {
     javascript: readFileSync(join(root, "apps/web/.export/showcase.js"), "utf8"),
     css: readFileSync(join(root, "apps/web/src/styles.css"), "utf8").replace(/^@import "tailwindcss";\s*/m, "")
@@ -19,6 +29,7 @@ function exportAssets() {
 }
 
 export function buildStaticHtml(config, javascript, css, mediaReader) {
+  assertDeliverableConfig(config);
   if (javascript === undefined || css === undefined) {
     const assets = exportAssets();
     javascript ??= assets.javascript;
@@ -41,8 +52,9 @@ export function buildStaticHtml(config, javascript, css, mediaReader) {
   }
   const safeConfig = JSON.stringify(config).replace(/</g, "\\u003c");
   const safeImages = JSON.stringify(resumeImages).replace(/</g, "\\u003c");
-  const defaultPortrait = config.templateId === "cyber-creator-v1" && !config.heroArtwork
-    ? `data:image/webp;base64,${readFileSync(join(existsSync(join(process.cwd(), "packages/contracts/package.json")) ? process.cwd() : resolve(process.cwd(), "../.."), "apps/web/public/cyber-neutral-print-anime.webp")).toString("base64")}`
+  const defaultFile = defaultPortraitFiles.get(config.templateId);
+  const defaultPortrait = defaultFile && !config.heroArtwork
+    ? `data:image/webp;base64,${readFileSync(join(repoRoot(), "apps/web/public", defaultFile)).toString("base64")}`
     : "";
   const safeJs = javascript.replace(/<\/script/gi, "<\\/script");
   const title = escapeHtml(config.content?.profile?.name ? `${config.content.profile.name} — BuildURProfile Showcase` : "BuildURProfile Showcase");

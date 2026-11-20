@@ -16,6 +16,12 @@ const merchant = { mode: "sandbox", priceFen: 199, appId: "sandbox-app", sellerI
 const paidNotice = (order, overrides = {}) => ({ out_trade_no: order.outTradeNo, total_amount: "1.99", app_id: "sandbox-app",
   seller_id: "seller-1", trade_status: "TRADE_SUCCESS", trade_no: "2026sandbox1", ...overrides });
 const setupProject = () => service.createProject("owner", config).id;
+const pixelConfig = () => {
+  const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const base = expected.config;
+  for (const section of base.content.resume.sections) for (const item of section.items) item.supplement.images = [];
+  return { ...base, templateId: "pixel-world-v1" };
+};
 
 beforeEach(() => {
   time = 100_000;
@@ -33,6 +39,40 @@ test("concurrent checkout reuses one pending order and a server price snapshot",
   assert.equal(a.amountYuan, "1.99");
   assert.equal(db.prepare("SELECT count(*) AS count FROM orders").get().count, 1);
   assert.equal(db.prepare("SELECT amount_fen FROM orders").get().amount_fen, 199);
+});
+
+test("Pixel World personal artwork cannot be persisted or delivered", async () => {
+  const base = pixelConfig();
+  const { id, revision } = service.createProject("owner", base);
+  const withPortrait = { ...base, heroArtwork: { assetUrl: "data:image/png;base64,aGVsbG8=", styleId: "forged-style", alt: "私有图" } };
+  assert.throws(() => service.createProject("owner", withPortrait), { status: 400 });
+  assert.throws(() => service.updateProject("owner", id, withPortrait), { status: 400 });
+  assert.throws(() => service.createProject("owner", { ...withPortrait, templateId: "cyber-creator-v1",
+    heroArtwork: { ...withPortrait.heroArtwork, styleId: "pixel-halfbody-v1" } }), { status: 400 });
+  assert.equal(service.getProject("owner", id).revision, revision);
+  await service.notify(paidNotice(await service.checkout("owner", id, "share")));
+  const share = service.publish("owner", id);
+  const download = service.issueDownload("owner", id);
+  db.prepare("UPDATE projects SET config_json=? WHERE id=?").run(JSON.stringify(withPortrait), id);
+  assert.throws(() => service.publish("owner", id), { status: 400 });
+  assert.throws(() => service.issueDownload("owner", id), { status: 400 });
+  assert.throws(() => service.getDownload("owner", download.token), { status: 400 });
+  assert.equal(service.readShare(share.token).config.templateId, "pixel-world-v1");
+  db.prepare("UPDATE shares SET config_json=? WHERE token=?").run(JSON.stringify(withPortrait), share.token);
+  assert.throws(() => service.readShare(share.token), { status: 400 });
+});
+
+test("Pixel World default art is exportable for free and sharing requires entitlement", async () => {
+  const base = pixelConfig();
+  const { id } = service.createProject("owner", base);
+  const download = service.issueDownload("owner", id);
+  assert.equal(service.getDownload("owner", download.token).config.templateId, "pixel-world-v1");
+  assert.throws(() => service.getDownload("other", download.token), { status: 404 });
+  assert.throws(() => service.publish("owner", id), { status: 402 });
+  assert.equal(service.getProject("owner", id).paid, false);
+  await service.notify(paidNotice(await service.checkout("owner", id, "share")));
+  const share = service.publish("owner", id);
+  assert.deepEqual(service.readShare(share.token).config.content.resume, base.content.resume);
 });
 
 test("free export does not create an order or alter an existing legacy export order", async () => {

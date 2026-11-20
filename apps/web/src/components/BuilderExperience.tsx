@@ -6,9 +6,12 @@ import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../
 import rawConfig from "../demo/config.json";
 import type { DraftField, ResumeDraft } from "../lib/resume";
 import type { Offer, OwnedProject } from "../lib/paymentApi";
+import type { HeroArtwork } from "../lib/generationApi";
 import { TEMPLATE_PORTRAIT_POLICIES } from "../../../../packages/skills/src/avatar-catalog";
 import { ShowcasePage } from "../ShowcasePage";
 import { EditorPanel } from "./EditorPanel";
+import { PixelAvatarEditor } from "./PixelAvatarEditor";
+import { pixelDefaultPortrait } from "./PixelWorldPage";
 import { LaunchPage } from "./LaunchPage";
 import {
   BuilderChrome,
@@ -24,7 +27,7 @@ export type DraftGroup = "basicInfo" | "jobIntent" | "selfEvaluation" | "workExp
 export type ReclassifyTarget = DraftGroup;
 export type DeliveryAction = "share" | "export";
 type ConfirmModule = "basic" | DraftGroup;
-type StylePresetId = "warm" | "minimal" | "bold" | "cyber";
+type StylePresetId = "warm" | "minimal" | "bold" | "cyber" | "pixel";
 
 const confirmationGroups: Array<{ key: DraftGroup; title: string; hint: string }> = [
   { key: "basicInfo", title: "更多基本信息", hint: "电话、所在地等默认不展示，请主动选择" },
@@ -69,6 +72,10 @@ const stylePresets: Array<{
       "s-browse": 2,
       "s-control": 3
     }
+  },
+  {
+    id: "pixel", templateId: "pixel-world-v1", label: "像素世界风",
+    description: "像素角色 / 开发者作品 / 项目导航", tone: "Pixel World", answers: {}
   },
   {
     id: "warm",
@@ -236,6 +243,11 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     generatingAvatar, avatarDemo
   } = props;
   const selectedPreset = stylePresets.find(preset => preset.templateId === props.selectedTemplate)?.id ?? null;
+  const pixelSelected = props.selectedTemplate === "pixel-world-v1";
+  const pixelResult = generated && "templateId" in generated && generated.templateId === "pixel-world-v1";
+  const [pixelPreview, setPixelPreview] = useState<{ projectId: string | null; artwork: HeroArtwork } | null>(null);
+  const pixelArtwork = pixelPreview?.projectId === projectId ? pixelPreview?.artwork ?? null : null;
+  useEffect(() => { setPixelPreview(null); }, [projectId, pixelResult]);
   const portraitPolicy = props.selectedTemplate ? TEMPLATE_PORTRAIT_POLICIES[props.selectedTemplate] : undefined;
   useEffect(() => { if (phase === "result") setPublishConfirmed(false); }, [phase]);
   useEffect(() => { if (phase === "delivery" && share) setPublishConfirmed(true); }, [phase, share]);
@@ -429,19 +441,20 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <PortfolioSnapshot name={draft?.name.value ?? props.confirmedContent?.profile.name ?? ""} role={roles.find((entry) => entry.value === role)?.label ?? ""}
             intro={draft?.selfEvaluation[0]?.value ?? props.confirmedContent?.profile.summary ?? ""}
             project={previewProjectTitle} projectDescription={previewProjectDescription} tone={selectedPreset ?? "minimal"}
-            photo={selectedPreset === "cyber" ? "/cyber-neutral-print-anime.webp" : null} draftPreview hidePortrait={selectedPreset !== "cyber"} />
-          <p>{selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
+            photo={selectedPreset === "cyber" ? "/cyber-neutral-print-anime.webp" : pixelSelected ? pixelDefaultPortrait : null}
+            draftPreview hidePortrait={selectedPreset !== "cyber" && !pixelSelected} />
+          <p>{pixelSelected ? "作品使用默认像素角色。" : selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
         </ProofCard>
         <ProofCard as="section" className="proof-style-controls" aria-label="头像与网站模板">
-        <AvatarPicker inline enabled={avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
+        {!pixelSelected && <AvatarPicker inline enabled={avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
           disabledReason={avatarDemo ? "当前模板暂不支持照片生成；移除照片后可继续生成。" : undefined}
           photoDataUrl={photoDataUrl} photoName={photoName}
-          generating={generatingAvatar} onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
+          generating={generatingAvatar} onPhoto={props.onPhoto} onClear={props.onClearPhoto} />}
         <section className="proof-style-card" aria-labelledby="website-style-heading">
           <h2 id="website-style-heading">网站模板</h2>
           <div className="proof-style-options">
-            {stylePresets.map((preset) => <button type="button" key={preset.id} className={isPresetSelected(preset.id) ? "is-selected" : ""}
-              aria-pressed={isPresetSelected(preset.id)} onClick={() => applyPreset(preset)}>
+            {stylePresets.filter(preset => props.hasConfirmedResume || preset.id !== "pixel").map((preset) => <button type="button" key={preset.id} data-preset={preset.id} className={isPresetSelected(preset.id) ? "is-selected" : ""}
+              aria-pressed={isPresetSelected(preset.id)} disabled={generatingAvatar} onClick={() => applyPreset(preset)}>
               <strong aria-hidden="true">{preset.id === "cyber" ? "3D" : "Aa"}</strong><b>{preset.label}{isPresetSelected(preset.id) ? "　✓ 已选" : ""}</b>
             </button>)}
           </div>
@@ -449,7 +462,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           {isTouch && <p className="proof-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
           {progress && <p className="proof-status" role="status">{progress}</p>}
           {error && <p className="proof-inline-error" role="alert">{error}</p>}
-          <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar || Boolean(photoDataUrl && !portraitPolicy)} onClick={props.onGenerate}>
+          <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar || Boolean(!pixelSelected && photoDataUrl && !portraitPolicy)} onClick={props.onGenerate}>
             {generatingAvatar ? "正在生成作品…" : "生成我的 Showcase →"}
           </ProofButton>
         </section>
@@ -461,7 +474,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           if (match) window.location.assign(`/editor/${match[1]}`);
           else go("confirm");
         }}>← 返回资料</ProofButton>
-        <label className="proof-role-select"><span>展示方向</span><select id="job-role" value={role} onChange={(event) => props.onRoleChange(event.target.value as JobRole)}>
+        <label className="proof-role-select"><span>展示方向</span><select id="job-role" value={role} disabled={generatingAvatar} onChange={(event) => props.onRoleChange(event.target.value as JobRole)}>
           {roles.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
       </div>
@@ -487,7 +500,9 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       </div>
       {"templateId" in generated && generated.templateId === "cyber-creator-v1" && generated.heroArtwork && !generated.heroArtwork.cutoutAssetUrl &&
         <p className="proof-note" role="status">透明去背景未完成，当前首屏以带背景海报展示。请联系管理员检查图像服务，再重新生成。</p>}
-      {avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId))) && <details className="proof-regenerate">
+      {pixelResult && <PixelAvatarEditor key={projectId ?? "pixel-preview"} config={generated} applied={pixelArtwork}
+        onApply={artwork => setPixelPreview(artwork ? { projectId, artwork } : null)} />}
+      {!pixelResult && avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId))) && <details className="proof-regenerate">
         <summary>更换照片 →</summary>
         <AvatarPicker enabled photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}
           onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
@@ -501,7 +516,8 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <div className="proof-preview-toolbar"><span>草稿预览 · 尚未公开</span>
             {(draft || props.hasConfirmedResume) && <ProofButton variant="quiet" onClick={props.onRestartQuiz}>更换模板</ProofButton>}
           </div>
-          <div className="proof-preview-frame"><ShowcasePage config={generated} touchDowngraded={isTouch} /></div>
+          <div className="proof-preview-frame"><ShowcasePage config={pixelResult && pixelArtwork ? { ...generated, heroArtwork: pixelArtwork } : generated}
+            touchDowngraded={isTouch} /></div>
           <details className="proof-advanced">
             <summary>高级参数 / 调试信息 →</summary>
             <div className="proof-result-stats"><span>SKIN <strong>{generated.skin}</strong></span><span>SPEED <strong>{generated.marquee.speed} px/s</strong></span><span>PROJECTS <strong>{generated.content.projects.length}</strong></span></div>
@@ -527,6 +543,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       {resultError && <p className="proof-inline-error" role="alert">{resultError}</p>}
       <ProofCard className="proof-publish-card">
         <div><p>FREE PREVIEW / NOT PUBLISHED</p><h2>分享或带走你的作品集</h2><span>发布分享按项目一次付费，单文件 HTML 免费导出。</span></div>
+        {pixelResult && <p>分享和导出将使用默认角色。</p>}
         <div className="proof-publish-actions">
           <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>{share ? "更新分享链接 →" : "发布并分享 →"}</ProofButton>
           <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>{exporting ? "正在准备…" : "导出文件 →"}</ProofButton>
@@ -541,7 +558,9 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <h2>{publishConfirmed ? "已确认的作品集" : "即将公开的作品集"}</h2>
           <PortfolioSnapshot name={generated.content.profile.name} role={generated.content.profile.role}
             intro={generated.content.profile.intro || generated.content.profile.summary}
-            project={generated.content.projects[0]?.title ?? ""} photo={generated.heroArtwork?.assetUrl} />
+            project={generated.content.projects[0]?.title ?? ""} photo={pixelResult ? pixelDefaultPortrait : generated.heroArtwork?.assetUrl}
+            tone={pixelResult ? "pixel" : undefined} />
+          {pixelResult && <p>分享和导出将使用默认角色。</p>}
           <p>仅已选择展示的资料会进入公开网站。请核对姓名、介绍和项目。</p>
           <ProofButton onClick={() => go("result")}>返回预览，继续编辑</ProofButton>
           {deliveryUnlocked && <div className="proof-unlock-actions">

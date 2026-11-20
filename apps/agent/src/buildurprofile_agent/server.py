@@ -30,8 +30,10 @@ async def lifespan(app: FastAPI):
     client = NodeAgentClient(api_url, token)
     async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as saver:
         await saver.setup()
-        provider = create_image_provider(os.getenv("IMAGE_PROVIDER", "cloudflare"))
-        worker = asyncio.create_task(worker_loop(client, provider, saver,
+        provider_name = os.getenv("IMAGE_PROVIDER", "cloudflare")
+        provider = create_image_provider(provider_name)
+        pixel_provider = provider if provider_name == "cloudflare" else create_image_provider("cloudflare")
+        worker = asyncio.create_task(worker_loop(client, provider, saver, pixel_provider=pixel_provider,
             worker_id=os.getenv("AGENT_WORKER_ID") or None))
         resume_worker = asyncio.create_task(resume_worker_loop(client, saver,
             worker_id=os.getenv("AGENT_RESUME_WORKER_ID") or None))

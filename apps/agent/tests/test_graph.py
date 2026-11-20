@@ -254,6 +254,52 @@ async def test_v7_pixel_world_runs_without_portrait():
 
 
 @pytest.mark.asyncio
+async def test_v7_pixel_avatar_uses_leased_capabilities_and_reuses_output():
+    from dataclasses import replace
+
+    class PixelClient(FakeClient):
+        async def recipe(self, task):
+            return {"id": "pixel-halfbody-v1", "version": "1.0.0",
+                    "license": "LicenseRef-BuildURProfile-Original-Preview-1.0",
+                    "instructions": "square pixel bust", "referenceImages": ["pinned-reference"]}
+
+    golden = json.loads((FIXTURE.parent / "agent-golden.v3.json").read_text())
+    config = {**golden["expected"]["config"], "templateId": "pixel-world-v1"}
+    item = replace(task(portrait=True), workflow_version="python-agent-v7", brief=None, config=config,
+                   style_id="pixel-halfbody-v1")
+    client, legacy, pixel = PixelClient(), FakeProvider(), FakeProvider()
+    for _ in range(2):
+        await process_task(item, client, legacy, default_registry(), MemorySaver(), pixel_provider=pixel)
+    assert (pixel.calls, legacy.calls, client.writes, client.cutout_image) == (1, 0, 1, None)
+    assert client.completed == config
+    with Image.open(io.BytesIO(client.stored_image.bytes)) as image:
+        assert image.size == (512, 512)
+
+
+@pytest.mark.asyncio
+async def test_v7_pixel_avatar_drops_output_when_cancelled_while_the_provider_runs():
+    from dataclasses import replace
+
+    class PixelClient(FakeClient):
+        async def recipe(self, task):
+            return {"id": task.style_id, "version": "1.0.0",
+                    "license": "LicenseRef-BuildURProfile-Original-Preview-1.0", "referenceImages": ["reference"]}
+
+    class CancellingProvider(FakeProvider):
+        async def edit(self, portrait, recipe, *, task_id):
+            client.cancelled = True
+            return self.image
+
+    client = PixelClient()
+    golden = json.loads((FIXTURE.parent / "agent-golden.v3.json").read_text())
+    item = replace(task(portrait=True), workflow_version="python-agent-v7", brief=None,
+                   config={**golden["expected"]["config"], "templateId": "pixel-world-v1"}, style_id="pixel-halfbody-v1")
+    await process_task(item, client, FakeProvider(), default_registry(), MemorySaver(), pixel_provider=CancellingProvider())
+    assert client.cancelled and client.writes == 0
+    assert client.completed is None
+
+
+@pytest.mark.asyncio
 async def test_v6_portrait_runs_versioned_cutout_skill():
     from dataclasses import replace
     golden = json.loads((FIXTURE.parent / 'agent-golden.v3.json').read_text())

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AVATAR_STYLES } from "./avatar-catalog.ts";
+export { listAvatarStyles } from "./avatar-catalog.ts";
 
 function resolveRepoRoot(): string {
   const cwd = process.cwd();
@@ -40,10 +41,6 @@ function checked(path: string, expectedHash: string): Buffer {
   const normalizedLf = Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
   if (createHash("sha256").update(normalizedLf).digest("hex") === expectedHash) return normalizedLf;
   throw new Error("Wibi 风格资源校验失败，请重新安装固定版本。");
-}
-
-export function listAvatarStyles(): Array<{ id: string; label: string; description: string }> {
-  return AVATAR_STYLES.map(({ id, label, description }) => ({ id, label, description }));
 }
 
 export function loadStyleRecipe(id: string, installationRoot = defaultInstallationRoot) {

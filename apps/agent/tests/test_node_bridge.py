@@ -21,6 +21,75 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.asyncio
+async def test_real_node_bridge_pixel_avatar_stays_private():
+    import base64
+    import httpx
+    from buildurprofile_agent.providers.cloudflare_images import CloudflareImageProvider
+
+    token = "p" * 64
+    proc = subprocess.Popen(["node", "apps/agent/tests/fixtures/pixel-bridge-server.mjs"], cwd=ROOT,
+                            env={**os.environ, "AGENT_SERVICE_TOKEN": token},
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        line = await asyncio.wait_for(asyncio.to_thread(proc.stdout.readline), timeout=10)
+        assert line, proc.stderr.read()
+        base = json.loads(line)["baseUrl"]
+        config = json.loads((ROOT / "packages/contracts/fixtures/agent-golden.v3.json").read_text())["expected"]["config"]
+        config["templateId"] = "pixel-world-v1"
+        for section in config["content"]["resume"]["sections"]:
+            for key in section["items"]:
+                key["supplement"]["images"] = []
+
+        stream = io.BytesIO()
+        Image.new("RGB", (512, 512), "#435266").save(stream, format="PNG")
+        image_b64 = base64.b64encode(stream.getvalue()).decode()
+        requests = []
+
+        def cloudflare_response(request):
+            requests.append(request)
+            return httpx.Response(200, json={"success": True, "result": {"image": image_b64}})
+
+        async with (httpx.AsyncClient(base_url=base, trust_env=False) as owner,
+                    httpx.AsyncClient(base_url=base, trust_env=False) as other,
+                    httpx.AsyncClient(transport=httpx.MockTransport(cloudflare_response)) as cf):
+            csrf = (await owner.get("/api/session")).json()["csrfToken"]
+            headers = {"x-csrf-token": csrf}
+            project = (await owner.post("/api/projects", json={"config": config}, headers=headers)).raise_for_status().json()
+            photo = (await owner.post("/api/portraits", json={"dataUrl": f"data:image/png;base64,{image_b64}"},
+                                      headers=headers)).raise_for_status().json()
+            queued = (await owner.post("/api/generations", json={"config": config, "portraitAssetId": photo["id"],
+                                                                "idempotencyKey": "pixel-bridge"},
+                                       headers=headers)).raise_for_status().json()
+            client = NodeAgentClient(base, token)
+            saver = MemorySaver()
+            try:
+                task = await client.lease("pixel_worker")
+                assert task and task.id == queued["id"] and task.workflow_version == "python-agent-v7"
+                provider = CloudflareImageProvider(account_id="a" * 32, api_token="test-token", http=cf)
+                await process_task(task, client, object(), default_registry(), saver, "pixel_worker", pixel_provider=provider)
+            finally:
+                await client.close()
+            result = (await owner.get(f"/api/generations/{task.id}")).raise_for_status().json()
+            assert result["status"] == "SUCCEEDED" and not result.get("projectId")
+            url = result["heroArtwork"]["assetUrl"]
+            asset = (await owner.get(url)).raise_for_status()
+            assert asset.headers["content-type"] == "image/png"
+            await other.get("/api/session")
+            assert (await other.get(url)).status_code == 404
+            assert (await owner.get(f"/api/projects/{project['id']}")).json() == project
+            assert len(requests) == 1
+            async for state in saver.alist(None):
+                assert image_b64 not in json.dumps(state.checkpoint, default=str)
+    finally:
+        proc.terminate()
+        try:
+            await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=5)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await asyncio.to_thread(proc.wait)
+
+
+@pytest.mark.asyncio
 async def test_real_node_bridge_text_only():
     token = "b" * 64
     proc = subprocess.Popen(["node", "apps/agent/tests/fixtures/bridge-server.mjs"], cwd=ROOT,

@@ -28,7 +28,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 新 Agent 简历使用 `GenerationBriefV4` / `DesignConfigV4`，其 `resume-v3.sections` 按用户确认顺序保存十模块条目，以及补充文字、命名链接和图片 ID。服务端按会话读取 `resumeId/revision` 对应草稿并重新投影；客户端不能自报新版本 content。Python 再做严格校验。兼容字段 `profile/projects/...` 从条目派生，作品渲染不重复展示兼容副本。
 
-当前固定模板工作流为 `python-agent-v5`（`design.template.v1`、`resume.compose.v5`、`artifact.qa.v4`），内容组装只验证和复制，不调用 LLM 改写用户补充内容。旧浏览器兼容入口及已有 v2–v4 任务继续按原版本处理；Worker 按任务版本分流，禁止混读。版本化 Schema 位于 `packages/contracts/schema`，Python 模型位于 `apps/agent/src/buildurprofile_agent/contracts.py`。
+像素世界风使用 `python-agent-v7` 和 `design.template.v2`，其他新固定模板使用 `python-agent-v6` 和 `design.template.v1`。两者复用 `resume.compose.v5` 和 `artifact.qa.v4`，内容组装验证并复制已确认字段。Worker 按任务版本分流，已有 v2–v6 任务继续按原版本处理。版本化 Schema 位于 `packages/contracts/schema`，Python 模型位于 `apps/agent/src/buildurprofile_agent/contracts.py`。
 
 新图顺序为：校验输入 → 选择 Skill 计划 → 固定模板映射 → 注入确认内容 → 可选肖像 → 最终 QA → 提交配置。旧图保留评分节点。Skill 声明稳定 ID、版本、能力、输入输出和超时，执行器只授予当前节点所需能力。
 
@@ -57,7 +57,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 | `POST /tasks/:id/fail` | `{leaseToken,errorCode,retryable}` → `{ok}` |
 | `POST /tasks/:id/ack-cancel` | `{leaseToken}` → `{ok}` |
 
-除照片下载和成图上传外使用 JSON。解析与生成 Worker 在领取时可通过 `supportsPresentationHighlights: true` 声明支持新成果字段。未声明的 Worker 继续领取兼容任务。所有任务接口同时校验正在运行且未过期的租约；服务令牌不能替代任务租约或浏览器会话。
+除照片下载和成图上传外使用 JSON。解析与生成 Worker 在领取时可通过 `supportsPresentationHighlights: true` 声明支持新成果字段，生成 Worker 通过 `supportsPixelWorld: true` 声明支持 v7。未声明的 Worker 继续领取兼容任务。所有任务接口同时校验正在运行且未过期的租约。
 
 ## 可靠性与存储
 
@@ -74,3 +74,5 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 生成入队在同一事务中复制已选图片到 `showcase_media` 并写 `generation_media`；生成 brief/config/checkpoint 仅含 ID。无肖像 v3 生成成功后，以任务为幂等来源创建未付款项目并关联 `project_media`。浏览器恢复成功任务时读取项目当前配置与权益，交接后清除旧任务指针，避免覆盖后续编辑。Wibi 肖像继续仅供本机演示，不自动保存为可付费交付项目。
 
 作品图片按项目生命周期保留，删除原简历不影响作品。属主通过 `/api/showcase-media/:id` 预览；分享通过 `/api/shares/:token/media/:id` 读取，并校验令牌、付款、项目和快照引用。旧分享快照可保留更新前的图片；撤销、过期、删项目后即时拒绝。导出的单文件 HTML 内嵌作品图片，不依赖私有 PDF 路由。未形成项目的复制品最多保留 30 天；清理为有界批次，有效运行租约在到期边界完成前受保护，废弃排队任务到期转失败。项目删除或旧分享失效后，按引用关系释放无主作品图片。
+
+像素头像任务使用基础作品配置和本机会话所属照片资产 ID。成图仍是任务资产，只有当前会话能读取。浏览器只在内存中将选用的头像合入预览。项目写入、分享快照读取和下载都校验 Pixel World 的交付配置，正式内容使用默认角色。

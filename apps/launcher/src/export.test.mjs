@@ -40,3 +40,29 @@ test("offline export runs the shared showcase with embedded portrait and safe co
     assert.ok(dom.window.document.body.textContent.includes(cleaned.content.projects[1].title));
   } finally { dom.window.close(); }
 });
+
+test("Pixel World offline export embeds its own default portrait and all project media", async () => {
+  const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const config = { ...expected.config, templateId: "pixel-world-v1" };
+  const sections = config.content.resume.sections;
+  const basic = sections.find(section => section.kind === "basicInfo");
+  const images = basic.items.flatMap(item => item.supplement.images);
+  for (const item of basic.items) item.supplement.images = [];
+  sections.push({ kind: "projects", order: 8, items: [{ order: 0, itemId: "project-image", title: "合成项目",
+    details: "合成项目说明", facts: [], supplement: { text: "", links: [], images } }] });
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=", "base64");
+  const html = buildStaticHtml(JSON.parse(cleanConfig(config)), undefined, undefined, () => ({ bytes: png, mime: "image/png" }));
+  const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const page = dom.window.document.querySelector('[data-testid="pixel-world-page"]');
+    assert.ok(page);
+    const art = readFileSync("apps/web/public/pixel-world-default.webp").toString("base64");
+    assert.equal(page.querySelector(".pixel-portrait").getAttribute("src"), `data:image/webp;base64,${art}`);
+    const imageCount = config.content.resume.sections.flatMap(s => s.items).flatMap(i => i.supplement.images).length;
+    assert.ok(imageCount > 0);
+    assert.equal(page.querySelectorAll('img[src^="data:image/png;base64,"]').length, imageCount);
+    assert.ok([...page.querySelectorAll("img")].every(img => img.getAttribute("src").startsWith("data:")));
+    assert.match(page.querySelector(".pixel-button").getAttribute("href"), /^#projects$/);
+  } finally { dom.window.close(); }
+});

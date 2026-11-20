@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createDefaultSkillRegistry, createSkillRegistry } from "./registry.ts";
 import { listAvatarStyles, loadStyleRecipe } from "./wibi.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadPixelAvatarRecipe } from "./pixel-avatar.ts";
 
 const answers = { "e-presence": 2, "e-type": 2, "k-pace": 2, "k-cards": 2,
   "p-tone": 1, "p-strength": 2, "s-browse": 2, "s-control": 2 };
@@ -101,7 +105,7 @@ test("avatar Skill fences output write with lease token and reuses an existing a
 });
 
 test("Wibi adapter verifies pinned manifest and resources and exposes license", () => {
-  assert.deepEqual(listAvatarStyles().map(({ id }) => id), ["lofi-print-anime"]);
+  assert.deepEqual(listAvatarStyles().map(({ id }) => id), ["lofi-print-anime", "pixel-halfbody-v1"]);
   const recipe = loadStyleRecipe("retro-flat-anime-head");
   assert.equal(recipe.license, "MIT AND LicenseRef-Wibi-Personal-NonCommercial-1.0");
   assert.equal(recipe.sourceCommit, "17880b82ea35c1fe1ec4b8f907a053d314df464f");
@@ -112,4 +116,15 @@ test("Wibi adapter verifies pinned manifest and resources and exposes license", 
   assert.throws(() => loadStyleRecipe("crayon-flat-naive"), /未知肖像风格/);
   assert.throws(() => loadStyleRecipe("textile-toy-portrait"), /未知肖像风格/);
   assert.throws(() => loadStyleRecipe("../other"), /未知肖像风格/);
+});
+
+test("Pixel World loads only the hash-pinned original style reference", t => {
+  const recipe = loadPixelAvatarRecipe("pixel-halfbody-v1");
+  assert.equal(recipe.version, "1.0.0");
+  assert.equal(recipe.referencePaths.length, 1);
+  const root = mkdtempSync(join(tmpdir(), "pixel-reference-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "reference.png"), "different reference bytes");
+  assert.throws(() => loadPixelAvatarRecipe("pixel-halfbody-v1", root), /参考图校验失败/);
+  assert.throws(() => loadPixelAvatarRecipe("external"), /未知/);
 });

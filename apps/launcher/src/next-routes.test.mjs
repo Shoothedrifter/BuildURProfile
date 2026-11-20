@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GET as healthzGet } from "../../web/src/app/healthz/route.ts";
@@ -9,14 +9,25 @@ import { GET as apiGet, POST as apiPost, PATCH as apiPatch } from "../../web/src
 
 const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json", import.meta.url)));
 
-test("Next.js App Router route handlers dispatch session, project, healthz, readyz and internal agent requests", async () => {
+test("Next.js App Router route handlers and expired private artwork cleanup", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "burp-next-routes-"));
   const prevDb = process.env.DATABASE_PATH;
   const prevToken = process.env.AGENT_SERVICE_TOKEN;
+  const prevAvatarRoot = process.env.AVATAR_ASSET_ROOT;
+  const prevResumeRoot = process.env.RESUME_FILE_ROOT;
+  const prevAvatarEnabled = process.env.AVATAR_DEMO_ENABLED;
   const prevRuntime = globalThis.__buildurprofile_next_runtime__;
   delete globalThis.__buildurprofile_next_runtime__;
   process.env.DATABASE_PATH = join(dir, "next.sqlite");
   process.env.AGENT_SERVICE_TOKEN = "t".repeat(64);
+  process.env.AVATAR_ASSET_ROOT = join(dir, "avatars");
+  process.env.RESUME_FILE_ROOT = join(dir, "resumes");
+  process.env.AVATAR_DEMO_ENABLED = "0";
+  let clean;
+  t.mock.method(globalThis, "setInterval", callback => {
+    clean = callback;
+    return { unref() {} };
+  });
   try {
     const healthRes = await healthzGet(new Request("http://127.0.0.1:5173/healthz"));
     assert.equal(healthRes.status, 200);
@@ -39,6 +50,12 @@ test("Next.js App Router route handlers dispatch session, project, healthz, read
     assert.equal(sessionRes.status, 200);
     const cookie = sessionRes.headers.get("set-cookie").split(";")[0];
     const { csrfToken } = await sessionRes.json();
+    const deniedPortrait = await apiPost(new Request("http://127.0.0.1:5173/api/generations", {
+      method: "POST",
+      headers: { cookie, "x-csrf-token": csrfToken, "content-type": "application/json" },
+      body: JSON.stringify({ config: { ...config, templateId: "pixel-world-v1" }, portraitAssetId: "synthetic", idempotencyKey: "denied" })
+    }));
+    assert.equal(deniedPortrait.status, 403);
 
     const missingResume = await apiPatch(new Request("http://127.0.0.1:5173/api/resumes/missing", {
       method: "PATCH",
@@ -55,11 +72,25 @@ test("Next.js App Router route handlers dispatch session, project, healthz, read
     assert.equal(createRes.status, 201);
     const created = await createRes.json();
     assert.equal(created.config.content.profile.name, config.content.profile.name);
+    const runtime = globalThis.__buildurprofile_next_runtime__;
+    const owner = runtime.db.prepare("SELECT owner_session_id FROM projects WHERE id=?").get(created.id).owner_session_id;
+    const insert = runtime.db.prepare("INSERT INTO avatar_assets VALUES(?,?,?,?,?,?,?)");
+    for (const [id, kind, expires] of [["expired", "portrait", 0], ["current", "hero", Date.now() + 600_000]]) {
+      const path = join(dir, "avatars", id);
+      writeFileSync(path, "synthetic bytes");
+      insert.run(id, owner, kind, "image/png", path, 0, expires);
+    }
+    clean();
+    assert.equal(existsSync(join(dir, "avatars", "expired")), false);
+    assert.equal(existsSync(join(dir, "avatars", "current")), true);
   } finally {
     globalThis.__buildurprofile_next_runtime__?.db?.close?.();
     globalThis.__buildurprofile_next_runtime__ = prevRuntime;
     if (prevDb === undefined) delete process.env.DATABASE_PATH; else process.env.DATABASE_PATH = prevDb;
     if (prevToken === undefined) delete process.env.AGENT_SERVICE_TOKEN; else process.env.AGENT_SERVICE_TOKEN = prevToken;
+    if (prevAvatarRoot === undefined) delete process.env.AVATAR_ASSET_ROOT; else process.env.AVATAR_ASSET_ROOT = prevAvatarRoot;
+    if (prevResumeRoot === undefined) delete process.env.RESUME_FILE_ROOT; else process.env.RESUME_FILE_ROOT = prevResumeRoot;
+    if (prevAvatarEnabled === undefined) delete process.env.AVATAR_DEMO_ENABLED; else process.env.AVATAR_DEMO_ENABLED = prevAvatarEnabled;
     rmSync(dir, { recursive: true, force: true });
   }
 });

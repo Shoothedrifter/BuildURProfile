@@ -4,6 +4,13 @@ export class ServiceError extends Error {
   constructor(status, message) { super(message); this.name = "ServiceError"; this.status = status; }
 }
 
+export function assertDeliverableConfig(config) {
+  if (config?.heroArtwork != null &&
+      (config.templateId === "pixel-world-v1" || config.heroArtwork.styleId === "pixel-halfbody-v1")) {
+    throw new ServiceError(400, "个人像素头像仅用于本机预览。请使用默认角色交付作品。");
+  }
+}
+
 const RESUME_MODULES = ["selfEvaluation", "education", "workExperience", "projects", "awards", "campusExperience", "skills", "other"];
 
 /** A strict allowlist prevents PDF evidence from entering queued or published content. */
@@ -51,6 +58,7 @@ export function cleanConfig(config) {
     !config.content?.profile || !config.content?.expertise || !Array.isArray(config.content?.projects)) {
     throw new ServiceError(400, "Design Config 数据无效。");
   }
+  assertDeliverableConfig(config);
   const text = (value) => typeof value === "string" ? value : "";
   const imageText = (value) => typeof value === "string" ? value : "";
   const textList = (value) => {

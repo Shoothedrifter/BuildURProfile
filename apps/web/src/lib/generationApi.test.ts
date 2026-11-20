@@ -70,6 +70,48 @@ it("submits a photo without letting the browser choose its portrait style", asyn
   expect(submitted).not.toHaveProperty("styleId");
 });
 
+it("Pixel World uploads photo only on request and never replaces the base task pointer", async () => {
+  sessionStorage.setItem("burp-avatar-task", "base-task");
+  const config = { ...rawConfig, templateId: "pixel-world-v1" } as DesignConfig;
+  const artwork = { assetUrl: "/api/hero-assets/asset-id", styleId: "pixel-halfbody-v1", alt: "个人像素头像" };
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
+    calls.push(path);
+    if (path === "/api/session") return Response.json({ csrfToken: "csrf" });
+    if (path === "/api/portraits") return Response.json({ id: "portrait-id" });
+    if (path === "/api/generations") {
+      const body = JSON.parse(init?.body as string);
+      expect(body).toMatchObject({ config: { templateId: "pixel-world-v1" }, portraitAssetId: "portrait-id" });
+      expect(body).not.toHaveProperty("styleId");
+      expect(body.config).not.toHaveProperty("heroArtwork");
+      return Response.json({ id: "pixel-task" });
+    }
+    if (path === "/api/generations/pixel-task") return Response.json({ status: "SUCCEEDED", config, heroArtwork: artwork });
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+  const result = await generationApi.generatePixelAvatar("data:image/png;base64,AAAA", config, new AbortController().signal);
+  expect(result).toEqual(artwork);
+  expect(calls.filter(path => path !== "/api/session")).toEqual(["/api/portraits", "/api/generations", "/api/generations/pixel-task"]);
+  expect(sessionStorage.getItem("burp-avatar-task")).toBe("base-task");
+});
+
+it("cancels a Pixel World task when the first status poll fails", async () => {
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+    calls.push(path);
+    if (path === "/api/session") return Response.json({ csrfToken: "csrf" });
+    if (path === "/api/portraits") return Response.json({ id: "portrait-id" });
+    if (path === "/api/generations") return Response.json({ id: "pixel-offline" });
+    if (path === "/api/generations/pixel-offline") return Response.json({ error: "结果暂不可用" }, { status: 502 });
+    if (path === "/api/generations/pixel-offline/cancel") return Response.json({ status: "CANCELLED" });
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+  await expect(generationApi.generatePixelAvatar("data:image/png;base64,AAAA", rawConfig as DesignConfig, new AbortController().signal))
+    .rejects.toThrow("结果暂不可用");
+  expect(calls.at(-1)).toBe("/api/generations/pixel-offline/cancel");
+  expect(sessionStorage.getItem("burp-avatar-task")).toBeNull();
+});
+
 it("cancels a saved queued generation through the owner API", async () => {
   const calls: string[] = [];
   sessionStorage.setItem("burp-avatar-task", "task-queued");

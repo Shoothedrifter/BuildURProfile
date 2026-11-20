@@ -36,7 +36,8 @@ def failure_code(error: Exception) -> tuple[str, bool]:
 
 
 async def process_task(task: AgentTask, client: NodeAgentClient, provider: Any,
-                       registry: SkillRegistry, checkpointer: Any, worker_id: str = "agent_test") -> None:
+                       registry: SkillRegistry, checkpointer: Any, worker_id: str = "agent_test",
+                       *, pixel_provider: Any = None) -> None:
     processing: asyncio.Task | None = None
     reason: list[Exception] = []
 
@@ -63,7 +64,7 @@ async def process_task(task: AgentTask, client: NodeAgentClient, provider: Any,
     try:
         if task.workflow_version not in SUPPORTED_WORKFLOWS:
             raise ValueError("SKILL_VERSION_MISMATCH")
-        graph = build_generation_graph(task, client, provider, registry, checkpointer=checkpointer)
+        graph = build_generation_graph(task, client, provider, registry, checkpointer=checkpointer, pixel_provider=pixel_provider)
         processing = asyncio.create_task(graph.ainvoke(task_input(task), config={"configurable": {
             "thread_id": f"{task.id}:{task.lease_token}"}}))
         heart = asyncio.create_task(renew())
@@ -175,7 +176,7 @@ async def process_resume_task(task: ResumeParseTask, client: NodeAgentClient, mo
 
 async def worker_loop(client: NodeAgentClient, provider: Any, checkpointer: Any,
                       *, registry: SkillRegistry | None = None,
-                      worker_id: str | None = None, poll_seconds: float = 2.0) -> None:
+                      worker_id: str | None = None, poll_seconds: float = 2.0, pixel_provider: Any = None) -> None:
     registry = registry or default_registry()
     worker_id = worker_id or f"agent_{socket.gethostname().split('.')[0]}_{uuid.uuid4().hex[:8]}"
     if len(worker_id) > 100 or not all(c.isalnum() or c in "_-" for c in worker_id):
@@ -185,7 +186,7 @@ async def worker_loop(client: NodeAgentClient, provider: Any, checkpointer: Any,
             await client.touch_worker(worker_id)
             task = await client.lease(worker_id)
             if task:
-                await process_task(task, client, provider, registry, checkpointer, worker_id)
+                await process_task(task, client, provider, registry, checkpointer, worker_id, pixel_provider=pixel_provider)
                 continue
         except asyncio.CancelledError:
             raise

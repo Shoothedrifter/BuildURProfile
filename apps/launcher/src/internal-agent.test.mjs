@@ -173,6 +173,44 @@ test("generation leases leave explicit highlight states for capable workers", as
   }
 });
 
+test("Pixel World uses the existing leased recipe and asset endpoints", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "burp-pixel-assets-"));
+  const db = openDatabase(":memory:");
+  const now = Date.now();
+  for (const owner of ["owner", "other"]) db.prepare("INSERT INTO sessions VALUES(?,?,?)").run(owner, now, now + 100_000);
+  const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
+  const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const config = { ...expected.config, templateId: "pixel-world-v1" };
+  const photo = service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
+  const task = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "pixel-photo" });
+  const server = createPaymentHttpServer({ db, service: {}, generationService: service, portraitEnabled: true,
+    agentToken: token, secret: Buffer.alloc(32, 7) });
+  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  await new Promise((resolve, reject) => server.once("error", reject).listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const lease = await (await post(base, "/_internal/agent/lease", { workerId: "pixel", supportsPixelWorld: true })).json();
+    const path = `${base}/_internal/agent/tasks/${task.id}`;
+    const headers = { authorization: `Bearer ${token}`, "x-agent-lease": lease.leaseToken };
+    assert.equal((await fetch(`${path}/recipe`, { headers: { authorization: headers.authorization } })).status, 409);
+    const recipe = await (await fetch(`${path}/recipe`, { headers })).json();
+    assert.equal(recipe.id, "pixel-halfbody-v1");
+    assert.equal(recipe.version, "1.0.0");
+    assert.equal(recipe.referenceImages.length, 1);
+    assert.match(recipe.referenceImages[0].dataBase64, /^iVBOR/);
+    const output = await fetch(`${path}/output`, { method: "POST", headers: { ...headers, "content-type": "image/png" }, body: png });
+    assert.equal(output.status, 200);
+    const { assetId } = await output.json();
+    assert.equal((await post(base, `/_internal/agent/tasks/${task.id}/complete`, { leaseToken: lease.leaseToken, config })).status, 200);
+    assert.equal(service.getTask("owner", task.id).heroArtwork.assetUrl, `/api/hero-assets/${assetId}`);
+    assert.deepEqual(service.readArtworkAsset("owner", assetId).bytes, png);
+    assert.throws(() => service.readArtworkAsset("other", assetId), { status: 404 });
+    assert.equal(db.prepare("SELECT count(*) n FROM projects").get().n, 0);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test("internal Agent bridge streams only leased portrait and fences output and recipe", async () => {
   const root = mkdtempSync(join(tmpdir(), "burp-agent-bridge-photo-"));
   const reference = join(root, "reference.png");

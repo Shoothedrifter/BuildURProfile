@@ -1,5 +1,6 @@
 import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
 import { toPublishedConfig } from "./publication";
+import { PIXEL_AVATAR_STYLE_ID } from "../../../../packages/skills/src/avatar-catalog";
 
 export type HeroArtwork = NonNullable<DesignConfig["heroArtwork"]>;
 export type GenerationBrief = { role: JobRole; answers: Record<string, number>; content: Omit<ResumeContent, "sourceRefs"> };
@@ -40,34 +41,64 @@ async function retainTaskOrCancel(id: string, epoch: number): Promise<void> {
 }
 
 type GenerationTask = { projectId?: string; status: string; error?: string; heroArtwork?: HeroArtwork; config?: DesignConfig };
-async function waitForTask(id: string, epoch: number, onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
+async function waitForTask(id: string, epoch: number, onStatus?: (status: GenerationStatus) => void, signal?: AbortSignal): Promise<GenerationResult> {
+  const assertCurrent = () => signal ? signal.throwIfAborted() : requireCurrent(epoch);
   // Local image generation may legitimately take longer than five minutes on Apple Silicon.
   const deadline = Date.now() + 35 * 60 * 1000;
   while (Date.now() < deadline) {
-    requireCurrent(epoch);
+    assertCurrent();
     const current = await request<GenerationTask>(`/api/generations/${encodeURIComponent(id)}`);
-    requireCurrent(epoch);
+    assertCurrent();
     if (current.status === "SUCCEEDED") {
       if (!current.config) throw new Error("生成任务缺少作品配置，请重新生成。");
       if (current.projectId) {
         const project = await request<{ id: string; config: DesignConfig; paid: boolean }>(`/api/projects/${encodeURIComponent(current.projectId)}`);
-        requireCurrent(epoch);
-        if (sessionStorage.getItem(savedTaskKey) === id) sessionStorage.removeItem(savedTaskKey);
+        assertCurrent();
+        if (!signal && sessionStorage.getItem(savedTaskKey) === id) sessionStorage.removeItem(savedTaskKey);
         return { config: project.config, projectId: project.id, projectPaid: project.paid };
       }
       return { config: current.config, ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
     }
     if (current.status === "FAILED" || current.status === "EXPIRED" || current.status === "CANCELLED") {
-      sessionStorage.removeItem(savedTaskKey);
+      if (!signal && sessionStorage.getItem(savedTaskKey) === id) sessionStorage.removeItem(savedTaskKey);
       throw new Error(current.status === "CANCELLED" ? "作品生成已取消。" : current.error ?? "作品生成失败，请重试。");
     }
     if (current.status === "QUEUED" || current.status === "RUNNING" || current.status === "CANCELLING") onStatus?.(current.status);
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
-  throw new Error("生成仍在进行；刷新页面后会继续查询任务。");
+  throw new Error(signal ? "头像生成超时，请重试。" : "生成仍在进行；刷新页面后会继续查询任务。");
 }
 
 export const generationApi = {
+  async pixelAvatarEnabled(): Promise<boolean> {
+    const data = await request<{ styles: { id: string }[] }>("/api/avatar-styles");
+    return data.styles.some(style => style.id === PIXEL_AVATAR_STYLE_ID);
+  },
+  async generatePixelAvatar(dataUrl: string, config: DesignConfig, signal: AbortSignal): Promise<HeroArtwork> {
+    signal.throwIfAborted();
+    const portrait = await request<{ id: string }>("/api/portraits", { dataUrl });
+    signal.throwIfAborted();
+    const { heroArtwork: _oldArtwork, ...baseConfig } = config;
+    const task = await request<{ id: string }>("/api/generations", { portraitAssetId: portrait.id,
+      idempotencyKey: crypto.randomUUID(), config: toPublishedConfig(baseConfig) });
+    const cancel = () => request(`/api/generations/${encodeURIComponent(task.id)}/cancel`, {}).catch(() => {});
+    if (signal.aborted) {
+      await cancel();
+      signal.throwIfAborted();
+    }
+    const cancelOnAbort = () => { void cancel(); };
+    signal.addEventListener("abort", cancelOnAbort, { once: true });
+    try {
+      const result = await waitForTask(task.id, generationEpoch, undefined, signal);
+      if (result.heroArtwork?.styleId !== PIXEL_AVATAR_STYLE_ID) throw new Error("生成任务缺少像素头像，请重试。");
+      return result.heroArtwork;
+    } catch (error) {
+      if (!signal.aborted) await cancel();
+      throw error;
+    } finally {
+      signal.removeEventListener("abort", cancelOnAbort);
+    }
+  },
   async generatePortfolio(brief: GenerationBrief | {resumeId: string; revision: number; role: JobRole; answers: Record<string,number>} | {resumeId: string; revision: number; role: JobRole; templateId: TemplateId}, portrait?: { dataUrl: string },
     onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
     const epoch = generationEpoch;

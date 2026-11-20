@@ -52,20 +52,20 @@ def _cutout_png(image: GeneratedImage) -> bytes:
         raise ImageProviderError("CUTOUT_UNAVAILABLE") from exc
 
 
-def _decode_output(payload: object) -> bytes:
-    if not isinstance(payload, dict):
-        raise ImageProviderError("PROVIDER_UNAVAILABLE")
-    result = payload.get("result", payload)
-    encoded = result.get("image") if isinstance(result, dict) else None
-    if not isinstance(encoded, str):
-        raise ImageProviderError("PROVIDER_UNAVAILABLE")
+def _decode_output(payload: object, *, pixel: bool = False) -> bytes:
     try:
+        result = payload.get("result", payload) if isinstance(payload, dict) else None
+        encoded = result.get("image") if isinstance(result, dict) else None
+        if not isinstance(encoded, str):
+            raise ValueError("Missing image output")
         image = base64.b64decode(encoded, validate=True)
         if not image or len(image) > MAX_IMAGE_BYTES:
             raise ValueError("Invalid image size")
         with Image.open(io.BytesIO(image)) as decoded:
             if decoded.format not in ("PNG", "JPEG", "WEBP"):
                 raise ValueError("Unsupported image output")
+            if pixel and (decoded.width != decoded.height or not 256 <= decoded.width <= 2048):
+                raise ValueError("Expected square image output")
             decoded.load()
             if decoded.format == "PNG":
                 return image
@@ -76,7 +76,7 @@ def _decode_output(payload: object) -> bytes:
                 raise ValueError("Converted image is too large")
             return converted
     except (OSError, ValueError, Image.DecompressionBombError) as exc:
-        raise ImageProviderError("PROVIDER_UNAVAILABLE") from exc
+        raise ImageProviderError("PIXEL_OUTPUT_INVALID" if pixel else "PROVIDER_UNAVAILABLE") from exc
 
 
 class CloudflareImageProvider:
@@ -144,13 +144,16 @@ class CloudflareImageProvider:
             files.append((f"input_image_{index}", (f"style-{index}.png", image, "image/png")))
         instructions = recipe.get("instructions")
         summary = recipe.get("localSummary", "")
+        pixel = recipe.get("id") == "pixel-halfbody-v1"
         if not isinstance(instructions, str) or not instructions or len(instructions) > 30_000:
             raise ImageProviderError("STYLE_UNAVAILABLE")
         prompt = (
             "Image 0 is the user's portrait and the sole identity reference. Preserve facial identity, "
             "expression, head angle, existing accessories and number of people. Follow the style instructions "
-            "for cropping, clothing visibility, hair treatment and background. Images 1 and 2 are style "
-            "references only; do not copy their people or objects. Create one square portfolio hero image "
+            "for cropping, clothing visibility, hair treatment and background. "
+            + ("Image 1 is a style reference only; do not copy its person or props. " if pixel
+               else "Images 1 and 2 are style references only; do not copy their people or objects. ")
+            + "Create one square portfolio hero image "
             "without text, watermark, collage or split screen.\n\n"
             f"Style summary:\n{summary}\n\nFull style instructions:\n{instructions}"
         )
@@ -175,7 +178,7 @@ class CloudflareImageProvider:
                 raise ImageProviderError("PROVIDER_UNAVAILABLE", True) from exc
             if isinstance(payload, dict) and payload.get("success") is False:
                 raise ImageProviderError("PROVIDER_UNAVAILABLE", True)
-            return GeneratedImage(_decode_output(payload))
+            return GeneratedImage(_decode_output(payload, pixel=pixel))
         except httpx.TimeoutException as exc:
             raise ImageProviderError("PROVIDER_TIMEOUT") from exc
         except httpx.RequestError as exc:

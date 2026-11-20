@@ -373,6 +373,31 @@ test("failed asset metadata insert does not leave a private portrait file", () =
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("Pixel World photo tasks are local, session-owned and pinned to a recipe", t => {
+  const root = mkdtempSync(join(tmpdir(), "burp-pixel-photo-"));
+  const db = openDatabase(":memory:");
+  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  const now = Date.now();
+  for (const owner of ["owner", "other"]) db.prepare("INSERT INTO sessions VALUES(?,?,?)").run(owner, now, now + 100_000);
+  const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
+  const closed = createGenerationService({ db, assetRoot: root, minPixels: 1, allowPortraits: false });
+  const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const config = { ...expected.config, templateId: "pixel-world-v1" };
+  const { id: portraitAssetId } = service.savePortrait("owner", png);
+  const options = { config, portraitAssetId, idempotencyKey: "pixel-photo" };
+  const task = service.enqueue("owner", options);
+  assert.equal(service.enqueue("owner", options).id, task.id);
+  assert.equal(db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id).style_id, "pixel-halfbody-v1");
+  assert.equal(service.leaseNext({ supportsPixelWorld: true }).workflow_version, "python-agent-v7");
+  assert.throws(() => closed.savePortrait("owner", png), { status: 403 });
+  assert.throws(() => closed.enqueue("owner", options), { status: 403 });
+  assert.throws(() => service.enqueue("other", options), { status: 404 });
+  assert.throws(() => service.enqueue("owner", { ...options, styleId: "lofi-print-anime" }), { status: 400 });
+  assert.throws(() => service.enqueue("owner", { brief, portraitAssetId, idempotencyKey: "legacy", styleId: "pixel-halfbody-v1" }), { status: 400 });
+  assert.throws(() => service.enqueueResume("owner", { resumeId: "synthetic", revision: 1, role: brief.role,
+    templateId: config.templateId, portraitAssetId, idempotencyKey: "pixel-with-brief" }), { status: 400 });
+});
+
 test("cyber template derives its fixed portrait style and rejects a mismatched choice", () => {
   const db = openDatabase(":memory:");
   db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);

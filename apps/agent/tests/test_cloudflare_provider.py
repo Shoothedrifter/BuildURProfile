@@ -149,6 +149,38 @@ async def test_cloudflare_sends_portrait_first_and_resizes_style_references():
 
 
 @pytest.mark.asyncio
+async def test_cloudflare_pixel_edit_preserves_identity_and_rejects_non_square_output():
+    def respond(request):
+        fields = parts(request)
+        assert set(fields) == {"prompt", "width", "height", "input_image_0", "input_image_1"}
+        prompt = fields["prompt"].get_content()
+        assert "sole identity reference" in prompt and "square pixel bust" in prompt
+        assert "Images 1 and 2" not in prompt
+        return httpx.Response(200, json={"success": True, "result": {"image": base64.b64encode(png()).decode()}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        provider = CloudflareImageProvider(account_id="a" * 32, api_token="private-token", http=http)
+        recipe = {"id": "pixel-halfbody-v1", "instructions": "square pixel bust",
+                  "referenceImages": [{"mime": "image/png", "dataBase64": base64.b64encode(png((384, 384))).decode()}]}
+        with pytest.raises(ImageProviderError) as error:
+            await provider.edit(Portrait(png(), "image/png"), recipe, task_id="synthetic-task")
+        assert error.value.code == "PIXEL_OUTPUT_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_cloudflare_pixel_edit_reports_success_without_an_image_as_invalid():
+    async with httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda _: httpx.Response(200, json={"success": True, "result": {}})
+    )) as http:
+        provider = CloudflareImageProvider(account_id="a" * 32, api_token="private-token", http=http)
+        with pytest.raises(ImageProviderError) as error:
+            await provider.edit(Portrait(png(), "image/png"),
+                                {"id": "pixel-halfbody-v1", "instructions": "square"}, task_id="synthetic-task")
+        assert error.value.code == "PIXEL_OUTPUT_INVALID"
+        assert error.value.retryable is False
+
+
+@pytest.mark.asyncio
 async def test_cloudflare_requires_account_and_token_before_request():
     provider = CloudflareImageProvider(account_id="", api_token="")
     with pytest.raises(ImageProviderError) as caught:

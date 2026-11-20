@@ -3,8 +3,7 @@ import { createResumeMediaStore } from './resume-media.mjs';
 import { randomUUID } from "node:crypto";
 import { ServiceError, cleanConfig } from "../../../contracts/src/validation.mjs";
 import { transaction } from "../database.mjs";
-import { listAvatarStyles } from "../../../skills/src/wibi.ts";
-import { DEFAULT_AVATAR_STYLE_ID, TEMPLATE_PORTRAIT_POLICIES } from "../../../skills/src/avatar-catalog.ts";
+import { DEFAULT_AVATAR_STYLE_ID, PIXEL_AVATAR_STYLE_ID, TEMPLATE_PORTRAIT_POLICIES } from "../../../skills/src/avatar-catalog.ts";
 import { cleanGenerationBrief } from "./brief.mjs";
 import { validateImage } from "./assets.mjs";
 
@@ -21,7 +20,7 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       error: deleted ? "作品已删除，请重新生成。" : expired ? "成图已过期，请重新上传照片生成。" : row.error,
       ...(row.status === "SUCCEEDED" && !expired && row.config_json ? { config: JSON.parse(row.config_json) } : {}),
       ...(row.status === "SUCCEEDED" && row.output_asset_id && !expired ? { heroArtwork: { assetUrl: `/api/hero-assets/${row.output_asset_id}`, styleId: row.style_id,
-        alt: "根据本人肖像生成的动画风格虚拟形象",
+        alt: row.style_id === PIXEL_AVATAR_STYLE_ID ? "个人像素头像" : "根据本人肖像生成的动画风格虚拟形象",
         ...(row.cutout_asset_id && assets.cutoutExists(row.cutout_asset_id) ? { cutoutAssetUrl: `/api/hero-assets/${row.cutout_asset_id}` } : {}) } } : {}) };
   }
   function getTask(sessionId, id) {
@@ -53,6 +52,7 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     const safeBrief = brief ? JSON.stringify(cleanGenerationBrief(brief)) : null;
     const templateId = brief?.templateId ?? config?.templateId;
     if (portraitAssetId) {
+      if (templateId === "pixel-world-v1" && brief) throw new ServiceError(400, "请先生成基础作品，再添加个人像素头像。");
       if (templateId) {
         const policy = TEMPLATE_PORTRAIT_POLICIES[templateId];
         if (!policy) throw new ServiceError(400, "当前模板暂不支持照片生成。");
@@ -60,8 +60,8 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
         styleId = policy.styleId;
       } else {
         styleId ??= DEFAULT_AVATAR_STYLE_ID;
+        if (styleId !== DEFAULT_AVATAR_STYLE_ID) throw new ServiceError(400, "未知肖像风格。");
       }
-      if (!listAvatarStyles().some((style) => style.id === styleId)) throw new ServiceError(400, "未知肖像风格。");
       const asset = db.prepare("SELECT id FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind='portrait' AND expires_at>?").get(portraitAssetId, sessionId, now());
       if (!asset) throw new ServiceError(404, "照片不存在或无权访问。");
     } else if (styleId) throw new ServiceError(400, "未上传照片时不能选择生图风格。");

@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 import type { DesignConfig, DesignConfigV4, ResumeEntry, SkinId, StructuredResumeV1 } from "../../../packages/contracts/src/config";
 import { CyberCreatorPage } from "./components/CyberCreatorPage";
+import { PixelWorldPage } from "./components/PixelWorldPage";
 import { Marquee } from "./components/Marquee";
 import { StackedCards } from "./components/StackedCards";
 import { shouldAnimateMarquee } from "./lib/presentation";
@@ -47,6 +48,10 @@ function AdditionalModule({ title, entries, id }: { title: string; entries: read
 }
 
 export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, staticDecorations = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}`, defaultPortraitUrl }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; staticDecorations?: boolean; resolveResumeImage?: ResumeImageResolver; defaultPortraitUrl?: string }) {
+  if ((config as DesignConfigV4).templateId === "pixel-world-v1" && config.content.resume?.version === "resume-v3") {
+    return <PixelWorldPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash}
+      staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} />;
+  }
   if ((config as DesignConfigV4).templateId === "cyber-creator-v1" && config.content.resume?.version === "resume-v3") {
     return <CyberCreatorPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} />;
   }

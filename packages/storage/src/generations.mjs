@@ -28,6 +28,9 @@ export function createGenerationService({ db, assetRoot = "data/avatar-assets", 
       const allowed=['resumeId','revision','role','answers','templateId','idempotencyKey','portraitAssetId','styleId'];
       if (!input || Object.keys(input).some(k=>!allowed.includes(k)) || typeof input.resumeId!=='string' || !Number.isInteger(input.revision) || typeof input.idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(input.idempotencyKey)) throw new ServiceError(400,'简历生成请求无效。');
       if (input.templateId !== undefined && input.answers !== undefined) throw new ServiceError(400,'模板生成不需要测评答案。');
+      if (input.templateId === 'pixel-world-v1' && (input.portraitAssetId || input.styleId)) {
+        throw new ServiceError(400,'请先生成基础作品，再添加个人像素头像。');
+      }
       const request=JSON.stringify({resumeId:input.resumeId,revision:input.revision,role:input.role,
         ...(input.templateId === undefined ? {answers:input.answers && Object.fromEntries(Object.entries(input.answers).sort(([a],[b])=>a.localeCompare(b)))} : {templateId:input.templateId}),
         portraitAssetId:input.portraitAssetId ?? null,styleId:input.styleId ?? null});

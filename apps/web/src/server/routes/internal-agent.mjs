@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 import { ServiceError } from "../service.mjs";
 import { loadStyleRecipe } from "../../../../../packages/skills/src/wibi.ts";
+import { PIXEL_AVATAR_STYLE_ID } from "../../../../../packages/skills/src/avatar-catalog.ts";
+import { loadPixelAvatarRecipe } from "../../../../../packages/skills/src/pixel-avatar.ts";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
@@ -14,6 +16,7 @@ const ERROR_MESSAGES = {
   PROVIDER_AUTH: "图像服务认证失败，请检查 Agent 的 Cloudflare Account ID 和 API Token。",
   PROVIDER_TIMEOUT: "图像生成超时。请检查任务状态后再尝试。",
   PROVIDER_REJECTED: "图像服务未能处理这张照片，请更换照片或风格。",
+  PIXEL_OUTPUT_INVALID: "这次成图不符合像素头像要求。请重新生成或换一张照片。",
   STYLE_UNAVAILABLE: "所选风格资源暂不可用。",
   SKILL_VERSION_MISMATCH: "生成规则已更新，请重新提交作品。",
   INVALID_BRIEF: "已确认的展示内容无效，请重新提交作品。",
@@ -73,7 +76,7 @@ export function validateAgentToken(token) {
 
 /** The Node service remains the sole owner of task, session, asset and payment storage. */
 export async function handleInternalAgentRoutes({ req, res, parts, service, agentToken, portraitEnabled,
-  bodyJson, sendJson, styleLoader = loadStyleRecipe }) {
+  bodyJson, sendJson, styleLoader = id => id === PIXEL_AVATAR_STYLE_ID ? loadPixelAvatarRecipe(id) : loadStyleRecipe(id) }) {
   requireAgentToken(req, agentToken);
   if (req.method === "POST" && parts.length === 3 && parts[2] === "lease") {
     const input = await bodyJson(req, 4096);

@@ -20,7 +20,7 @@
 
 ## Skill 扩展
 
-当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2/v3/v4/v5`、`resume.format.v1/v2`、`avatar.wibi.v1/v2` 和 `artifact.qa.v1/v2/v3/v4`。`avatar.wibi.v2` 增加可选透明层能力，仅由 `python-agent-v6` 工作流调用；旧任务继续使用 v1。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。旧解析 Skill 保留兼容定义。细节见[解析流程 v2](resume-anchored-formatting.md)。
+生成图使用版本化的 `assessment.score`、`design.map`、`design.template`、`resume.compose`、`avatar.wibi`、`avatar.pixel` 和 `artifact.qa` Skills。`avatar.wibi.v2` 仅由 `python-agent-v6` 调用，旧任务使用 v1。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。细节见[解析流程 v2](resume-anchored-formatting.md)。
 
 简历解析由独立 Worker 领取私有队列。文本页用 `pdfplumber` 提取；用户主动选择 OCR 后，`pypdfium2` 仅渲染无文字页并调用本机 Tesseract 中英文语言包，私有 `resume-source-v2` 记录来源与置信度，低置信度条目待核对。Web 通过 PDF.js 和旧浏览器解析器制定模块与条目边界。`RESUME_TEXT_PROVIDER=openai` 使用 OpenAI Responses 严格 JSON Schema；`RESUME_TEXT_PROVIDER=zai` 使用智谱 Response API 的 `json_object` 输出，再由 Agent 按同一合同校验。两者复用现有 OpenAI Python SDK，但必须使用各自的 API Key 和地址。原 PDF、页面图像、提取文本、模型提示与结果只在当前图执行内存中流转，不进入 LangGraph checkpoint 或日志。缺少模型或对应 Key 时任务返回 `PARSE_FAILED`；OCR 缺组件、缺语言包、超时和无文字有独立错误码。配置见 [Agent 样例](../../apps/agent/.env.example)。合成假模型跨端测试覆盖 Node HTTP 租约和 Python 图；真实供应商仍须单独联调。
 
@@ -43,7 +43,9 @@ Cloudflare 适配器使用 `@cf/black-forest-labs/flux-2-klein-4b`，经 `httpx`
 
 首屏融合会在原图生成后尝试调用 Cloudflare AI 的 `bria/remove-background`，将原图另存为透明人物层。成图先发送给该第三方去背景模型；只从受限 HTTPS 主机下载结果，并按透明度与主体覆盖率验收。失败时保留原图，以设计化海报展示；预览编辑页会提示透明去背景未完成，Agent 日志只记录任务 ID 与 `CUTOUT_*` 错误码，不记录图片或供应商响应正文。透明人物层和原图分别存放在会话私有资产区，导出时都嵌入单文件 HTML。该调用按供应商用量计费，需要 AI Gateway 余额或 BYOK；Cloudflare 返回 HTTP 402 时记为 `CUTOUT_BILLING_REQUIRED`，补足额度或设置 BYOK 后重新生成即可得到透明人物层。已有任务若没有 `cutout_asset_id`，原图海报不会自动变成透明图。
 
-运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 资源到私有 `data/wibi-style-pinned/`。新生成任务中，赛博科技模板固定使用「低清晰印刷感动漫」；其他模板在配置各自肖像管线前不接受照片生成。该风格采用极近景构图，画面几乎不留背景。旧版「复古扁平动画头」配方仅供已入队任务兼容读取，不再提供给新生成请求。Node 校验资源哈希后，只把已批准任务的配方交给 Python。
+运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 资源到私有 `data/wibi-style-pinned/`。赛博科技固定使用「低清晰印刷感动漫」，采用极近景构图。旧版「复古扁平动画头」配方仅供已入队任务兼容读取。Node 校验资源哈希后，通过有效租约把配方交给 Python。
+
+像素世界风使用 `python-agent-v7`。基础作品先由 `design.template.v2`、`resume.compose.v5` 和 `artifact.qa.v4` 生成。可选肖像任务由 `avatar.pixel.v1` 处理，使用固定版本 `pixel-halfbody-v1` 与仓库自有参考图，即使其他模板配置 OpenAI 也使用 Cloudflare。Pillow 将结果量化到 64 像素母版再整数倍放大。二值透明边缘通过校验时直接输出透明 PNG，否则保留带底色角色卡。整个流程只调用图像编辑模型。
 
 照片字节和供应商密钥不进入图状态或 checkpoint；供应商失败应明确报错，不伪造成功成图。超时、取消与有限重试规则见[架构与协议](../shared/architecture.md)。
 
@@ -60,7 +62,7 @@ npm run test:agent
 
 覆盖 Python Skills、完整图、TS/Python 规则对照、模拟图像响应及 Node 私有接口。真实图像 API 需要单独验收，模拟测试不能证明人物相似度、内容安全或供应商费用。
 
-本检出版本仍包含 Wibi 演示 Skill；导出模块不再按肖像来源设置拦截。独立肖像 Skill 的集成以对应分支为准。
+像素世界风的个人头像仅限本机编辑预览。公开分享和离线导出使用模板默认角色。
 
 生产开放肖像还需完成真实供应商评测、身份一致性与内容 QA、成本和地区配置，以及持久资产快照与离线嵌入设计。现有文件格式校验不能替代视觉验收。
 

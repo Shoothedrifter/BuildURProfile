@@ -405,7 +405,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
 
   const generate = async () => {
     if ((!draft && !agentDraft) || !selectedTemplate || (!agentDraft && !isAssessmentComplete(answers))) return;
-    if (photoDataUrl && !TEMPLATE_PORTRAIT_POLICIES[selectedTemplate]) {
+    const portrait = selectedTemplate !== "pixel-world-v1" && avatarDemo && photoDataUrl ? { dataUrl: photoDataUrl } : undefined;
+    if (selectedTemplate !== "pixel-world-v1" && photoDataUrl && !TEMPLATE_PORTRAIT_POLICIES[selectedTemplate]) {
       setError("当前模板暂不支持照片生成，请移除照片或选择赛博科技。");
       return;
     }
@@ -424,17 +425,17 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       return;
     }
     const content = confirmation.content;
-    const sourcePhoto = photoDataRef.current;
+    const sourcePhoto = portrait ? photoDataRef.current : null;
     const version = ++generationVersion.current;
     void generationApi.cancelSavedGeneration();
     setGeneratingAvatar(true);
     setError("");
-    setProgress(photoDataUrl ? "正在上传肖像，准备 Agent 工作流…" : "正在提交 Agent 工作流…");
+    setProgress(portrait ? "正在上传肖像，准备 Agent 工作流…" : "正在提交 Agent 工作流…");
     try {
       const result = await generationApi.generatePortfolio(agentDraft
         ? { resumeId: agentDraft.resumeId, revision: agentDraft.revision, role, templateId: selectedTemplate }
         : { role, answers, content },
-        avatarDemo && photoDataUrl ? { dataUrl: photoDataUrl } : undefined,
+        portrait,
         (status) => {
           if (version === generationVersion.current) setProgress(agentStatusText(status));
         });

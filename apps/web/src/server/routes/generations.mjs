@@ -1,5 +1,5 @@
 import { ServiceError } from "../service.mjs";
-import { listAvatarStyles } from "../../../../../packages/skills/src/wibi.ts";
+import { listAvatarStyles } from "../../../../../packages/skills/src/avatar-catalog.ts";
 
 /** Session and CSRF checks are completed by the HTTP shell before this router runs. */
 export async function handleGenerationRoutes({ req, res, url, parts, sessionId, service, portraitEnabled,
@@ -14,9 +14,10 @@ export async function handleGenerationRoutes({ req, res, url, parts, sessionId, 
     // Legacy portrait regeneration may contain already embedded editor images.
     // New briefs are independently capped at 256 KiB by cleanGenerationBrief.
     const input = await bodyJson(req, 9 * 1024 * 1024);
-    if (!input?.resumeId && !input?.brief && !(portraitEnabled && input?.portraitAssetId && input?.config)) {
+    if (!input?.resumeId && !input?.brief && !(input?.portraitAssetId && input?.config)) {
       throw new ServiceError(400, "请先确认简历内容并完成测评。未上传照片时不能提交旧版配置。");
     }
+    if (input.portraitAssetId && !portraitEnabled) throw new ServiceError(403, "当前环境未启用肖像生成。");
     if (!input.resumeId && ["resume-v2","resume-v3"].includes(input.brief?.content?.resume?.version)) throw new ServiceError(400,"请使用已保存草稿生成作品。");
     sendJson(res, 201, input.resumeId ? service.enqueueResume(sessionId, input) : service.enqueue(sessionId, input)); return true;
   }

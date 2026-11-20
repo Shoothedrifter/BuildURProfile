@@ -47,6 +47,8 @@
 | `GET /api/hero-assets/:id` | 读取所属会话的有效图片，使用私有禁止缓存响应 |
 
 服务端根据会话决定所有者，不接受客户端注入所有权。写操作校验 CSRF；入队清洗拒绝 PDF 原文、`sourceRefs` 和多余字段。源照片和成图分别按 1 天、7 天有效期管理。开发期不设应用内肖像生成次数上限，供应商自身的额度和计费仍然生效。
+
+`pixel-world-v1` 的已保存简历生成不接收照片。基础作品完成后，本机演示可用 `{config, portraitAssetId, idempotencyKey}` 提交独立头像任务，服务端绑定 `pixel-halfbody-v1`。任务产物只能凭所属会话预览，保存项目、分享和下载使用默认角色。
 新 Agent 路径仅接受服务端投影的 `resume-v3`；客户端不能通过旧 brief 路径自报新版本 content。revision 不匹配返回 409；待核对、无效链接、图片归属或格式错误在入队前拒绝，任务和图片复制事务回滚。旧合同仍可供已有项目和任务读取。
 
 PDF 上传接受符合大小、页数和加密规则的扫描件，并记录无文字页。普通 `POST /api/resumes/parse` 仍可能返回 `PDF_NO_TEXT`；用户明确选择后可携带 `ocrRequested:true` 对同一未过期 `fileId` 重试。混合 PDF 的 `POST /api/resumes/:id/reparse-candidates` 可携带 `ocrRequested:true`，由独立任务生成候选，不改变当前草稿。新 OCR 工作流使用 `resume-parse-v5` 和 `resume-source-v2`，队列兼容已存在的 `resume-parse-v3` 任务。内部 `POST /_internal/agent/resume-tasks/:id/plan` 只接受有效服务令牌和租约，用 Web 原解析器对 OCR 文字制定条目边界。
