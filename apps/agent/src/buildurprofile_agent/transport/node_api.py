@@ -111,7 +111,7 @@ class NodeAgentClient:
 
     async def lease(self, worker_id: str) -> AgentTask | None:
         response = await self._request("POST", "/_internal/agent/lease", json={
-            "workerId": worker_id, "supportsPresentationHighlights": True,
+            "workerId": worker_id, "supportsPresentationHighlights": True, "supportsPixelWorld": True,
         })
         return None if response.status_code == 204 else AgentTask.from_json(response.json())
 

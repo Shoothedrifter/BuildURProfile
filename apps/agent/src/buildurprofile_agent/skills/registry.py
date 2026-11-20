@@ -80,6 +80,8 @@ def default_registry() -> SkillRegistry:
                             lambda inputs, _: {"config": style_to_config(inputs["vector"], inputs["role"])}))
     registry.register(Skill("design.template.v1", "1.0.0", frozenset(), True, 1.0,
                             lambda inputs, _: {"config": template_to_config(inputs["templateId"], inputs["role"])}))
+    registry.register(Skill("design.template.v2", "2.0.0", frozenset(), True, 1.0,
+                            lambda inputs, _: {"config": template_to_config(inputs["templateId"], inputs["role"])}))
     registry.register(Skill("resume.compose.v2", "2.0.0", frozenset(), True, 1.0, compose_resume))
     registry.register(Skill("resume.compose.v3", "3.0.0", frozenset(), True, 1.0, compose_resume_v3))
     registry.register(Skill("resume.compose.v4", "4.0.0", frozenset(), True, 1.0, compose_resume_v4))

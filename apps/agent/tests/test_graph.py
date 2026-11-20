@@ -239,6 +239,21 @@ async def test_v5_generates_selected_template_without_assessment():
 
 
 @pytest.mark.asyncio
+async def test_v7_pixel_world_runs_without_portrait():
+    from dataclasses import replace
+    golden = json.loads((FIXTURE.parent / "agent-golden.v3.json").read_text())
+    brief = {"role": golden["input"]["role"], "content": golden["input"]["content"], "templateId": "pixel-world-v1"}
+    item = replace(task(), workflow_version="python-agent-v7", brief=brief)
+    provider = FakeProvider()
+    result = await build_generation_graph(item, FakeClient(), provider, default_registry()).ainvoke(task_input(item))
+    assert result["qa"] is True
+    assert result["config"]["templateId"] == "pixel-world-v1"
+    assert result["config"]["content"] == brief["content"]
+    assert result["output_asset_id"] is None and provider.calls == 0
+    assert result["skill_plan"] == ["design.template.v2", "resume.compose.v5", "artifact.qa.v4"]
+
+
+@pytest.mark.asyncio
 async def test_v6_portrait_runs_versioned_cutout_skill():
     from dataclasses import replace
     golden = json.loads((FIXTURE.parent / 'agent-golden.v3.json').read_text())

@@ -97,6 +97,42 @@ test("internal Agent bridge leases a queued v5 template generation", async () =>
   }
 });
 
+test("Pixel World lease skips workers without support", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "burp-pixel-bridge-"));
+  const db = openDatabase(":memory:");
+  const time = Date.now();
+  let now = time;
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 100_000);
+  const generationService = createGenerationService({ db, assetRoot: root, now: () => now, leaseMs: 500 });
+  const { input } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  for (const section of input.content.resume.sections) for (const item of section.items) item.supplement.images = [];
+  const pixel = generationService.enqueue("owner", {
+    brief: { role: input.role, content: input.content, templateId: "pixel-world-v1" }, idempotencyKey: "pixel"
+  });
+  now++;
+  const cyber = generationService.enqueue("owner", {
+    brief: { role: input.role, content: input.content, templateId: "cyber-creator-v1" }, idempotencyKey: "cyber"
+  });
+  const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: false,
+    agentToken: token, secret: Buffer.alloc(32, 7) });
+  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  await new Promise((resolve, reject) => server.once("error", reject).listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const legacy = { workerId: "old", supportsPresentationHighlights: true };
+    assert.equal((await (await post(base, "/_internal/agent/lease", legacy)).json()).id, cyber.id);
+    assert.equal((await post(base, "/_internal/agent/lease", legacy)).status, 204);
+    assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(pixel.id).attempt_count, 0);
+    const lease = await (await post(base, "/_internal/agent/lease", { ...legacy, supportsPixelWorld: true })).json();
+    assert.equal(lease.id, pixel.id);
+    assert.equal(lease.workflowVersion, "python-agent-v7");
+    now += 501;
+    assert.equal((await post(base, `/_internal/agent/tasks/${pixel.id}/complete`, { leaseToken: lease.leaseToken })).status, 409);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test("generation leases leave explicit highlight states for capable workers", async () => {
   const root = mkdtempSync(join(tmpdir(), "burp-highlights-bridge-"));
   const db = openDatabase(join(root, "app.sqlite"));

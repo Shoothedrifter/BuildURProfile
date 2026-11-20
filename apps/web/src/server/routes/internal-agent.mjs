@@ -7,7 +7,7 @@ import { loadStyleRecipe } from "../../../../../packages/skills/src/wibi.ts";
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 const RETRYABLE_CODES = new Set(["PROVIDER_RATE_LIMIT", "PROVIDER_UNAVAILABLE"]);
-const SUPPORTED_GENERATION_WORKFLOWS = new Set(["python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", "python-agent-v6"]);
+const SUPPORTED_GENERATION_WORKFLOWS = new Set(["python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", "python-agent-v6", "python-agent-v7"]);
 const ERROR_MESSAGES = {
   PROVIDER_RATE_LIMIT: "图像服务暂时繁忙，系统会在限定次数内重试。",
   PROVIDER_UNAVAILABLE: "图像服务暂时不可用，系统会在限定次数内重试。",
@@ -80,7 +80,10 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
     if (typeof input?.workerId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(input.workerId)) {
       throw new ServiceError(400, "worker ID 无效。");
     }
-    const capabilities = { supportsPresentationHighlights: input.supportsPresentationHighlights === true };
+    const capabilities = {
+      supportsPresentationHighlights: input.supportsPresentationHighlights === true,
+      supportsPixelWorld: input.supportsPixelWorld === true
+    };
     let task = service.leaseNext(capabilities);
     for (let skipped = 0; task && !SUPPORTED_GENERATION_WORKFLOWS.has(task.workflow_version) && skipped < 20; skipped++) {
       service.fail(task.id, "生成规则已更新，请重新提交作品。", { leaseToken: task.lease_token, retryable: false });

@@ -59,6 +59,33 @@ test('template generation binds the selected template without hidden assessment 
  assert.throws(()=>s.service.enqueueResume('owner',{...input,revision:2}),e=>e.status===409);
  assert.throws(()=>s.service.enqueueResume('other',{...input,idempotencyKey:'other'}));
 });
+test('Pixel World queues a confirmed revision exactly once', t => {
+ const s = setup(t), item = addSyntheticProject(s.draft);
+ const imageId = s.queue.saveImage('owner', s.draft.resumeId, 'image/png', png, item.itemId).imageId;
+ item.supplements.images = [{imageId, caption:'确认图片'}];
+ const revision = s.queue.patch('owner', s.draft.resumeId, { revision: 1, draft: s.draft }).revision;
+ const input = { resumeId:s.draft.resumeId, revision, role:s.input.role, templateId:'pixel-world-v1', idempotencyKey:'pixel' };
+ const task = s.service.enqueueResume('owner', input);
+ assert.equal(s.service.enqueueResume('owner', input).id, task.id);
+ assert.throws(() => s.service.enqueueResume('owner', {...input, revision:revision + 1}), {status:409});
+ assert.throws(() => s.service.enqueueResume('owner', {...input, templateId:'warm-v1'}), {status:409});
+ assert.throws(() => s.service.enqueueResume('other', input), {status:404});
+ const lease = s.service.leaseNext({ supportsPixelWorld:true });
+ assert.equal(lease.workflow_version, 'python-agent-v7');
+ const content = JSON.parse(lease.brief_json).content;
+ const project = content.resume.sections.find(section => section.kind === 'projects').items[0];
+ assert.equal(project.details, '合成项目正文');
+ assert.deepEqual(project.supplement.images, [{imageId, caption:'确认图片'}]);
+ const base = JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/agent-golden.v1.json', import.meta.url))).expected.config;
+ const config = { ...base, templateId:input.templateId, content };
+ assert.equal(s.service.complete(task.id, {leaseToken:lease.lease_token, config}), true);
+ assert.equal(s.service.complete(task.id, {leaseToken:lease.lease_token, config}), false);
+ assert.ok(s.service.getTask('owner', task.id).projectId);
+ assert.equal(s.db.prepare('SELECT count(*) n FROM projects').get().n, 1);
+ assert.equal(s.db.prepare('SELECT count(*) n FROM entitlements').get().n, 0);
+ assert.deepEqual(s.service.readShowcaseMedia('owner', imageId).bytes, png);
+});
+
 test('server projects exact revision, materializes only selected media atomically and isolates owners',t=>{
  const s=setup(t),item=addSyntheticProject(s.draft),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
  item.supplements={text:'说明',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图'}]};

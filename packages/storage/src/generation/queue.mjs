@@ -72,11 +72,17 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       return publicTask(existing);
     }
     const id = randomUUID(), time = now();
+    const resumeVersion = (brief ?? config)?.content?.resume?.version;
+    const workflowVersion = templateId === "pixel-world-v1" ? "python-agent-v7"
+      : templateId ? "python-agent-v6"
+      : resumeVersion === "resume-v3" ? "python-agent-v4"
+      : resumeVersion === "resume-v2" ? "python-agent-v3"
+      : WORKFLOW_VERSION;
     db.prepare("INSERT INTO generations(id,owner_session_id,portrait_asset_id,style_id,config_json,brief_json,idempotency_key,workflow_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,?)")
-      .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, (brief?.templateId || config?.templateId) ? "python-agent-v6" : (brief?.content?.resume?.version === "resume-v3" || config?.content?.resume?.version === "resume-v3") ? "python-agent-v4" : (brief?.content?.resume?.version === "resume-v2" || config?.content?.resume?.version === "resume-v2") ? "python-agent-v3" : WORKFLOW_VERSION, time, time);
+      .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, workflowVersion, time, time);
     return getTask(sessionId, id);
   }
-  function leaseNext({ supportsPresentationHighlights = true } = {}) {
+  function leaseNext({ supportsPresentationHighlights = true, supportsPixelWorld = false } = {}) {
     for (let scanned = 0; scanned < 20; scanned++) {
       const time = now();
       db.prepare("UPDATE generations SET status='CANCELLED',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status='RUNNING' AND cancel_requested_at IS NOT NULL AND lease_until<=?")
@@ -84,11 +90,12 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       // Older Agents cannot decode even an explicit empty array. Leave those tasks queued for a capable worker.
       const row = db.prepare(`SELECT * FROM generations
         WHERE ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))
+          AND (? OR workflow_version <> 'python-agent-v7')
           AND (? OR NOT EXISTS (
             SELECT 1 FROM json_tree(COALESCE(brief_json, config_json, '{}'), '$.content.resume.sections')
             WHERE key='presentationHighlights'
           ))
-        ORDER BY created_at LIMIT 1`).get(time, time, Number(supportsPresentationHighlights));
+        ORDER BY created_at LIMIT 1`).get(time, time, Number(supportsPixelWorld), Number(supportsPresentationHighlights));
       if (!row) return null;
       if (row.attempt_count >= maxAttempts) {
         db.prepare("UPDATE generations SET status='FAILED',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))")
@@ -174,14 +181,14 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       const time=now(),row=db.prepare('SELECT * FROM generations WHERE id=?').get(id);
       if(!row || row.cancel_requested_at!=null || (leaseToken ? row.status!=='RUNNING' || row.lease_token!==leaseToken || row.lease_until<=time : row.status!=='QUEUED')) return false;
       const safeConfig=config ? cleanConfig(config) : row.config_json;
-      if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6'].includes(row.workflow_version)){
+      if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version)){
         const confirmedBrief=JSON.parse(row.brief_json || row.config_json), published=JSON.parse(safeConfig || 'null');
         if(!published || !isDeepStrictEqual(published.content,confirmedBrief.content)
-          || ['python-agent-v5','python-agent-v6'].includes(row.workflow_version) && published.templateId!==confirmedBrief.templateId)
+          || ['python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version) && published.templateId!==confirmedBrief.templateId)
           throw new ServiceError(400,'生成结果与确认内容不一致。');
       }
       db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(safeConfig,time,id);
-      if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6'].includes(row.workflow_version) && !row.portrait_asset_id){
+      if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version) && !row.portrait_asset_id){
         const projectId=randomUUID();
         db.prepare('INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at) VALUES(?,?,?,?,?)').run(projectId,row.owner_session_id,safeConfig,time,time);
         media.attachProject(row.owner_session_id,projectId,JSON.parse(safeConfig));

@@ -6,13 +6,13 @@ from typing import Any, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from . import WORKFLOW_VERSION
 from .contracts import clean_brief, clean_config, GenerationBriefV2, DesignConfigV2, GenerationBriefV3, DesignConfigV3, GenerationBriefV4, DesignConfigV4
 from .skills.registry import SkillRegistry
 from .transport.node_api import AgentTask, NodeAgentClient
 
 
-WORKFLOW_VERSION = "python-agent-v6"
-SUPPORTED_WORKFLOWS = ("python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", WORKFLOW_VERSION)
+SUPPORTED_WORKFLOWS = ("python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", "python-agent-v6", WORKFLOW_VERSION)
 DESIGN_SKILLS = ("assessment.score.v1", "design.map.v1", "resume.compose.v2")
 AVATAR_SKILL = "avatar.wibi.v1"
 QA_SKILL = "artifact.qa.v1"
@@ -42,11 +42,13 @@ def task_input(task: AgentTask) -> GenerationState:
 
 def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: Any,
                            registry: SkillRegistry, *, checkpointer: Any = None) -> Any:
-    templated = task.workflow_version in ("python-agent-v5", WORKFLOW_VERSION)
-    enriched = task.workflow_version in ("python-agent-v3", "python-agent-v4", "python-agent-v5", WORKFLOW_VERSION)
-    ordered = task.workflow_version in ("python-agent-v4", "python-agent-v5", WORKFLOW_VERSION)
-    avatar_skill = "avatar.wibi.v2" if task.workflow_version == WORKFLOW_VERSION else AVATAR_SKILL
-    design_skills = ("design.template.v1", "resume.compose.v5") if templated else (*DESIGN_SKILLS[:2], "resume.compose.v4" if ordered else "resume.compose.v3") if enriched else DESIGN_SKILLS
+    pixel = task.workflow_version == WORKFLOW_VERSION
+    templated = task.workflow_version in ("python-agent-v5", "python-agent-v6", WORKFLOW_VERSION)
+    enriched = templated or task.workflow_version in ("python-agent-v3", "python-agent-v4")
+    ordered = templated or task.workflow_version == "python-agent-v4"
+    avatar_skill = "avatar.wibi.v2" if task.workflow_version == "python-agent-v6" else AVATAR_SKILL
+    template_skill = "design.template.v2" if pixel else "design.template.v1"
+    design_skills = (template_skill, "resume.compose.v5") if templated else (*DESIGN_SKILLS[:2], "resume.compose.v4" if ordered else "resume.compose.v3") if enriched else DESIGN_SKILLS
     qa_skill = "artifact.qa.v4" if templated else "artifact.qa.v3" if ordered else "artifact.qa.v2" if enriched else QA_SKILL
 
     async def run_skill(skill_id: str, inputs: dict, state: GenerationState,
@@ -64,6 +66,9 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
         if bool(state["portrait_asset_id"]) != bool(state["style_id"]):
             raise ValueError("INVALID_BRIEF")
         if bool(state["brief"]) == bool(state["config"]):
+            raise ValueError("INVALID_BRIEF")
+        template_id = (state["brief"] or state["config"] or {}).get("templateId")
+        if pixel != (template_id == "pixel-world-v1"):
             raise ValueError("INVALID_BRIEF")
         if enriched:
             brief_model = GenerationBriefV4 if templated else GenerationBriefV3 if ordered else GenerationBriefV2
