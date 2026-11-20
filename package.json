@@ -37,7 +37,8 @@
     "pdfjs-dist": "^6.4.299",
     "postcss": "^8.5.32",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "subset-font": "^2.9.0"
   },
   "overrides": {
     "urllib": "4.9.1"

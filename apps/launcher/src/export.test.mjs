@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { JSDOM, VirtualConsole } from "jsdom";
 import { buildStaticHtml } from "../../web/src/server/export.mjs";
+import { createPixelFontService } from "../../web/src/server/pixel-font.mjs";
+import { pixelFontGlyphs } from "../../web/src/lib/pixelFontLabels.mjs";
 import { cleanConfig } from "../../../packages/contracts/src/validation.mjs";
 
 test("cleanConfig keeps non-empty project sourceText and omits the key when absent", () => {
@@ -41,7 +43,27 @@ test("offline export runs the shared showcase with embedded portrait and safe co
   } finally { dom.window.close(); }
 });
 
-test("Pixel World offline export embeds its own default portrait and all project media", async () => {
+test("Pixel World offline export embeds the pixel label font subset for the owner name", async () => {
+  const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const config = { ...expected.config, templateId: "pixel-world-v1" };
+  const pixelFont = createPixelFontService();
+  const name = config.content.profile?.name ?? "";
+  const fontSubset = await pixelFont.readSubset(pixelFontGlyphs(name));
+  const html = buildStaticHtml(JSON.parse(cleanConfig(config)), undefined, undefined, () => ({ bytes: Buffer.alloc(0), mime: "image/png" }), fontSubset);
+  // 离线包内嵌 data URI 字体且遵守导出 CSP（font-src data:）
+  assert.ok(html.includes('font-family:"FusionPixel"'));
+  assert.ok(html.includes("data:font/woff2;base64,"));
+  const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    // 组件在导出态不发起运行时字体请求，字形全部来自内嵌子集
+    const injected = Array.from(dom.window.document.querySelectorAll("style"))
+      .filter(node => (node.textContent ?? "").includes("/api/pixel-font"));
+    assert.equal(injected.length, 0);
+  } finally { dom.window.close(); }
+});
+
+test("Pixel World offline export opens project files in the continuous showcase with embedded media", async () => {
   const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
   const config = { ...expected.config, templateId: "pixel-world-v1" };
   const sections = config.content.resume.sections;
@@ -52,17 +74,53 @@ test("Pixel World offline export embeds its own default portrait and all project
     details: "合成项目说明", facts: [], supplement: { text: "", links: [], images } }] });
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=", "base64");
   const html = buildStaticHtml(JSON.parse(cleanConfig(config)), undefined, undefined, () => ({ bytes: png, mime: "image/png" }));
-  const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true });
+  const scrollTargets = [];
+  function openExport(hash = "") {
+    return new JSDOM(html, { url: `file:///tmp/showcase.html${hash}`, runScripts: "dangerously", pretendToBeVisual: true,
+      beforeParse(window) {
+        window.HTMLElement.prototype.scrollIntoView = function () { scrollTargets.push(this.id); };
+      }
+    });
+  }
+  const dom = openExport();
   try {
     await new Promise(resolve => setTimeout(resolve, 100));
     const page = dom.window.document.querySelector('[data-testid="pixel-world-page"]');
     assert.ok(page);
     const art = readFileSync("apps/web/public/pixel-world-default.webp").toString("base64");
     assert.equal(page.querySelector(".pixel-portrait").getAttribute("src"), `data:image/webp;base64,${art}`);
+    const projectLink = page.querySelector('nav a[href="#works"]');
+    assert.ok(projectLink);
+    assert.equal(page.querySelector("h1").textContent, config.content.profile.name);
+    assert.ok(page.querySelector("#works h2"));
+    projectLink.click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(dom.window.location.hash, "#works");
+    assert.equal(page.querySelector("h1").textContent, config.content.profile.name);
+    assert.equal(dom.window.document.activeElement?.textContent, "作品档案");
+    const openProject = page.querySelector('a[href="#case=project-image"]');
+    assert.ok(openProject);
+    const scrollCount = scrollTargets.length;
+    openProject.click();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(scrollTargets.length, scrollCount, "opening a project leaves the archive at its current position");
+    assert.equal(dom.window.location.hash, "#case=project-image");
+    const detail = page.querySelector("dialog[open]");
+    assert.equal(detail?.querySelector("h2")?.textContent, "合成项目");
     const imageCount = config.content.resume.sections.flatMap(s => s.items).flatMap(i => i.supplement.images).length;
     assert.ok(imageCount > 0);
-    assert.equal(page.querySelectorAll('img[src^="data:image/png;base64,"]').length, imageCount);
+    assert.equal(detail.querySelectorAll('img[src^="data:image/png;base64,"]').length, imageCount);
     assert.ok([...page.querySelectorAll("img")].every(img => img.getAttribute("src").startsWith("data:")));
-    assert.match(page.querySelector(".pixel-button").getAttribute("href"), /^#projects$/);
+    const direct = openExport("#case=project-image");
+    try {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      assert.equal(direct.window.document.querySelector("dialog[open] h2")?.textContent, "合成项目");
+      direct.window.document.querySelector("dialog button").click();
+      await new Promise(resolve => setTimeout(resolve, 30));
+      assert.equal(direct.window.location.hash, "#works");
+      assert.equal(direct.window.document.querySelector("dialog[open]"), null);
+      assert.equal(direct.window.document.activeElement?.getAttribute("href"), "#case=project-image");
+      assert.equal(scrollTargets.at(-1), "pixel-project-project-image", "closing a deep link lands at the project row");
+    } finally { direct.window.close(); }
   } finally { dom.window.close(); }
 });

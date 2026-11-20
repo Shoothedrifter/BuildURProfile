@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { resumeImageIds } from '../../../../packages/contracts/src/resume-v2.mjs';
 import { assertDeliverableConfig } from '../../../../packages/contracts/src/validation.mjs';
+import { pixelFontFaceCss } from '../lib/pixelFontLabels.mjs';
 
 const defaultPortraitFiles = new Map([
   ["cyber-creator-v1", "cyber-neutral-print-anime.webp"],
@@ -28,7 +29,7 @@ function exportAssets() {
   };
 }
 
-export function buildStaticHtml(config, javascript, css, mediaReader) {
+export function buildStaticHtml(config, javascript, css, mediaReader, fontSubset = null) {
   assertDeliverableConfig(config);
   if (javascript === undefined || css === undefined) {
     const assets = exportAssets();
@@ -36,6 +37,10 @@ export function buildStaticHtml(config, javascript, css, mediaReader) {
     css ??= assets.css;
   }
   if (/<\/style/i.test(css)) throw new Error("Invalid export stylesheet.");
+  // 像素世界导出内嵌标签层字体子集（data URI 满足导出 CSP 的 font-src data:）。
+  const fontCss = fontSubset && config.templateId === "pixel-world-v1"
+    ? pixelFontFaceCss(`data:font/woff2;base64,${Buffer.from(fontSubset).toString("base64")}`)
+    : "";
   const images = [
     config.heroArtwork?.assetUrl,
     config.heroArtwork?.cutoutAssetUrl,
@@ -62,7 +67,7 @@ export function buildStaticHtml(config, javascript, css, mediaReader) {
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; media-src data:; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>${title}</title><style>${css}</style></head><body><div id="root"></div>
+<title>${title}</title>${fontCss ? `<style>${fontCss}</style>` : ""}<style>${css}</style></head><body><div id="root"></div>
 <script type="application/json" id="buildurprofile-config">${safeConfig}</script>
 <script type="application/json" id="buildurprofile-images">${safeImages}</script>
 <script type="application/json" id="buildurprofile-default-portrait">${defaultPortrait}</script><script>${safeJs}</script></body></html>`;

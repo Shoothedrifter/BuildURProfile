@@ -8,6 +8,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join, resolve } from "node:path";
 import { ServiceError } from "./service.mjs";
 import { buildStaticHtml } from "./export.mjs";
+import { createPixelFontService } from "./pixel-font.mjs";
+import { pixelFontGlyphs } from "../lib/pixelFontLabels.mjs";
 import { handleGenerationRoutes } from "./routes/generations.mjs";
 import { handleInternalAgentRoutes, validateAgentToken } from "./routes/internal-agent.mjs";
 
@@ -81,7 +83,7 @@ function parseRoute(path) {
 
 export function createRequestHandler({ db, service, generationService = null, resumeRepository = null, portraitEnabled = true, agentToken = null,
   agentStyleLoader, paymentConfig, priceFen, configurationError = null,
-  secret = loadSessionSecret(), htmlBuilder = buildStaticHtml }) {
+  secret = loadSessionSecret(), htmlBuilder = buildStaticHtml, pixelFont = createPixelFontService() }) {
   const configuredAgentToken = validateAgentToken(agentToken);
   return async (req, res) => {
     try {
@@ -134,6 +136,16 @@ export function createRequestHandler({ db, service, generationService = null, re
           service: "一次付款解锁当前项目的发布与分享，静态网站导出免费",
           shareDays: 7 }); return;
       }
+      // 像素字体子集：公开只读，分享页与预览共用，无会话数据。上限与组件端 GLYPH_LIMIT 一致。
+      if (req.method === "GET" && url.pathname === "/api/pixel-font") {
+        const text = Array.from((url.searchParams.get("text") ?? "").trim());
+        if (!text.length || text.length > 192) throw new ServiceError(400, "字体请求无效。");
+        const woff2 = await pixelFont.readSubset(text.join(""));
+        res.writeHead(200, { "content-type": "font/woff2", "content-length": woff2.length,
+          "cache-control": "public, max-age=31536000, immutable", "x-content-type-options": "nosniff" });
+        res.end(woff2);
+        return;
+      }
       if (parts[0] === "api") {
         const sessionId = requireSession(req, db, secret);
         if (!["GET", "HEAD"].includes(req.method)) requireCsrf(req, secret, sessionId);
@@ -179,8 +191,12 @@ export function createRequestHandler({ db, service, generationService = null, re
           const download = service.getDownload(sessionId, parts[2]);
           const format = url.searchParams.get("format") ?? "html";
           if (format !== "html") throw new ServiceError(400, "导出格式无效。");
+          // 像素世界导出需要内嵌标签层字体子集（姓名 + 固定文案字形）。
+          const fontSubset = download.config?.templateId === "pixel-world-v1"
+            ? await pixelFont.readSubset(pixelFontGlyphs(download.config.content?.profile?.name ?? ""))
+            : null;
           let file;
-          try { file = Buffer.from(htmlBuilder(download.config, undefined, undefined, id => service.readProjectMedia(sessionId, id))); }
+          try { file = Buffer.from(htmlBuilder(download.config, undefined, undefined, id => service.readProjectMedia(sessionId, id), fontSubset)); }
           catch (error) {
             try { service.markDeliveryFailure(download.projectId, "export"); } catch { /* Keep packaging error. */ }
             throw error;

@@ -1,8 +1,49 @@
 import { afterEach, expect, it } from "vitest";
+import cssSource from "./styles.css?raw";
 import "./styles.css";
 
 afterEach(() => {
   document.body.replaceChildren();
+});
+
+// CSS Grid 规范：grid-template 里的命名区域必须构成单个矩形；
+// 一旦某名字的格子被切断（例如 press 行插进 stage 跨度中间），整条声明无效，
+// 浏览器直接丢弃——布局退化为自动放置，元素互相重叠。jsdom 不做真实布局，
+// 因此这里对 styles.css 源文本做静态校验，防止再次引入非矩形区域。
+
+function gridTemplateDeclarations(css: string): string[] {
+  return Array.from(css.matchAll(/(?:^|[^-\w])grid-template\s*:\s*([^;]+);/g), match => match[1]);
+}
+
+function nonRectangularAreas(declaration: string): string[] {
+  const rows = Array.from(declaration.matchAll(/"([^"]+)"/g), match => match[1].trim().split(/\s+/));
+  const cells = new Map<string, Array<[number, number]>>();
+  rows.forEach((row, r) => row.forEach((name, c) => {
+    if (name === ".") return;
+    const list = cells.get(name) ?? [];
+    list.push([r, c]);
+    cells.set(name, list);
+  }));
+  const broken: string[] = [];
+  for (const [name, list] of cells) {
+    const rowsUsed = list.map(([r]) => r), colsUsed = list.map(([, c]) => c);
+    const box = (Math.max(...rowsUsed) - Math.min(...rowsUsed) + 1) * (Math.max(...colsUsed) - Math.min(...colsUsed) + 1);
+    if (box !== list.length) broken.push(name);
+  }
+  return broken;
+}
+
+it("keeps every named grid-template area rectangular", () => {
+  const broken = gridTemplateDeclarations(cssSource).flatMap(nonRectangularAreas);
+  expect(broken).toEqual([]);
+});
+
+// 像素画必须整数倍缩放：默认头像是 384x384（12x 的 32 网格），舞台主宽度
+// 收敛到 24rem（=384px，1:1）才能让 image-rendering: pixelated 的颗粒均匀；
+// 非整数倍（如 38rem=608px≈1.58x）会出现像素列宽不一的糊感。
+it("keeps the hero stage at an integer multiple of the 384px portrait source", () => {
+  const stage = cssSource.match(/\.pixel-stage\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(stage).toMatch(/width:\s*min\(100%,\s*24rem\)/);
 });
 
 it("keeps the legacy entry selector spaced and limits right alignment to Agent tools", () => {
