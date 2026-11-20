@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { projectConfirmedResumeV3, RESUME_MODULE_MAPPING } from "../../../../../../packages/contracts/src/resume-draft";
 import type { ResumeDraftItemV2, ResumeDraftSectionV2, ResumeDraftV2, ResumeModuleKind } from "../../../../../../packages/contracts/src/resume-draft";
 import { validHttpUrl } from "../../../../../../packages/contracts/src/resume-v2.mjs";
+import { supportsHighlights } from "../../../../../../packages/contracts/src/presentation-highlights.mjs";
 import { resumeApi, type PendingResumeImage, type ResumeVersion, type ResumeCandidate } from "../../../lib/resumeApi";
 import { createResumeAutosave } from "../../../lib/resumeAutosave";
 import { applyLocalDelta, getLocalDelta, makeLocalDelta, putLocalDelta, removeLocalDelta, type ResumeLocalDelta } from "../../../lib/resumeLocalDraft";
@@ -47,7 +48,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [recoveryTargets, setRecoveryTargets] = useState<Record<string, string>>({});
   const [expiresAt, setExpiresAt] = useState("");
   const [ocrAvailable,setOcrAvailable]=useState(false);
-  const [blocksById, setBlocksById] = useState<Record<string, { page: number; text: string }>>({});
+  const [blocksById, setBlocksById] = useState<Record<string, { blockId: string; page: number; text: string }>>({});
   const uploading = useRef(false);
   const mounted = useRef(true);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
@@ -144,8 +145,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     // 原文对照是辅助信息：拉取失败时静默降级为不显示，不阻塞编辑
     void resumeApi.blocks(resumeId).then((result) => {
       if (!active) return;
-      setBlocksById(Object.fromEntries(result.blocks.map((block) =>
-        [block.blockId, { page: block.page, text: block.text }])));
+      setBlocksById(Object.fromEntries(result.blocks.map(({ blockId, page, text }) =>
+        [blockId, { blockId, page, text }])));
     }).catch(() => { /* 原文对照不可用即隐藏 */ });
     return () => { active = false; };
   }, [resumeId]);
@@ -227,7 +228,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         label: ({ name: "姓名", email: "邮箱", phone: "电话" } as Record<string, string>)[key],
         value: "", included: false })) : [],
       sourceBlockIds: [], confidence: 1, segmentationConfidence: 1, needsReview: false,
-      included: false, origin: "user" as const, editedFields: []
+      included: false, origin: "user" as const, editedFields: [],
+      ...(supportsHighlights(kind) ? { presentationHighlights: [] } : {})
     }] }));
   };
 
@@ -272,10 +274,14 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     if (!draft || from === to) return;
     const item = draft.sections.find((section) => section.kind === from)?.items.find((entry) => entry.itemId === itemId);
     if (!item) return;
+    const moved = item.presentationHighlights?.length ? { ...item, needsReview: true,
+      presentationHighlights: item.presentationHighlights.map(highlight => ({ ...highlight, selected: false })),
+      editedFields: [...new Set([...(item.editedFields ?? []), 'presentationHighlights'])],
+    } : item;
     setDraft({ ...draft, sections: draft.sections.map((section) => {
       if (section.kind === from) return { ...section, items: section.items.filter((entry) => entry.itemId !== itemId)
         .map((entry, order) => ({ ...entry, order })) };
-      if (section.kind === to) return { ...section, visible: true, items: [...section.items, { ...item,
+      if (section.kind === to) return { ...section, visible: true, items: [...section.items, { ...moved,
         order: section.items.length }] };
       return section;
     }) });
@@ -592,11 +598,11 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
             onVisibleChange={(visible) => { if (!visible && section.items.some(i=>i.needsReview)) setDialog({kind:"hideSection",sectionKind:section.kind}); else updateSection(section.kind, () => ({visible})); }}
             onAddItem={() => addItem(section.kind)}>
             {[...section.items].sort((a,b)=>a.order-b.order).map((item, index) => <EntryCard key={item.itemId} kind={section.kind}
-              label={labels[section.kind]} item={item} index={index} total={section.items.length}
+              label={labels[section.kind]} item={item} index={index} total={section.items.length} visible={section.visible}
               canAddFacts={section.kind === "basicInfo" || section.kind === "jobIntent"}
               moduleOptions={moduleOptions}
               sourceExcerpt={item.sourceBlockIds.map((id) => blocksById[id])
-                .filter((block): block is { page: number; text: string } => Boolean(block))}
+                .filter(Boolean)}
               onPatchItem={(patch) => patchItem(section.kind, item.itemId, patch)}
               onPatchFactValue={(factKey, value) => updateItem(section.kind, item.itemId, (current) => ({ ...current,
                 editedFields:[...new Set([...(current.editedFields ?? []),`fact:${factKey}`])],

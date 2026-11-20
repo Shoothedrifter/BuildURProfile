@@ -4,12 +4,16 @@ import { transaction } from '../database.mjs';
 import { resumeError } from './files.mjs';
 import { validateResumeSource } from '../../../contracts/src/resume-source.ts';
 import { normalizeResumeDraft, validateResumeDraft, validateResumeDraftV2 } from '../../../contracts/src/resume-draft.ts';
+import { highlightIsValid, supportsHighlights as eligibleHighlightModule } from '../../../contracts/src/presentation-highlights.mjs';
 import { draftImageIds, historyImageIds, listVersions, readVersion, reclaimImages, restoreVersion, snapshotPrevious } from './versions.mjs';
 import { mergeEmptyDraft, overwriteDraft, reconcileCandidateSource, recordDeletedItems } from './candidates.mjs';
 const STAGES = ['queued', 'validate_source', 'extract_layout', 'ocr_pages', 'classify_sections', 'map_design_modules', 'split_items', 'format_items', 'verify_evidence', 'complete_draft'];
 const ERRORS = new Set(['PARSE_TIMEOUT', 'PARSE_FAILED', 'FILE_TYPE_INVALID', 'PDF_PAGE_LIMIT', 'PDF_ENCRYPTED', 'PDF_NO_TEXT',
   'OCR_UNAVAILABLE','OCR_LANGUAGE_MISSING','OCR_TIMEOUT','OCR_NO_TEXT','OCR_FAILED','REVISION_CONFLICT']);
 const iso = value => new Date(value).toISOString().replace('.000Z', 'Z');
+const usesOcr = version => version === 'resume-parse-v3' || version === 'resume-parse-v5';
+const supportsHighlights = version => version === 'resume-parse-v4' || version === 'resume-parse-v5';
+const newWorkflow = ocrRequested => ocrRequested ? 'resume-parse-v5' : 'resume-parse-v4';
 
 /** Private parse queue. No PDF bytes or source text are stored in task rows. */
 export function createResumeParseQueue({
@@ -96,7 +100,7 @@ export function createResumeParseQueue({
         if (prior) {
           if (prior.file_id !== fileId) throw resumeError(409, 'IDEMPOTENCY_CONFLICT');
           const previousTask=db.prepare('SELECT workflow_version FROM resume_parse_tasks WHERE id=?').get(prior.task_id);
-          if((previousTask?.workflow_version==='resume-parse-v3')!==ocrRequested)throw resumeError(409,'IDEMPOTENCY_CONFLICT');
+          if(usesOcr(previousTask?.workflow_version)!==ocrRequested)throw resumeError(409,'IDEMPOTENCY_CONFLICT');
           return publicStatus(owned(owner, prior.resume_id));
         }
         const file=liveFile(owner, fileId);
@@ -112,13 +116,13 @@ export function createResumeParseQueue({
         }
         let task = latest(row.id);
         if (task && ['QUEUED','RUNNING','CANCELLING'].includes(task.status)
-            && (task.workflow_version==='resume-parse-v3')!==ocrRequested)
+            && usesOcr(task.workflow_version)!==ocrRequested)
           throw resumeError(409,'PARSE_IN_PROGRESS');
         if (!task || ['FAILED', 'CANCELLED'].includes(task.status)) {
           // Fence all historical leases before making a new task for this resume.
           db.prepare('UPDATE resume_parse_tasks SET lease_token=NULL,lease_until=NULL WHERE resume_id=?').run(row.id);
           const id = randomUUID();
-          db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,workflow_version,idempotency_key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'QUEUED',?,?)").run(id, row.id, owner, fileId, ocrRequested?'resume-parse-v3':'resume-parse-v2', idempotencyKey, now(), now());
+          db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,workflow_version,idempotency_key,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'QUEUED',?,?)").run(id, row.id, owner, fileId, newWorkflow(ocrRequested), idempotencyKey, now(), now());
           state(row.id, 'QUEUED');
           task = latest(row.id);
         }
@@ -147,7 +151,7 @@ export function createResumeParseQueue({
           throw resumeError(429,'RATE_LIMITED');
         const taskId=randomUUID();
         db.prepare("INSERT INTO resume_parse_tasks(id,resume_id,owner_session_id,file_id,workflow_version,idempotency_key,status,created_at,updated_at,candidate_id) VALUES(?,?,?,?,?,?,'QUEUED',?,?,?)")
-          .run(taskId,id,owner,row.file_id,input.ocrRequested?'resume-parse-v3':'resume-parse-v2',input.idempotencyKey,now(),now(),taskId);
+          .run(taskId,id,owner,row.file_id,newWorkflow(input.ocrRequested),input.idempotencyKey,now(),now(),taskId);
         db.prepare('INSERT INTO resume_reparse_candidates(task_id,resume_id,owner_session_id,base_revision,mode,idempotency_key,created_at,updated_at,ocr_requested) VALUES(?,?,?,?,?,?,?,?,?)')
           .run(taskId,id,owner,row.revision,input.mode,input.idempotencyKey,now(),now(),input.ocrRequested?1:0);
         return {taskId,resumeId:id,status:'QUEUED',mode:input.mode,baseRevision:row.revision};
@@ -357,12 +361,16 @@ export function createResumeParseQueue({
         };
       });
     },
-    lease(workerId) {
+    lease(workerId, { supportsPresentationHighlights = true } = {}) {
       if (typeof workerId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(workerId)) throw resumeError(400, 'INVALID_WORKER');
       repository.cleanup();
       return transaction(db, () => {
         sweep();
-        const row = db.prepare("SELECT * FROM resume_parse_tasks WHERE status='QUEUED' AND next_attempt_at<=? ORDER BY created_at,rowid LIMIT 1").get(now());
+        const row = db.prepare(`SELECT * FROM resume_parse_tasks
+          WHERE status='QUEUED' AND next_attempt_at<=?
+            AND (workflow_version IN ('resume-parse-v1','resume-parse-v2','resume-parse-v3')
+              OR (? AND workflow_version IN ('resume-parse-v4','resume-parse-v5')))
+          ORDER BY created_at,rowid LIMIT 1`).get(now(), supportsPresentationHighlights ? 1 : 0);
         if (!row) return null;
         const token = randomUUID();
         const workflowVersion = row.workflow_version === 'resume-parse-v1' ? 'resume-parse-v2' : row.workflow_version;
@@ -378,7 +386,7 @@ export function createResumeParseQueue({
           pageCount: file.page_count,
           uploadedAt: iso(file.uploaded_at),
           expiresAt: iso(file.expires_at),
-          ocrPages: workflowVersion==='resume-parse-v3'?JSON.parse(file.empty_pages_json??'null'):[]
+          ocrPages: usesOcr(workflowVersion) ? JSON.parse(file.empty_pages_json ?? 'null') : []
         };
       });
     },
@@ -411,12 +419,24 @@ export function createResumeParseQueue({
         } catch {
           throw resumeError(400, 'INVALID_DRAFT');
         }
+        const ocr = usesOcr(task.workflow_version);
+        const ocrPages = ocr ? JSON.parse(file.empty_pages_json ?? 'null') : null;
+        const ocrBlocks = cleanSource.version === 'resume-source-v2'
+          ? cleanSource.blocks.filter(block => block.sourceType === 'ocr') : [];
         if (cleanSource.fileId !== file.id || cleanSource.pageCount !== file.page_count || cleanSource.uploadedAt !== iso(file.uploaded_at) || cleanSource.expiresAt !== iso(file.expires_at) || cleanDraft.resumeId !== task.resume_id || cleanDraft.revision !== 1
-          || (task.workflow_version==='resume-parse-v3' ? cleanSource.version!=='resume-source-v2'||!cleanSource.blocks.some(b=>b.sourceType==='ocr') : cleanSource.version!=='resume-source-v1')) throw resumeError(400, 'INVALID_DRAFT');
+          || (ocr ? cleanSource.version !== 'resume-source-v2' || !ocrBlocks.length : cleanSource.version !== 'resume-source-v1')
+          || (task.workflow_version === 'resume-parse-v5' && ocrPages
+            && ocrBlocks.some(block => !ocrPages.includes(block.page)))) throw resumeError(400, 'INVALID_DRAFT');
         const covered = new Set(cleanDraft.sections.flatMap(s => s.items.flatMap(i => i.sourceBlockIds)));
         if (cleanSource.blocks.some(b => !covered.has(b.blockId))) throw resumeError(400, 'INVALID_DRAFT');
         const hidden = new Set(['phone', 'age', 'politicalStatus', 'politicalAffiliation', 'expectedSalary', 'salary']);
-        if (cleanDraft.sections.some(s => s.items.some(i => i.included || i.facts.some(f => hidden.has(f.key) && f.included)))) throw resumeError(400, 'INVALID_DRAFT');
+        if (cleanDraft.sections.some(s => s.items.some(i => i.included
+          || i.facts.some(f => hidden.has(f.key) && f.included)
+          || (i.presentationHighlights !== undefined && (!supportsHighlights(task.workflow_version)
+            || !eligibleHighlightModule(s.kind) || i.presentationHighlights.some(highlight => highlight.selected
+              || highlight.origin !== 'source' || !highlightIsValid(s.kind, highlight, true))))))) {
+          throw resumeError(400, 'INVALID_DRAFT');
+        }
         if(task.candidate_id){
           const candidate=db.prepare('SELECT * FROM resume_reparse_candidates WHERE task_id=? AND resume_id=?').get(id,task.resume_id);
           const current=owned(task.owner_session_id,task.resume_id);

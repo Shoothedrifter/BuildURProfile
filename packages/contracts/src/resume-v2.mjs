@@ -43,7 +43,7 @@ export function resumeImageIds(config) {
 export function resumeItemHasContent(item) {
   return !!(item.title.trim() || item.details.trim() || item.facts.some(fact=>fact.value.trim())
     || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length
-    || (item.sourceText || '').trim());
+    || (item.sourceText || '').trim() || item.presentationHighlights?.length);
 }
 /** Compatibility fields are derived; v2 sections remain the editable source of truth. */
 export function resumeDisplayContent(resume) {

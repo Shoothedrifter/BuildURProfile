@@ -1085,6 +1085,26 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-entry-source-head { margin: 0 0 6px; font-size: 12px; color: var(--proof-muted); }
 .proof-entry-source-text { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
 .proof-entry-source-page { display: inline-block; margin-right: 8px; font-size: 12px; color: var(--proof-muted); }
+.proof-highlights { border: 1px solid var(--proof-line); border-radius: var(--proof-radius);
+  overflow-wrap: anywhere; }
+.proof-button.proof-highlights-toggle { display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; width: 100%; padding: 10px 14px; border-radius: var(--proof-radius); text-align: left; }
+.proof-highlights-body, .proof-highlight-row { display: grid; gap: 12px; min-width: 0; }
+.proof-highlights-body { padding: 4px 14px 14px; }
+.proof-highlights-body p { margin: 0; }
+.proof-highlight-row { margin: 0; padding: 10px 12px 12px; border: 1px solid var(--proof-line);
+  border-radius: var(--proof-radius); }
+.proof-highlight-row legend { padding: 0 4px; color: var(--proof-muted); font-size: 12px; }
+.proof-highlight-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); gap: 8px; }
+.proof-highlight-fields :is(input, select) { width: 100%; min-width: 0; }
+.proof-highlights-actions, .proof-highlight-check { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.proof-highlights-actions { font-size: 13px; }
+.proof-highlight-check { flex-wrap: nowrap; }
+.proof-highlight-preview { flex: 1; padding: 6px 10px; border-radius: 6px; background: var(--proof-bg);
+  color: var(--proof-muted); }
+.proof-highlight-preview strong { color: var(--proof-ink); font-variant-numeric: tabular-nums; }
+.proof-highlights-warning { margin: 0; color: #9d3b20; font-size: 13px; }
+.proof-highlights > .proof-highlights-warning { padding: 0 14px 10px; }
 /* 条目补充内容：用户手写的文字/链接/图片，浅色分区与 AI 解析内容区分 */
 .proof-supplement { margin: 0; padding: 12px 14px; border: 1px dashed #e0d2c8;
   border-radius: var(--proof-radius); display: grid; gap: 10px; }

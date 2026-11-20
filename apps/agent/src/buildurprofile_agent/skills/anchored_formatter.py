@@ -10,6 +10,7 @@ import unicodedata
 from buildurprofile_agent.contracts import RESUME_MODULE_MAPPING, ResumeDraftV1, ResumeSourceV1, ResumeSourceV2
 from buildurprofile_agent.providers.text_model import FormattedOutputError
 from .item_splitter import _facts
+from .presentation_highlights import extract_presentation_highlights
 
 
 FORMAT_SCHEMA = {"type": "object", "properties": {"items": {"type": "array", "items": {
@@ -261,7 +262,7 @@ async def format_anchors(source: ResumeSourceV1 | dict, anchors: list[dict], mod
 
 
 def make_anchored_draft(source: ResumeSourceV1 | dict, resume_id: str, anchors: list[dict],
-                        formatted: list[dict]) -> ResumeDraftV1:
+                        formatted: list[dict], *, include_highlights: bool = False) -> ResumeDraftV1:
     source = _source_model(source)
     if len(anchors) != len(formatted) or {item["anchorId"] for item in formatted} != {
             anchor["anchorId"] for anchor in anchors}:
@@ -272,7 +273,7 @@ def make_anchored_draft(source: ResumeSourceV1 | dict, resume_id: str, anchors: 
     by_id = {item["anchorId"]: item for item in formatted}
     # blockId → 原文文本：sourceText 逐字取自锚定 source blocks（OCR 块、低置信块照常计入），
     # 纯字典操作，不进模型、不因置信度裁剪
-    block_text = {block.blockId: block.text for block in source.blocks}
+    blocks_by_id = {block.blockId: block for block in source.blocks}
     sections = []
     for section_order, (kind, mapping) in enumerate(RESUME_MODULE_MAPPING.items()):
         items = []
@@ -283,7 +284,8 @@ def make_anchored_draft(source: ResumeSourceV1 | dict, resume_id: str, anchors: 
             # 按锚定 sourceBlockIds 顺序（文档 reading order）用 "\n" 逐字拼接；
             # 拼接超过 12000 字符上限时置空并标记待核对（与既有 needsReview 结果取或），
             # 不硬失败整份简历、不静默截断原文，其余条目不受影响
-            source_text = "\n".join(block_text[block_id] for block_id in anchor["sourceBlockIds"])
+            blocks = [blocks_by_id[block_id] for block_id in anchor["sourceBlockIds"]]
+            source_text = "\n".join(block.text for block in blocks)
             over_limit = len(source_text) > 12000
             index = len(items)
             items.append({"itemId": f"{kind}-{index}", "order": index,
@@ -295,6 +297,14 @@ def make_anchored_draft(source: ResumeSourceV1 | dict, resume_id: str, anchors: 
                           "segmentationConfidence": anchor["confidence"],
                           "needsReview": anchor["needsReview"] or output["confidence"] < .8 or over_limit,
                           "included": False, "origin": "agent"})
+            if include_highlights and kind in {"campusExperience", "awards"}:
+                items[-1]["presentationHighlights"] = []
+                if anchor["kind"] == kind:
+                    try:
+                        items[-1]["presentationHighlights"] = extract_presentation_highlights(kind, blocks)
+                    except Exception:
+                        # Optional candidates never prevent reviewing the original item.
+                        pass
         sections.append({"id": kind, "kind": kind, "mappedDesignModule": mapping,
                          "order": section_order, "visible": False, "items": items})
     return ResumeDraftV1.model_validate({"version": "resume-draft-v1", "resumeId": resume_id,

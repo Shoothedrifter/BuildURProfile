@@ -9,7 +9,7 @@
 | `src/buildurprofile_agent/server.py` | FastAPI、checkpoint 和 worker 生命周期 |
 | `src/buildurprofile_agent/worker.py` | 消费任务、心跳、取消与错误分类 |
 | `src/buildurprofile_agent/graph.py` | LangGraph 节点、条件分支与 Skill 计划 |
-| `src/buildurprofile_agent/graphs/resume_parse.py` | `resume-parse-v2/v3` 私有解析图；checkpoint 仅含任务元数据 |
+| `src/buildurprofile_agent/graphs/resume_parse.py` | `resume-parse-v4/v5` 私有解析图，兼容 v2/v3；checkpoint 仅含任务元数据 |
 | `src/buildurprofile_agent/contracts.py` | Python 边界数据模型 |
 | `src/buildurprofile_agent/transport/node_api.py` | 带令牌和租约的 Node 客户端 |
 | `src/buildurprofile_agent/skills/` | 注册表、评分、设计、内容组装、肖像和 QA |
@@ -22,7 +22,9 @@
 
 当前 Python Skills 为 `assessment.score.v1`、`design.map.v1`、`resume.compose.v2/v3/v4/v5`、`resume.format.v1/v2`、`avatar.wibi.v1/v2` 和 `artifact.qa.v1/v2/v3/v4`。`avatar.wibi.v2` 增加可选透明层能力，仅由 `python-agent-v6` 工作流调用；旧任务继续使用 v1。简历格式化 Skill 仅获得文本模型能力，条目边界由 Web 的规则解析计划固定，结果须经来源块校验。旧解析 Skill 保留兼容定义。细节见[解析流程 v2](resume-anchored-formatting.md)。
 
-简历解析由独立 Worker 领取 `resume-parse-v2/v3` 队列。文本页用 `pdfplumber` 提取；用户主动选择 OCR 后，`pypdfium2` 仅渲染无文字页并调用本机 Tesseract 中英文语言包，私有 `resume-source-v2` 记录来源与置信度，低置信度条目待核对。Web 通过 PDF.js 和旧浏览器解析器制定模块与条目边界。`RESUME_TEXT_PROVIDER=openai` 使用 OpenAI Responses 严格 JSON Schema；`RESUME_TEXT_PROVIDER=zai` 使用智谱 Response API 的 `json_object` 输出，再由 Agent 按同一合同校验。两者复用现有 OpenAI Python SDK，但必须使用各自的 API Key 和地址。原 PDF、页面图像、提取文本、模型提示与结果只在当前图执行内存中流转，不进入 LangGraph checkpoint 或日志。缺少模型或对应 Key 时任务返回 `PARSE_FAILED`；OCR 缺组件、缺语言包、超时和无文字有独立错误码。配置见 [Agent 样例](../../apps/agent/.env.example)。合成假模型跨端测试覆盖 Node HTTP 租约和 Python 图；真实供应商仍须单独联调。
+简历解析由独立 Worker 领取私有队列。文本页用 `pdfplumber` 提取；用户主动选择 OCR 后，`pypdfium2` 仅渲染无文字页并调用本机 Tesseract 中英文语言包，私有 `resume-source-v2` 记录来源与置信度，低置信度条目待核对。Web 通过 PDF.js 和旧浏览器解析器制定模块与条目边界。`RESUME_TEXT_PROVIDER=openai` 使用 OpenAI Responses 严格 JSON Schema；`RESUME_TEXT_PROVIDER=zai` 使用智谱 Response API 的 `json_object` 输出，再由 Agent 按同一合同校验。两者复用现有 OpenAI Python SDK，但必须使用各自的 API Key 和地址。原 PDF、页面图像、提取文本、模型提示与结果只在当前图执行内存中流转，不进入 LangGraph checkpoint 或日志。缺少模型或对应 Key 时任务返回 `PARSE_FAILED`；OCR 缺组件、缺语言包、超时和无文字有独立错误码。配置见 [Agent 样例](../../apps/agent/.env.example)。合成假模型跨端测试覆盖 Node HTTP 租约和 Python 图；真实供应商仍须单独联调。
+
+新写入使用 `resume-parse-v4`（PDF）和 `resume-parse-v5`（OCR）。校园成果和奖项计数从同一条目的来源块提取，与模型排版后的措辞无关。候选留在私有草稿，带来源定位并默认未勾选。旧解析任务仍按原版读取，新版解析任务及带成果字段的生成任务等待声明支持该合同的 Worker 领取。
 
 新增 Skill 时，在 `skills/` 实现并注册稳定 ID、版本、输入输出校验、能力、许可和超时，再由图节点显式授予所需能力。新增能力需加入 `KNOWN_CAPABILITIES` 并审查数据边界；不注入支付、数据库、任意 shell 或文件系统对象。外部下载的 `SKILL.md` 不作为可执行指令运行。
 

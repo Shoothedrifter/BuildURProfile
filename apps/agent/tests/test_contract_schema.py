@@ -148,3 +148,52 @@ def test_ordered_public_resume_v3_accepts_user_order_and_rejects_private_fields(
     raw['sections'][0]['items'][0]['sourceBlockIds'] = ['private']
     with pytest.raises(ValueError):
         StructuredResumeV3.model_validate(raw)
+
+
+def test_public_highlights_preserve_three_states_and_reject_private_provenance():
+    from buildurprofile_agent.contracts import StructuredResumeV3, GenerationBriefV4, DesignConfigV4
+    import pytest
+
+    raw = json.loads((ROOT.parent / 'fixtures/resume-enrichment.v3.json').read_text())
+    raw['sections'][0]['kind'] = 'campusExperience'
+    item = raw['sections'][0]['items'][0]
+    assert StructuredResumeV3.model_validate(raw).model_dump(exclude_none=True) == raw
+    item['presentationHighlights'] = []
+    assert StructuredResumeV3.model_validate(raw).model_dump(exclude_none=True) == raw
+    highlight = {'id': 'registration', 'type': 'campus-metric', 'label': '报名人数降低',
+                 'value': '-12', 'unit': '%'}
+    item['presentationHighlights'] = [highlight]
+    assert StructuredResumeV3.model_validate(raw).model_dump(exclude_none=True) == raw
+    item['presentationHighlights'] = [{**highlight, 'sourceBlockId': 'private'}]
+    with pytest.raises(ValueError):
+        StructuredResumeV3.model_validate(raw)
+    item['presentationHighlights'] = [highlight]
+    raw['sections'][0]['kind'] = 'awards'
+    with pytest.raises(ValueError):
+        StructuredResumeV3.model_validate(raw)
+    for filename, model in [('generation-brief.v4.json', GenerationBriefV4), ('design-config.v4.json', DesignConfigV4)]:
+        assert json.loads((ROOT / filename).read_text()) == model.model_json_schema()
+
+
+def test_private_highlight_can_move_between_modules_while_unchecked():
+    from buildurprofile_agent.contracts import ResumeDraftV2
+    import pytest
+
+    raw = json.loads((ROOT.parent / 'fixtures/resume-draft.v1.json').read_text())
+    raw['version'] = 'resume-draft-v2'
+    for section in raw['sections']:
+        for item in section['items']:
+            item['editedFields'] = []
+    item = raw['sections'][0]['items'][0]
+    item['editedFields'].append('presentationHighlights')
+    row = {'id': 'registration', 'type': 'campus-metric', 'label': '报名人数降低', 'value': '-12',
+           'unit': '%', 'origin': 'source', 'sourceBlockId': item['sourceBlockIds'][0], 'selected': False}
+    item['presentationHighlights'] = [row]
+    assert ResumeDraftV2.model_validate(raw).sections[0].items[0].presentationHighlights[0].value == '-12'
+    row['selected'] = True
+    with pytest.raises(ValueError, match='Invalid highlight module'):
+        ResumeDraftV2.model_validate(raw)
+    row['selected'] = False
+    row['sourceBlockId'] = 'another_item'
+    with pytest.raises(ValueError, match='Highlight evidence must belong to its item'):
+        ResumeDraftV2.model_validate(raw)

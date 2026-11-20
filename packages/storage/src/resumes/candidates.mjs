@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { highlightIsPrivate } from '../../../contracts/src/presentation-highlights.mjs';
 
 const overlap=(a,b)=>a.sourceBlockIds.some(id=>b.sourceBlockIds.includes(id));
 const clone=value=>structuredClone(value);
@@ -64,8 +65,12 @@ export function reconcileCandidateSource(existing,candidate,draft,taskId) {
     }
   }
   const next=clone(draft);
-  for(const section of next.sections)for(const item of section.items)
+  for(const section of next.sections)for(const item of section.items) {
     item.sourceBlockIds=[...new Set(item.sourceBlockIds.map(id=>mapped.get(id)??id))];
+    for (const highlight of item.presentationHighlights ?? []) {
+      if (highlight.sourceBlockId) highlight.sourceBlockId = mapped.get(highlight.sourceBlockId) ?? highlight.sourceBlockId;
+    }
+  }
   return {draft:next,newBlocks,source:{...existing,
     ...(v2?{version:'resume-source-v2',extractionVersion:'pdf-layout-v2'}:{}),blocks:[...oldBlocks,...newBlocks]}};
 }
@@ -86,19 +91,40 @@ export function overwriteDraft(current,candidate) {
   for(const section of result.sections){
     const previous=current.sections.find(entry=>entry.kind===section.kind);
     for(const item of section.items){
-      const matched=previous?.items.find(entry=>!matchedIds.has(entry.itemId)&&overlap(entry,item));
-      if(matched){matchedIds.add(matched.itemId);matches.set(item,matched);}
+      const related = previous?.items.filter(entry => overlap(entry, item)) ?? [];
+      const matched = related.find(entry => !matchedIds.has(entry.itemId));
+      if(matched){
+        matchedIds.add(matched.itemId);
+        matches.set(item, { matched, unique: related.length === 1
+          && section.items.filter(entry => overlap(matched, entry)).length === 1 });
+      }
     }
   }
   const usedIds=new Set();
   result.sections=result.sections.map(section=>{
     return {...section,items:section.items.map(item=>{
-      const matched=matches.get(item);
+      const match = matches.get(item);
+      const matched = match?.matched;
       let itemId=matched?.itemId??item.itemId;
       while(!matched&&(usedIds.has(itemId)||matchedIds.has(itemId)))itemId=randomUUID();
       usedIds.add(itemId);
+      const previousHighlights = matched?.presentationHighlights;
+      let manualHighlights = matched?.editedFields?.includes('presentationHighlights');
+      if (previousHighlights !== undefined) {
+        const sameEvidence = match.unique && matched.sourceBlockIds.length === item.sourceBlockIds.length
+          && matched.sourceBlockIds.every(id => item.sourceBlockIds.includes(id));
+        const hidden = matched.facts.filter(fact => !fact.included && fact.value).map(fact => fact.value);
+        if (!sameEvidence || previousHighlights.some(highlight => highlightIsPrivate(highlight, hidden))) {
+          manualHighlights = true;
+        }
+        item.presentationHighlights = previousHighlights
+          .filter(highlight => !highlight.sourceBlockId || item.sourceBlockIds.includes(highlight.sourceBlockId))
+          .map(highlight => ({ ...highlight, selected: highlight.selected && sameEvidence && !highlightIsPrivate(highlight, hidden) }));
+        if (!sameEvidence) item.needsReview = true;
+      }
       return {...item,itemId,
-        needsReview:matched?item.needsReview:true,editedFields:[]};
+        needsReview:matched?item.needsReview:true,
+        editedFields:manualHighlights ? ['presentationHighlights'] : []};
     })};
   });
   return result;

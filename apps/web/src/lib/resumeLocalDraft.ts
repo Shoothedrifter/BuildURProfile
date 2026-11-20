@@ -1,15 +1,27 @@
-import type { ResumeDraftItemV2, ResumeDraftV2, ResumeModuleKind } from '../../../../packages/contracts/src/resume-draft';
+import type { DraftPresentationHighlight, ResumeDraftItemV2, ResumeDraftV2, ResumeModuleKind } from '../../../../packages/contracts/src/resume-draft';
 
 const editableKeys=['title','details','facts','needsReview','included','origin','supplements','editedFields','derivedFromItemId'] as const;
 type EditableKey=typeof editableKeys[number];
-type ItemPatch={itemId:string;isNew?:boolean;values:Partial<Pick<ResumeDraftItemV2,EditableKey>>};
+type LocalHighlight = (Omit<DraftPresentationHighlight, 'origin' | 'sourceBlockId'> & { origin: 'user' })
+  | (Pick<DraftPresentationHighlight, 'id' | 'selected'> & {
+    origin: 'source'; sourceItemId: string; sourceHighlightId: string;
+  });
+type ItemPatch={itemId:string;isNew?:boolean;values:Partial<Pick<ResumeDraftItemV2,EditableKey>>;
+  highlights?: LocalHighlight[] | null};
 type SectionPatch={kind:ResumeModuleKind;order?:number;visible?:boolean;itemOrder?:string[];items:ItemPatch[]};
 export type ResumeLocalDelta={cacheScope:string;resumeId:string;baseRevision:number;expiresAt:string;updatedAt:number;sections:SectionPatch[]};
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
+const sourceHighlightKey = (entry: DraftPresentationHighlight) =>
+  JSON.stringify([entry.sourceBlockId, entry.type, entry.label, entry.value, entry.unit, entry.level]);
 
 /** Persist editable differences only. Evidence IDs, PDF blocks and extraction scores stay server-side. */
 export function makeLocalDelta(base:ResumeDraftV2,current:ResumeDraftV2,cacheScope:string,resumeId:string,expiresAt:string):ResumeLocalDelta {
   const original=new Map(base.sections.flatMap(section=>section.items.map(item=>[item.itemId,item] as const)));
+  const sourceHighlights = new Map<string, { sourceItemId: string; sourceHighlightId: string }>();
+  for (const item of original.values()) for (const entry of item.presentationHighlights ?? []) {
+    if (entry.origin === 'source')
+      sourceHighlights.set(sourceHighlightKey(entry), { sourceItemId: item.itemId, sourceHighlightId: entry.id });
+  }
   return {cacheScope,resumeId,baseRevision:base.revision,expiresAt,updatedAt:Date.now(),
     sections:current.sections.flatMap(section=>{
       const before=base.sections.find(entry=>entry.kind===section.kind);
@@ -24,7 +36,18 @@ export function makeLocalDelta(base:ResumeDraftV2,current:ResumeDraftV2,cacheSco
         const values:ItemPatch['values']={};
         for(const key of editableKeys)if(!old||!same(item[key],old[key]))
           Object.assign(values,{[key]:item[key]});
-        if(Object.keys(values).length)patch.items.push({itemId:item.itemId,...(!old?{isNew:true}:{}),values});
+        const itemPatch: ItemPatch = {itemId:item.itemId,...(!old?{isNew:true}:{}),values};
+        if (!same(old?.presentationHighlights, item.presentationHighlights)) {
+          itemPatch.highlights = item.presentationHighlights?.flatMap<LocalHighlight>(entry => {
+            if (entry.origin === 'user') {
+              const { sourceBlockId: _sourceBlockId, ...manual } = entry;
+              return [{ ...manual, origin: 'user' }];
+            }
+            const source = sourceHighlights.get(sourceHighlightKey(entry));
+            return source ? [{ ...source, id: entry.id, origin: 'source', selected: entry.selected }] : [];
+          }) ?? null;
+        }
+        if(Object.keys(values).length || itemPatch.highlights !== undefined)patch.items.push(itemPatch);
       }
       return patch.order!==undefined||patch.visible!==undefined||patch.itemOrder||patch.items.length?[patch]:[];
     })};
@@ -55,9 +78,21 @@ export function applyLocalDelta(base:ResumeDraftV2,delta:ResumeLocalDelta,cacheS
         confidence:1,segmentationConfidence:1,needsReview:false,included:false,
         origin:'user' as const,editedFields:[]
       };
-      return {...item,...(parent?{sourceBlockIds:[...parent.sourceBlockIds],
+      const restored: ResumeDraftItemV2 = {...item,...(parent?{sourceBlockIds:[...parent.sourceBlockIds],
         confidence:parent.confidence,segmentationConfidence:parent.segmentationConfidence}:{}),
-        ...itemPatch?.values,order:index} as ResumeDraftItemV2;
+        ...itemPatch?.values,order:index};
+      if (itemPatch?.highlights === null) delete restored.presentationHighlights;
+      else if (itemPatch?.highlights) {
+        restored.presentationHighlights = itemPatch.highlights.map(entry => {
+          if (entry.origin === 'user') return entry;
+          const source = original.get(entry.sourceItemId)?.presentationHighlights
+            ?.find(candidate => candidate.id === entry.sourceHighlightId && candidate.origin === 'source');
+          if (!source?.sourceBlockId) throw new Error('本地草稿成果来源无效。');
+          if (!restored.sourceBlockIds.includes(source.sourceBlockId)) restored.sourceBlockIds.push(source.sourceBlockId);
+          return { ...source, id: entry.id, selected: entry.selected };
+        });
+      }
+      return restored;
     });
   }
   return next;

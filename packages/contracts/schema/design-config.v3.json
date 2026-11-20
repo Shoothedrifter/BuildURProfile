@@ -160,6 +160,79 @@
       "title": "Marquee",
       "type": "object"
     },
+    "PresentationHighlight": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "campus-metric",
+            "award-total",
+            "award-tier"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[^\\x00\\r\\n]*$",
+          "title": "Label",
+          "type": "string"
+        },
+        "unit": {
+          "enum": [
+            "%",
+            "百分点",
+            "人",
+            "人次",
+            "场",
+            "篇",
+            "期",
+            "次",
+            "项",
+            "个",
+            "万"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "level": {
+          "default": null,
+          "enum": [
+            "国际级",
+            "国家级",
+            "省部级",
+            "省级",
+            "市级",
+            "校级"
+          ],
+          "title": "Level",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 32,
+          "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "label",
+        "unit",
+        "value"
+      ],
+      "title": "PresentationHighlight",
+      "type": "object"
+    },
     "Profile": {
       "additionalProperties": false,
       "properties": {
@@ -416,6 +489,15 @@
           "minimum": 0,
           "title": "Order",
           "type": "integer"
+        },
+        "presentationHighlights": {
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/PresentationHighlight"
+          },
+          "maxItems": 12,
+          "title": "Presentationhighlights",
+          "type": "array"
         }
       },
       "required": [

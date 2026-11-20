@@ -74,6 +74,8 @@ Web 监听宿主机 `127.0.0.1:8787`，Agent 不发布端口。由服务器上�
 
 Python 环境包括 `AGENT_SERVICE_TOKEN`、`AGENT_API_URL`、持久化的 `AGENT_CHECKPOINT_PATH`，以及所选供应商配置；可设置 `AGENT_HOST`、`AGENT_PORT`。Next.js 服务端独立配置服务绑定、数据库、资产目录和支付。部署平台负责环境注入，不依赖模块目录中隐式加载的环境文件。
 
+从旧版升级成果展示合同，先更新 Agent Worker 再更新 Web。新建 PDF 或 OCR 解析任务及包含成果字段的生成任务会等待新版 Worker。两端启动完成后再验收完整生成链路。
+
 对外 HTTPS 入口只到 Next.js；拒绝公网转发 `/_internal/agent/` 与 `/api/_internal/agent/`，保持浏览器 `/api` 同源。Next.js 设置合适的 `SERVER_HOST`；Python 不直接对公网开放。多副本部署先调整[共享存储架构](architecture.md)。
 
 | 检查 | 要求 |

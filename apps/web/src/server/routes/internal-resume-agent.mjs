@@ -18,7 +18,7 @@ export async function handleInternalResumeAgentRoutes({
   const queue = repository.queue;
   if (parts.length === 4 && parts[3] === 'lease' && req.method === 'POST') {
     const input = await bodyJson(req, 4096),
-      task = queue.lease(input?.workerId);
+      task = queue.lease(input?.workerId, { supportsPresentationHighlights: input?.supportsPresentationHighlights === true });
     if (!task) {
       res.writeHead(204, {
         'cache-control': 'no-store'

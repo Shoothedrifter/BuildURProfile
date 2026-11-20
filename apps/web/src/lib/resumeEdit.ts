@@ -1,10 +1,63 @@
-import type { ResumeDraftItemV2, ResumeDraftV2, ResumeModuleKind } from '../../../../packages/contracts/src/resume-draft';
+import type { DraftPresentationHighlight, ResumeDraftItemV2, ResumeDraftV2, ResumeModuleKind } from '../../../../packages/contracts/src/resume-draft';
+import { automaticDraftHighlightIds, extractPresentationHighlights, highlightConflictsWithText, highlightKey, MAX_HIGHLIGHTS } from '../../../../packages/contracts/src/presentation-highlights.mjs';
 
 const multiItemKinds = new Set<ResumeModuleKind>(['workExperience', 'projects', 'awards', 'campusExperience']);
 const supplementsOf = (item: ResumeDraftItemV2) =>
   item.supplements ?? { text: '', links: [], images: [] };
 const withEdited = (item: ResumeDraftItemV2, ...fields: string[]) =>
   [...new Set([...item.editedFields, ...fields])];
+
+function splitHighlights(kind: ResumeModuleKind, original: ResumeDraftItemV2, first: ResumeDraftItemV2, second: ResumeDraftItemV2) {
+  const highlights = original.presentationHighlights;
+  if (highlights === undefined) return;
+  const automatic = automaticDraftHighlightIds(kind, original);
+  first.presentationHighlights = [];
+  second.presentationHighlights = [];
+  const recognized = [first, second].map(item => extractPresentationHighlights(kind, [
+    { text: item.title }, { text: item.details, breakContext: true }
+  ]).candidates);
+  for (const highlight of highlights) {
+    const matches = recognized.map(candidates => candidates.some(candidate =>
+      highlightKey(candidate) === highlightKey(highlight) &&
+      candidate.value === highlight.value && candidate.unit === highlight.unit));
+    // Keep one unchecked copy for review when the evidence cannot place it uniquely.
+    const entry = matches[1] && !matches[0] ? second : first;
+    entry.presentationHighlights!.push({ ...highlight,
+      selected: (highlight.selected || automatic.has(highlight.id)) && matches[0] !== matches[1] });
+  }
+  first.editedFields = withEdited(first, 'presentationHighlights');
+  second.editedFields = withEdited(second, 'presentationHighlights');
+}
+
+function mergeHighlights(kind: ResumeModuleKind, first: ResumeDraftItemV2, second: ResumeDraftItemV2,
+  mergedDetails: string): DraftPresentationHighlight[] | undefined {
+  if (first.presentationHighlights === undefined && second.presentationHighlights === undefined) return;
+  const rows = [first, second].flatMap(item => {
+    const automatic = automaticDraftHighlightIds(kind, item);
+    return (item.presentationHighlights ?? []).map(row => automatic.has(row.id) ? { ...row, selected: true } : row);
+  });
+  const byValue = new Map<string, DraftPresentationHighlight>();
+  for (const row of rows) {
+    const id = JSON.stringify([highlightKey(row), row.value, row.unit]);
+    if (!byValue.has(id) || row.selected) byValue.set(id, row);
+  }
+  if (byValue.size > MAX_HIGHLIGHTS) throw new Error('合并后的作品集成果过多，请先精简。');
+  const result = [...byValue.values()];
+  const ids = new Set(result.map(row => row.id));
+  const used = new Set<string>();
+  const conflicts = new Set(result.filter(row => row.selected && result.some(other =>
+    other !== row && other.selected && highlightKey(row) === highlightKey(other))).map(highlightKey));
+  return result.map((row, index) => {
+    let id = row.id;
+    if (used.has(id)) {
+      let suffix = index;
+      do { id = 'merged-highlight-' + suffix++; } while (ids.has(id) || used.has(id));
+    }
+    used.add(id);
+    return { ...row, id, selected: row.selected && !conflicts.has(highlightKey(row))
+      && !highlightConflictsWithText(kind, row, [first.title, mergedDetails]) };
+  });
+}
 
 export function moveResumeSection(draft: ResumeDraftV2, kind: ResumeModuleKind, delta: number): ResumeDraftV2 {
   const next = structuredClone(draft);
@@ -45,8 +98,9 @@ export function splitResumeItem(draft: ResumeDraftV2, kind: ResumeModuleKind, it
     editedFields: withEdited(item, 'details', 'sourceText') };
   const second: ResumeDraftItemV2 = { ...item, itemId: newId, title: '', details: paragraphs.slice(boundary).join('\n\n'),
     sourceText: sourceParagraphs.slice(boundary).join('\n\n'),
-    facts: [], supplements: { text: '', links: [], images: [] }, included: false, needsReview: true,
+    facts: item.facts.filter(fact => !fact.included), supplements: { text: '', links: [], images: [] }, included: false, needsReview: true,
     derivedFromItemId: itemId, editedFields: ['details', 'sourceText'] };
+  splitHighlights(kind, item, first, second);
   section.items.splice(index, 1, first, second);
   section.items = section.items.map((entry, order) => ({ ...entry, order }));
   return next;
@@ -80,10 +134,12 @@ export function mergeResumeItems(draft: ResumeDraftV2, kind: ResumeModuleKind, f
   // 详情原文以空行连接；存量草稿可能携带显式 null，filter(Boolean) 天然过滤
   const mergedSourceText = [first.sourceText, second.sourceText].filter(Boolean).join('\n\n');
   if ([...mergedSourceText].length > 12000) throw new Error('合并后的详情原文超过单条上限。');
+  const presentationHighlights = mergeHighlights(kind, first, second, mergedDetails);
   section.items.splice(index, 2, { ...first, details: mergedDetails,
     sourceText: mergedSourceText,
     facts, sourceBlockIds: [...new Set([...first.sourceBlockIds, ...second.sourceBlockIds])],
-    supplements, needsReview: true, editedFields: withEdited(first, 'details', 'sourceText') });
+    supplements, needsReview: true, ...(presentationHighlights === undefined ? {} : { presentationHighlights }),
+    editedFields: withEdited(first, 'details', 'sourceText', ...(presentationHighlights === undefined ? [] : ['presentationHighlights'])) });
   section.items = section.items.map((item, order) => ({ ...item, order }));
   return next;
 }

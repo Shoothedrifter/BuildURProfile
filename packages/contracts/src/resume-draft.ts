@@ -2,21 +2,27 @@ import { resumeV1View, resumeDisplayContent, resumeItemHasContent, validHttpUrl 
 import schema from '../schema/resume-draft.v1.json' with { type: 'json' };
 import schemaV2 from '../schema/resume-draft.v2.json' with { type: 'json' };
 import { cleanStructuredResume } from './validation.mjs';
-import type { ResumeContent, StructuredResumeV1, StructuredResumeV2, StructuredResumeV3 } from './config';
+import type { PresentationHighlight, ResumeContent, ResumeDisplayItem, StructuredResumeV1, StructuredResumeV2, StructuredResumeV3 } from './config';
+import { automaticDraftHighlightIds, highlightConflictsWithText, highlightIsPrivate, supportsHighlights, validDraftHighlights } from './presentation-highlights.mjs';
 import { validateResumeSource, validateSchema } from './resume-source.ts';
 export const RESUME_MODULE_MAPPING = { basicInfo: 'hero-profile', jobIntent: 'job-intent-strip', selfEvaluation: 'intro-card', education: 'education-timeline', workExperience: 'work-timeline', projects: 'project-stacked-cards', awards: 'award-badges', campusExperience: 'campus-timeline', skills: 'skill-tags', other: 'free-content-card' } as const;
 export type ResumeModuleKind = keyof typeof RESUME_MODULE_MAPPING;
 export type DraftFact = { key: string; label: string; value: string; included: boolean };
+export type DraftPresentationHighlight = PresentationHighlight & {
+  selected: boolean;
+  origin: 'source' | 'user';
+  sourceBlockId?: string;
+};
 // 条目补充内容：用户手写的补充文字、相关链接与上传图片（可选字段，历史草稿没有）
 export type ItemSupplements = { text: string; links: { label?: string; url: string }[]; images: { imageId: string; caption: string }[] };
 // sourceText：条目对应的简历原文摘录（可选），作品集详情展开按需展示，旧草稿无此键
-export type ResumeDraftItem = { itemId: string; order: number; title: string; details: string; facts: DraftFact[]; sourceBlockIds: string[]; confidence: number; segmentationConfidence: number; needsReview: boolean; included: boolean; origin: 'agent' | 'user'; supplements?: ItemSupplements; sourceText?: string };
+export type ResumeDraftItem = { itemId: string; order: number; title: string; details: string; facts: DraftFact[]; sourceBlockIds: string[]; confidence: number; segmentationConfidence: number; needsReview: boolean; included: boolean; origin: 'agent' | 'user'; supplements?: ItemSupplements; sourceText?: string; presentationHighlights?: DraftPresentationHighlight[] };
 export type ResumeDraftSection = { id: ResumeModuleKind; kind: ResumeModuleKind; mappedDesignModule: string; order: number; visible: boolean; items: ResumeDraftItem[] };
 export type ResumeDraftV1 = { version: 'resume-draft-v1'; resumeId: string; fileId: string; revision: number; sections: ResumeDraftSection[] };
 export type ResumeDraftItemV2 = ResumeDraftItem & { editedFields: string[]; derivedFromItemId?: string };
 export type ResumeDraftSectionV2 = Omit<ResumeDraftSection, 'items'> & { items: ResumeDraftItemV2[] };
 export type ResumeDraftV2 = Omit<ResumeDraftV1, 'version' | 'sections'> & { version: 'resume-draft-v2'; sections: ResumeDraftSectionV2[] };
-const editableField = /^(title|details|sourceText|included|supplements|needsReview|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})$/;
+const editableField = /^(title|details|sourceText|included|supplements|needsReview|presentationHighlights|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})$/;
 export function normalizeResumeDraft(raw: unknown): ResumeDraftV2 {
   if ((raw as {version?: string})?.version === 'resume-draft-v2') {
     validateSchema(raw, schemaV2);
@@ -41,6 +47,7 @@ export function validateResumeDraftV2(raw: unknown, rawSource: unknown): ResumeD
         || section.items.some(item => item.origin === 'agent' && !item.sourceBlockIds.length
           || !unique(item.sourceBlockIds) || item.sourceBlockIds.some(id => !sourceIds.has(id))
           || !unique(item.facts.map(fact => fact.key)) || !unique(item.editedFields)
+          || !validDraftHighlights(section.kind, item)
           || item.editedFields.some(field => !editableField.test(field))))
       || !unique(draft.sections.map(section => section.order))
       || draft.sections.some(section => section.order < 0 || section.order > 9
@@ -56,7 +63,7 @@ function validateShape(raw: unknown): ResumeDraftV1 {
   if (!unique(draft.sections.map(s => s.kind)) || !unique(draft.sections.map(s => s.order)) || !unique(draft.sections.flatMap(s => s.items.map(i => i.itemId)))) throw new Error('Duplicate module/item');
   for (const s of draft.sections) {
     if (s.id !== s.kind || s.mappedDesignModule !== RESUME_MODULE_MAPPING[s.kind] || !unique(s.items.map(i => i.order))) throw new Error('Invalid module mapping/order');
-    for (const i of s.items) if (i.origin === 'agent' && !i.sourceBlockIds.length || !unique(i.sourceBlockIds) || !unique(i.facts.map(f => f.key))) throw new Error('Invalid evidence/facts');
+    for (const i of s.items) if (i.origin === 'agent' && !i.sourceBlockIds.length || !unique(i.sourceBlockIds) || !unique(i.facts.map(f => f.key)) || !validDraftHighlights(s.kind, i)) throw new Error('Invalid evidence/facts');
   }
   const images = draft.sections.flatMap(s => s.items.flatMap(i => i.supplements?.images ?? []));
   if (images.length > 24) throw new Error('每份简历最多 24 张图片。');
@@ -122,8 +129,10 @@ export function projectConfirmedResumeV3(raw: ResumeDraftV2): ResumeContent {
   const v2 = previous.resume as StructuredResumeV2;
   const sections = v2.sections.map(section => {
     const privateSection = draft.sections.find(entry => entry.kind === section.kind)!;
+    const originals = new Map(privateSection.items.map(item => [item.itemId, item]));
+    const projected = section.items.map(item => projectHighlights(section.kind, item, originals.get(item.itemId)!));
     return { kind: section.kind, order: privateSection.order,
-      items: section.items.filter(resumeItemHasContent).map((item,index)=>({...item,order:index})) };
+      items: projected.filter(resumeItemHasContent).map((item,index)=>({...item,order:index})) };
   }).filter(section=>section.items.length).sort((a,b)=>a.order-b.order);
   const resume = cleanStructuredResume({version:'resume-v3',sections}) as StructuredResumeV3;
   const content = resumeDisplayContent(resume) as ResumeContent;
@@ -133,4 +142,20 @@ export function projectConfirmedResumeV3(raw: ResumeDraftV2): ResumeContent {
   if (new TextEncoder().encode(JSON.stringify(envelope)).byteLength > 256 * 1024)
     throw new Error('生成内容超过 256 KiB，请精简展示内容；草稿内容未被截断。');
   return content;
+}
+
+function projectHighlights(kind: ResumeModuleKind, published: ResumeDisplayItem, item: ResumeDraftItemV2): ResumeDisplayItem {
+  if (item.presentationHighlights === undefined || !supportsHighlights(kind)) return published;
+  const hidden = item.facts.filter(fact => !fact.included && fact.value).map(fact => fact.value);
+  const confirmedTexts = [item.title, item.details, ...item.facts.filter(fact => fact.included)
+    .map(fact => fact.label + '：' + fact.value)];
+  const automatic = automaticDraftHighlightIds(kind, { ...item, sourceText: published.sourceText });
+  const presentationHighlights = item.presentationHighlights
+    .filter(highlight => (highlight.selected || automatic.has(highlight.id))
+      && !highlightIsPrivate(highlight, hidden)
+      && !highlightConflictsWithText(kind, highlight, confirmedTexts))
+    .map(({ id, type, label, value, unit, level }) => ({
+      id, type, label: label.trim(), value, unit, ...(level === undefined ? {} : { level })
+    }));
+  return { ...published, presentationHighlights };
 }

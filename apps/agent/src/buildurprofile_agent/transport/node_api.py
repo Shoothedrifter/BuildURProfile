@@ -40,6 +40,11 @@ class AgentTask:
                    value.get("styleId"), value.get("outputAssetId"))
 
 
+OCR_RESUME_WORKFLOWS = frozenset({"resume-parse-v3", "resume-parse-v5"})
+HIGHLIGHT_RESUME_WORKFLOWS = frozenset({"resume-parse-v4", "resume-parse-v5"})
+RESUME_WORKFLOWS = {"resume-parse-v2"} | OCR_RESUME_WORKFLOWS | HIGHLIGHT_RESUME_WORKFLOWS
+
+
 @dataclass(frozen=True)
 class ResumeParseTask:
     id: str
@@ -57,12 +62,18 @@ class ResumeParseTask:
         keys = ("id", "leaseToken", "resumeId", "fileId", "uploadedAt", "expiresAt")
         if any(not isinstance(value.get(key), str) or not value[key] for key in keys):
             raise ValueError("Invalid resume lease response")
-        if value.get("workflowVersion") not in {"resume-parse-v2", "resume-parse-v3"} or type(value.get("pageCount")) is not int or not 1 <= value["pageCount"] <= 20:
+        version = value.get("workflowVersion")
+        if (not isinstance(version, str) or version not in RESUME_WORKFLOWS
+                or type(value.get("pageCount")) is not int or not 1 <= value["pageCount"] <= 20):
             raise ValueError("Invalid resume lease response")
         pages = value.get("ocrPages", [])
         if pages is not None and (not isinstance(pages, list) or any(type(page) is not int or page < 1 or page > value["pageCount"] for page in pages) or len(pages) != len(set(pages))):
             raise ValueError("Invalid OCR page list")
-        return cls(value["id"], value["leaseToken"], value["workflowVersion"],
+        # Historical uploads may lack blank-page metadata (null), so OCR rediscovers it.
+        if (version == "resume-parse-v5" and pages == []
+                or version == "resume-parse-v4" and pages != []):
+            raise ValueError("Invalid OCR page list")
+        return cls(value["id"], value["leaseToken"], version,
                    value["resumeId"], value["fileId"], value["pageCount"],
                    value["uploadedAt"], value["expiresAt"], pages)
 
@@ -99,7 +110,9 @@ class NodeAgentClient:
         return response
 
     async def lease(self, worker_id: str) -> AgentTask | None:
-        response = await self._request("POST", "/_internal/agent/lease", json={"workerId": worker_id})
+        response = await self._request("POST", "/_internal/agent/lease", json={
+            "workerId": worker_id, "supportsPresentationHighlights": True,
+        })
         return None if response.status_code == 204 else AgentTask.from_json(response.json())
 
     async def touch_worker(self, worker_id: str) -> None:
@@ -167,7 +180,7 @@ class NodeAgentClient:
 
     async def lease_resume(self, worker_id: str) -> ResumeParseTask | None:
         response = await self._request("POST", "/_internal/agent/resume-tasks/lease",
-                                       json={"workerId": worker_id})
+                                       json={"workerId": worker_id, "supportsPresentationHighlights": True})
         return None if response.status_code == 204 else ResumeParseTask.from_json(response.json())
 
     async def resume_source(self, task: ResumeParseTask) -> bytes:

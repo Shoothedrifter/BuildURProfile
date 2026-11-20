@@ -180,19 +180,37 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  const projectItem={...structuredClone(parsedDraft.sections[0].items[0]),itemId:'synthetic_project',order:0,
    title:'合成项目',details:'合成项目正文',facts:[],needsReview:false,included:true};
  projectSection.items=[projectItem];
+ const evidence={...parsedSource.blocks[0],blockId:'block_campus',readingOrder:1,text:'活动互动量增长40%'};
+ parsedSource.blocks.push(evidence);
+ const campus=parsedDraft.sections.find(section=>section.kind==='campusExperience');
+ campus.visible=true;
+ const publicMetric={id:'metric_interactions',type:'campus-metric',label:'活动互动量增长',value:'40',unit:'%'};
+ campus.items=[{...projectItem,itemId:'campus_practice',sourceBlockIds:[evidence.blockId],
+   title:'合成校园活动',details:'活动反馈见记录',presentationHighlights:[
+     {...publicMetric,origin:'source',sourceBlockId:evidence.blockId,selected:false}
+   ]}];
+ const awards=parsedDraft.sections.find(section=>section.kind==='awards');
+ awards.visible=true;
+ awards.items=[{...projectItem,itemId:'synthetic_awards',title:'合成奖项',
+   details:'共获竞赛奖项4项',presentationHighlights:[]}];
+ const highlightStates=config=>config.content.resume.sections
+   .filter(section=>['awards','campusExperience'].includes(section.kind))
+   .map(section=>section.items[0].presentationHighlights);
  for(const s of parsedDraft.sections) for(const i of s.items)i.included=false;
  repository.queue.complete(lease.id,lease.leaseToken,parsedSource,parsedDraft);
  const original=await request(`/api/resumes/${parsed.resumeId}/source`);assert.equal(original.status,200);assert.deepEqual(Buffer.from(await original.arrayBuffer()),pdf());
  const imageResponse=await request(`/api/resumes/${parsed.resumeId}/images`,'POST',png,{'content-type':'image/png','x-resume-item':projectItem.itemId});assert.equal(imageResponse.status,201);const {imageId}=await imageResponse.json();
  const i=projectItem;i.included=true;i.needsReview=false;i.supplements={text:'合成补充正文',links:[{label:'合成主页',url:'https://example.test/work'}],images:[{imageId,caption:'合成图片说明'}]};
+ campus.items[0].presentationHighlights[0].selected=true;
  const saved=await(await request(`/api/resumes/${parsed.resumeId}`,'PATCH',{revision:1,draft:parsedDraft})).json();assert.equal(saved.revision,2);
  assert.equal((await request('/api/generations','POST',{resumeId:parsed.resumeId,revision:1,role:'frontend-creative-developer',answers,idempotencyKey:'stale'})).status,409);
  const queued=await(await request('/api/generations','POST',{resumeId:parsed.resumeId,revision:2,role:'frontend-creative-developer',answers,idempotencyKey:'generation'})).json();assert.ok(queued.id);
  const agentHeaders={authorization:`Bearer ${token}`};
- const worker=await(await request('/api/_internal/agent/lease','POST',{workerId:'fake_generator'},agentHeaders,true)).json();assert.equal(worker.workflowVersion,'python-agent-v4');
+ const worker=await(await request('/api/_internal/agent/lease','POST',{workerId:'fake_generator',supportsPresentationHighlights:true},agentHeaders,true)).json();assert.equal(worker.workflowVersion,'python-agent-v4');
  const base=JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/agent-golden.v1.json',import.meta.url))).expected.config;
  const completion=await request(`/api/_internal/agent/tasks/${worker.id}/complete`,'POST',{leaseToken:worker.leaseToken,config:{...base,content:worker.brief.content}},agentHeaders,true);assert.equal(completion.status,200);
  const result=await(await request(`/api/generations/${queued.id}`)).json();assert.ok(result.projectId);
+ assert.deepEqual(highlightStates(result.config),[[],[publicMetric]]);
  const project=payments.getProject(db.prepare('SELECT owner_session_id FROM projects WHERE id=?').get(result.projectId).owner_session_id,result.projectId);assert.equal(project.paid,false);
  const owner=db.prepare('SELECT owner_session_id FROM projects WHERE id=?').get(project.id).owner_session_id;
  assert.throws(()=>payments.publish(owner,project.id));
@@ -201,6 +219,9 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  const canonical=Object.keys(notice).sort().map(k=>`${k}=${notice[k]}`).join('&');
  await payments.notify({...notice,sign_type:'RSA2',sign:sign('sha256',Buffer.from(canonical),keys.privateKey).toString('base64')});
  const share=payments.publish(owner,project.id);
+ const publicShare=await request(`/api/shares/${share.token}`,'GET',undefined,{},true);
+ assert.equal(publicShare.status,200);
+ assert.deepEqual(highlightStates((await publicShare.json()).config),highlightStates(result.config));
  const shared=await request(`/api/shares/${share.token}/media/${imageId}`,'GET',undefined,{},true);assert.equal(shared.status,200);assert.equal(shared.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await shared.arrayBuffer()),png);
  assert.equal((await request(`/api/shares/${share.token}/media/not_referenced`,'GET',undefined,{},true)).status,404);
  // Updating the current config must not break the already published snapshot.
@@ -212,7 +233,11 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  assert.equal((await request(`/api/showcase-media/${imageId}`)).status,200);
  assert.equal((await request(`/api/resumes/${parsed.resumeId}/source`)).status,404);
  const download=payments.issueDownload(owner,project.id);
- const exported=await request(`/api/downloads/${download.token}`);assert.equal(exported.status,200);assert.match(Buffer.from(await exported.arrayBuffer()).toString(),/合成补充正文/);
+ const exported=await request(`/api/downloads/${download.token}`);assert.equal(exported.status,200);
+ const html=await exported.text();
+ assert.match(html,/合成补充正文/);
+ const exportedConfig=JSON.parse(html.match(/<script type="application\/json" id="buildurprofile-config">([\s\S]*?)<\/script>/)[1]);
+ assert.deepEqual(highlightStates(exportedConfig),highlightStates(result.config));
  payments.revokeShare(owner,project.id,share.token);
  assert.equal((await request(`/api/shares/${share.token}/media/${imageId}`,'GET',undefined,{},true)).status,404);
  const newer=payments.publish(owner,project.id);time+=8*86400000;

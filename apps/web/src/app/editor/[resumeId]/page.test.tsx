@@ -4,6 +4,7 @@ import fixture from "../../../../../../packages/contracts/fixtures/resume-draft.
 import { normalizeResumeDraft } from "../../../../../../packages/contracts/src/resume-draft";
 import ResumeEditorPage from "./page";
 import { resumeApi } from "../../../lib/resumeApi";
+import * as localDraft from "../../../lib/resumeLocalDraft";
 
 vi.mock("../../../lib/resumeApi", () => ({ resumeApi: {
   read: vi.fn(), save: vi.fn(), remove: vi.fn(), reparse: vi.fn(), blocks: vi.fn(),
@@ -322,6 +323,122 @@ it("keeps editing usable when the source excerpt request fails", async () => {
   await waitFor(() => expect(vi.mocked(resumeApi.blocks)).toHaveBeenCalled());
   expect(screen.queryByText(/原文对照/)).not.toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it('confirms highlights against their PDF evidence and asks again after a manual edit', async () => {
+  const draft = normalizeResumeDraft(fixture);
+  draft.sections.find(section => section.kind === 'campusExperience')!.items = [{
+    ...draft.sections[0].items[0], itemId: 'campus-1', facts: [], title: '运营社团账号', details: '粉丝增长25%',
+    sourceText: '实现粉丝增长 25%',
+    sourceBlockIds: ['campus-intro', 'campus-metric'],
+    presentationHighlights: [{ id: 'metric-1', type: 'campus-metric', label: '粉丝增长', value: '25', unit: '%',
+      selected: false, origin: 'source', sourceBlockId: 'campus-metric' }],
+  }];
+  vi.mocked(resumeApi.blocks).mockResolvedValue({ blocks: [
+    { blockId: 'campus-intro', page: 1, readingOrder: 0, text: '负责社团账号日常运营' },
+    { blockId: 'campus-metric', page: 2, readingOrder: 1, text: '实现粉丝增长 25%' },
+  ] });
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft, revision: 1, expiresAt: '2099-01-01T00:00:00Z' });
+  vi.mocked(resumeApi.save).mockImplementation(async (_id, next) => ({ draft: next, revision: 2, expiresAt: '2099-01-01T00:00:00Z' }));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  await screen.findByRole('heading', { name: '基本信息' });
+  expect(screen.queryByText('作品集成果')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /校园经历/ }));
+  const entry = within(screen.getByRole('article', { name: '校园经历条目 1' }));
+  fireEvent.click(entry.getByText('作品集成果'));
+  const row = within(entry.getByRole('group', { name: '成果 1' }));
+  expect(row.getByText('实现粉丝增长 25%')).toBeVisible();
+  expect(row.queryByText('负责社团账号日常运营')).toBeNull();
+  const show = row.getByRole('checkbox', { name: '突出展示' });
+  expect(show).toBeChecked();
+  fireEvent.click(show);
+  expect(show).not.toBeChecked();
+  fireEvent.click(show);
+  expect(row.getByLabelText('预览')).toHaveTextContent('25%');
+  fireEvent.change(entry.getByLabelText('内容'), { target: { value: '粉丝增长30%' } });
+  expect(row.getByText(/与条目中的数值冲突/)).toBeVisible();
+  expect(row.getByLabelText('预览')).not.toHaveTextContent('25%');
+  fireEvent.change(row.getByLabelText('数值'), { target: { value: '30' } });
+  expect(show).not.toBeChecked();
+  expect(row.queryByText('实现粉丝增长 25%')).toBeNull();
+  fireEvent.click(show);
+  fireEvent.click(screen.getByRole('button', { name: '保存草稿' }));
+  await waitFor(() => expect(resumeApi.save).toHaveBeenCalled());
+  const saved = vi.mocked(resumeApi.save).mock.calls.at(-1)![1].sections
+    .find(section => section.kind === 'campusExperience')!.items[0];
+  expect(saved.editedFields).toContain('presentationHighlights');
+  expect(saved.presentationHighlights).toEqual([{ id: 'metric-1', type: 'campus-metric', label: '粉丝增长',
+    value: '30', unit: '%', selected: true, origin: 'user' }]);
+});
+
+it('can disable the legacy highlight fallback without hiding the awards module', async () => {
+  const draft = normalizeResumeDraft(fixture);
+  const awards = draft.sections.find(section => section.kind === 'awards')!;
+  awards.items = [{ ...draft.sections[0].items[0], itemId: 'awards-1', title: '竞赛成绩', details: '共获奖项20项' }];
+  vi.mocked(resumeApi.read).mockResolvedValue({draft, revision: 1, expiresAt: '2099-01-01T00:00:00Z'});
+  vi.mocked(resumeApi.save).mockImplementation(async (_id, next) => ({ draft: next, revision: 2, expiresAt: '2099-01-01T00:00:00Z' }));
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  await screen.findByRole('heading', { name: '基本信息' });
+  fireEvent.click(screen.getByRole('button', { name: /荣誉奖项/ }));
+  const entry = within(screen.getByRole('article', { name: '荣誉奖项条目 1' }));
+  fireEvent.click(entry.getByText('作品集成果'));
+  fireEvent.click(entry.getByRole('button', { name: '手动管理成果' }));
+  expect(screen.getByRole('checkbox', { name: '显示荣誉奖项' })).toBeChecked();
+  expect(entry.getByLabelText('内容')).toHaveValue('共获奖项20项');
+  fireEvent.click(screen.getByRole('button', { name: '保存草稿' }));
+  await waitFor(() => expect(resumeApi.save).toHaveBeenCalled());
+  const saved = vi.mocked(resumeApi.save).mock.calls.at(-1)![1].sections.find(section => section.kind === 'awards')!;
+  expect(saved.visible).toBe(true);
+  expect(saved.items[0].presentationHighlights).toEqual([]);
+});
+
+it('restores previously unsaved highlight selections from a browser draft', async () => {
+  const draft = normalizeResumeDraft(fixture);
+  draft.revision = 1;
+  draft.sections.find(section => section.kind === 'awards')!.items = [{
+    ...draft.sections[0].items[0], itemId: 'awards-1', facts: [], title: '荣誉奖项', details: '共获奖项20项',
+    presentationHighlights: [{ id: 'total-1', type: 'award-total', label: '获奖总数', value: '20', unit: '项',
+      selected: false, origin: 'user' }],
+  }];
+  const edited = structuredClone(draft);
+  edited.sections.find(section => section.kind === 'awards')!.items[0].presentationHighlights![0].selected = true;
+  const expiresAt = '2099-01-01T00:00:00Z';
+  const delta = localDraft.makeLocalDelta(draft, edited, 'scope-a', 'resume-1', expiresAt);
+  const readCache = vi.spyOn(localDraft, 'getLocalDelta').mockResolvedValueOnce(delta);
+  try {
+    vi.mocked(resumeApi.read).mockResolvedValue({ draft, revision: 1, expiresAt, cacheScope: 'scope-a' });
+    render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+    fireEvent.click(await screen.findByRole('button', { name: '恢复本机修改' }));
+    fireEvent.click(screen.getByRole('button', { name: /荣誉奖项/ }));
+    fireEvent.click(screen.getByRole('button', { name: '作品集成果' }));
+    expect(screen.getByRole('checkbox', { name: '突出展示' })).toBeChecked();
+    expect(screen.getByLabelText('预览')).toHaveTextContent('20项');
+  } finally {
+    readCache.mockRestore();
+  }
+});
+
+it('keeps moved highlights unchecked and read-only until they return to a compatible module', async () => {
+  const draft = normalizeResumeDraft(fixture);
+  draft.sections.find(section => section.kind === 'campusExperience')!.items = [{
+    ...draft.sections[0].items[0], itemId: 'campus-1', facts: [], title: '志愿活动', details: '服务人数25人',
+    presentationHighlights: [{ id: 'metric-1', type: 'campus-metric', label: '服务人数', value: '25', unit: '人',
+      origin: 'user', selected: true }],
+  }];
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft, revision: 1, expiresAt: '2099-01-01T00:00:00Z' });
+  render(<ResumeEditorPage params={Promise.resolve({resumeId:'resume-1'})}/>);
+  await screen.findByRole('heading', { name: '基本信息' });
+  fireEvent.click(screen.getByRole('button', { name: /校园经历/ }));
+  fireEvent.change(screen.getByRole('combobox', { name: /移动校园经历条目/ }), { target: { value: 'workExperience' } });
+  fireEvent.click(screen.getByRole('button', { name: /实习 \/ 工作经历/ }));
+  fireEvent.click(screen.getByRole('button', { name: '作品集成果' }));
+  expect(within(screen.getByRole('group', { name: /待核对/ })).getByText('服务人数 25人')).toBeVisible();
+  expect(screen.queryByRole('checkbox', { name: '突出展示' })).toBeNull();
+  fireEvent.change(screen.getByRole('combobox', { name: /移动实习 \/ 工作经历条目/ }), { target: { value: 'campusExperience' } });
+  fireEvent.click(screen.getByRole('button', { name: /校园经历/ }));
+  fireEvent.click(screen.getByRole('button', { name: '作品集成果' }));
+  expect(screen.getByRole('checkbox', { name: '突出展示' })).not.toBeChecked();
+  expect(screen.getByLabelText('数值')).toHaveValue('25');
 });
 
 it("edits supplement text, links and images on an entry", async () => {

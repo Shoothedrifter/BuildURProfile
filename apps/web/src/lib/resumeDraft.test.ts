@@ -3,6 +3,118 @@ import { describe, expect, it } from 'vitest';
 import * as contracts from '../../../../packages/contracts/src/resume-draft';
 import fixture from '../../../../packages/contracts/fixtures/resume-draft.v1.json';
 import source from '../../../../packages/contracts/fixtures/resume-source.v1.json';
+import { cleanResumeV3 } from '../../../../packages/contracts/src/resume-v3.mjs';
+
+function highlightDraft() {
+  const draft = contracts.normalizeResumeDraft(fixture);
+  const section = draft.sections.find(section => section.kind === 'campusExperience')!;
+  const [basic] = draft.sections.find(section => section.kind === 'basicInfo')!.items;
+  section.visible = true;
+  section.items = [{ ...basic, itemId: 'campus-highlight', title: '校园活动', facts: [],
+    details: '成果：互动量增长 40%', sourceText: '', presentationHighlights: [{
+      id: 'h1', type: 'campus-metric', label: '互动量增长', value: '40', unit: '%',
+      selected: true, origin: 'source', sourceBlockId: basic.sourceBlockIds[0]
+    }, {
+      id: 'h2', type: 'campus-metric', label: '活动场次', value: '3', unit: '场',
+      selected: false, origin: 'user'
+    }]
+  }];
+  return { draft, section, item: section.items[0] };
+}
+
+it('projects selected source-free highlights and preserves explicit empty and legacy states', () => {
+  const { draft, section, item } = highlightDraft();
+  const project = () => {
+    const resume = contracts.projectConfirmedResumeV3(contracts.validateResumeDraftV2(draft, source)).resume;
+    if (resume?.version !== 'resume-v3') throw new Error('v3 required');
+    return resume.sections.find(entry => entry.kind === section.kind)?.items[0];
+  };
+  expect(project()?.presentationHighlights).toEqual([{
+    id: 'h1', type: 'campus-metric', label: '互动量增长', value: '40', unit: '%'
+  }]);
+  item.details = '在活动中将互动量提高四成。';
+  expect(project()?.presentationHighlights).toHaveLength(1);
+  item.presentationHighlights![0].selected = false;
+  expect(project()).toMatchObject({ details: item.details, presentationHighlights: [] });
+  delete item.presentationHighlights;
+  expect(project()).not.toHaveProperty('presentationHighlights');
+  section.visible = false;
+  expect(project()).toBeUndefined();
+});
+
+it('suppresses explicitly conflicting or private highlights without restoring inference', () => {
+  const { draft, item } = highlightDraft();
+  const project = () => {
+    const resume = contracts.projectConfirmedResumeV3(draft).resume;
+    if (resume?.version !== 'resume-v3') throw new Error('v3 required');
+    return resume.sections.find(entry => entry.kind === 'campusExperience')?.items[0];
+  };
+  item.details = '互动量增长 41%';
+  expect(project()?.presentationHighlights).toEqual([]);
+  item.details = '';
+  item.facts = [{ key: 'outcome', label: '互动量增长', value: '41%', included: true }];
+  expect(project()?.presentationHighlights).toEqual([]);
+  for (const value of ['４０.００ ％', '互动量增长：40%', '互动量增长（40%）', '40%。']) {
+    item.facts = [{ key: 'hidden-outcome', label: '该数据未授权', value, included: false }];
+    expect(project()?.presentationHighlights).toEqual([]);
+  }
+  item.title = '';
+  item.facts = [];
+  expect(project()?.presentationHighlights).toHaveLength(1);
+});
+
+it('defaults to verified source metrics for untouched drafts and honors explicit opt-out', () => {
+  const { draft, item } = highlightDraft();
+  item.presentationHighlights![0].selected = false;
+  item.details = '负责内容发布，提升了平台互动量。';
+  item.sourceText = '调整运营策略，互动量增长 40%。';
+  const stats = () => {
+    const resume = contracts.projectConfirmedResumeV3(draft).resume;
+    if (resume?.version !== 'resume-v3') throw new Error('v3 required');
+    return resume.sections.find(section => section.kind === 'campusExperience')?.items[0].presentationHighlights;
+  };
+  expect(stats()?.map(row => row.id)).toEqual(['h1']);
+  item.editedFields = ['presentationHighlights'];
+  expect(stats()).toEqual([]);
+  item.editedFields = [];
+  item.details = '互动量增长41%';
+  expect(stats()).toEqual([]);
+  item.details = '负责内容发布，提升了平台互动量。';
+  item.facts = [{ key: 'private', label: '未公开数据', value: '40%', included: false }];
+  expect(() => stats()).toThrow('详情原文包含未勾选字段');
+  item.facts = [];
+  item.sourceText = '';
+  expect(stats()).toEqual([]);
+});
+
+it('rejects forged provenance and conflicting selections at the private and public boundaries', () => {
+  const { draft, item } = highlightDraft();
+  const resume = contracts.projectConfirmedResumeV3(draft).resume;
+  if (resume?.version !== 'resume-v3') throw new Error('v3 required');
+  const publicItem = structuredClone(resume).sections.find(entry => entry.kind === 'campusExperience')!.items[0];
+  expect(() => cleanResumeV3({ version: 'resume-v3', sections: [{ kind: 'awards', order: 0, items: [publicItem] }] })).toThrow();
+  Object.assign(publicItem.presentationHighlights![0], { sourceBlockId: 'block_1' });
+  expect(() => cleanResumeV3({ version: 'resume-v3', sections: [{ kind: 'campusExperience', order: 0, items: [publicItem] }] })).toThrow();
+  item.presentationHighlights![0].sourceBlockId = 'unrelated';
+  expect(() => contracts.validateResumeDraftV2(draft, source)).toThrow();
+  item.presentationHighlights![0].sourceBlockId = item.sourceBlockIds[0];
+  item.presentationHighlights!.push({ ...item.presentationHighlights![0], id: 'h3', value: '41' });
+  expect(() => contracts.validateResumeDraftV2(draft, source)).toThrow();
+});
+
+it('retains unchecked highlights from a move as private review rows only', () => {
+  const { draft, section, item } = highlightDraft();
+  section.items = [];
+  item.presentationHighlights!.forEach(row => { row.selected = false; });
+  const work = draft.sections.find(entry => entry.kind === 'workExperience')!;
+  work.visible = true;
+  work.items = [{ ...item, sourceText: '', order: 0 }];
+  const saved = contracts.validateResumeDraftV2(draft, source);
+  expect(saved.sections.find(entry => entry.kind === 'workExperience')?.items[0].presentationHighlights).toHaveLength(2);
+  const result = contracts.projectConfirmedResumeV3(saved).resume;
+  if (result?.version !== 'resume-v3') throw new Error('v3 required');
+  expect(result.sections.find(entry => entry.kind === 'workExperience')?.items[0]).not.toHaveProperty('presentationHighlights');
+});
 
 it('normalizes legacy drafts into editable v2 without changing item text or order', () => {
   const reordered = structuredClone(fixture);

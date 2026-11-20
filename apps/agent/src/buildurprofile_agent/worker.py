@@ -12,12 +12,14 @@ from typing import Any
 import httpx
 
 from .graph import SUPPORTED_WORKFLOWS, build_generation_graph, task_input
-from .graphs.resume_parse import WORKFLOW_VERSION as RESUME_WORKFLOW_VERSION, OCR_WORKFLOW_VERSION, build_resume_parse_graph
+from .graphs.resume_parse import build_resume_parse_graph
 from .skills.ocr import OcrError
 from .providers.base import ImageProviderError
 from .providers.text_model import ResumeTextModelError, build_text_model
 from .skills.registry import SkillRegistry, default_registry
-from .transport.node_api import AgentTask, CancelRequested, LeaseLost, NodeAgentClient, ResumeParseTask
+from .transport.node_api import (
+    AgentTask, CancelRequested, LeaseLost, NodeAgentClient, RESUME_WORKFLOWS, ResumeParseTask,
+)
 
 log = logging.getLogger(__name__)
 
@@ -122,7 +124,7 @@ async def process_resume_task(task: ResumeParseTask, client: NodeAgentClient, mo
                 return
 
     try:
-        if task.workflow_version not in {RESUME_WORKFLOW_VERSION, OCR_WORKFLOW_VERSION}:
+        if task.workflow_version not in RESUME_WORKFLOWS:
             raise ValueError("SKILL_VERSION_MISMATCH")
         run = build_resume_parse_graph(task, client, model, registry, checkpointer=checkpointer)
         state = {"task_id": task.id, "file_id": task.file_id, "resume_id": task.resume_id,
@@ -134,7 +136,7 @@ async def process_resume_task(task: ResumeParseTask, client: NodeAgentClient, mo
         status = await client.heartbeat_resume(task)
         if status.get("cancelRequested"):
             raise CancelRequested("Resume parsing was cancelled")
-        if not await client.complete_resume(task, run.source.model_dump(), run.draft.model_dump()):
+        if not await client.complete_resume(task, run.source.model_dump(), run.draft.model_dump(exclude_none=True)):
             raise LeaseLost("Resume completion lost its lease")
         log.info("resume parse completed id=%s", task.id)
     except asyncio.CancelledError:

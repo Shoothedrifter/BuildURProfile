@@ -6,9 +6,12 @@ Node validates before enqueueing; these models validate again at the trust bound
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import re
 from typing import Annotated, Literal
+from unicodedata import normalize
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from .skills.assessment import score_answers
 
@@ -247,6 +250,77 @@ class ItemSupplements(StrictModel):
     images: list[SupplementImage] = Field(max_length=6)
 
 
+MAX_HIGHLIGHTS = 12
+HighlightType = Literal['campus-metric', 'award-total', 'award-tier']
+HighlightLevel = Literal['国际级', '国家级', '省部级', '省级', '市级', '校级']
+HighlightUnit = Literal['%', '百分点', '人', '人次', '场', '篇', '期', '次', '项', '个', '万']
+_HIGHLIGHT_NUMBER = r'^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$'
+HighlightNumber = Annotated[str, Field(max_length=32, pattern=_HIGHLIGHT_NUMBER)]
+_SINGLE_LINE = r'^[^\x00\r\n]*$'
+
+
+class HighlightFields(StrictModel):
+    id: ResumeId
+    type: HighlightType
+    label: str = Field(max_length=80, pattern=_SINGLE_LINE)
+    unit: HighlightUnit
+    level: HighlightLevel | SkipJsonSchema[None] = None
+
+    @model_validator(mode='after')
+    def valid_type(self):
+        if (self.type == 'award-tier') != (self.level is not None):
+            raise ValueError('Invalid highlight level')
+        if self.type != 'campus-metric' and self.unit not in {'项', '个', '次'}:
+            raise ValueError('Invalid award unit')
+        return self
+
+
+def _check_highlight_value(highlight):
+    if not highlight.label.strip() or not re.fullmatch(_HIGHLIGHT_NUMBER, highlight.value):
+        raise ValueError('Invalid highlight label or value')
+    if highlight.type != 'campus-metric' and ('-' in highlight.value or '.' in highlight.value):
+        raise ValueError('Invalid award count')
+
+
+class DraftPresentationHighlight(HighlightFields):
+    value: str = Field(max_length=32, pattern=_SINGLE_LINE)
+    selected: bool
+    origin: Literal['source', 'user']
+    sourceBlockId: ResumeId | SkipJsonSchema[None] = None
+
+    @model_validator(mode='after')
+    def valid_provenance_and_selection(self):
+        if (self.origin == 'source') != (self.sourceBlockId is not None):
+            raise ValueError('Invalid highlight origin')
+        if self.selected:
+            _check_highlight_value(self)
+        return self
+
+
+def _highlight_key(highlight):
+    if highlight.type == 'award-total':
+        return highlight.type, None
+    if highlight.type == 'award-tier':
+        return highlight.type, highlight.level
+    label = re.sub(r'\s+', '', normalize('NFKC', highlight.label))
+    return highlight.type, re.sub(r'^平台(?=粉丝)', '', label)
+
+
+def _check_highlight_list(kind, highlights, *, draft=False):
+    if highlights is None:
+        return
+    selected = [h for h in highlights if not draft or h.selected]
+    if (not draft and kind not in {'awards', 'campusExperience'}
+            or any(kind not in {'awards', 'campusExperience'}
+                   or (h.type == 'campus-metric') != (kind == 'campusExperience') for h in selected)):
+        raise ValueError('Invalid highlight module')
+    if len({h.id for h in highlights}) != len(highlights):
+        raise ValueError('Duplicate highlight ID')
+    confirmed = [_highlight_key(h) for h in selected]
+    if len(set(confirmed)) != len(confirmed):
+        raise ValueError('Duplicate confirmed highlight')
+
+
 class ResumeDraftItem(StrictModel):
     itemId: ResumeId
     order: int = Field(ge=0, le=100)
@@ -262,6 +336,7 @@ class ResumeDraftItem(StrictModel):
     supplements: ItemSupplements = Field(default_factory=lambda: ItemSupplements(text='', links=[], images=[]))
     # 条目对应的简历原文摘录（可选），由来源块拼接而来
     sourceText: str | None = Field(default=None, max_length=12000)
+    presentationHighlights: Annotated[list[DraftPresentationHighlight], Field(max_length=MAX_HIGHLIGHTS)] | SkipJsonSchema[None] = None
 
     @model_validator(mode='after')
     def valid_evidence(self):
@@ -269,6 +344,9 @@ class ResumeDraftItem(StrictModel):
             raise ValueError('Agent item requires evidence')
         if len(set(self.sourceBlockIds)) != len(self.sourceBlockIds) or len({f.key for f in self.facts}) != len(self.facts):
             raise ValueError('Duplicate source/fact')
+        if any(h.sourceBlockId is not None and h.sourceBlockId not in self.sourceBlockIds
+               for h in self.presentationHighlights or []):
+            raise ValueError('Highlight evidence must belong to its item')
         return self
 
 
@@ -284,6 +362,8 @@ class ResumeDraftSection(StrictModel):
     def fixed_mapping(self):
         if self.id != self.kind or self.mappedDesignModule != RESUME_MODULE_MAPPING[self.kind]:
             raise ValueError('Invalid fixed design mapping')
+        for item in self.items:
+            _check_highlight_list(self.kind, item.presentationHighlights, draft=True)
         return self
 
 
@@ -310,9 +390,8 @@ class ResumeDraftItemV2(ResumeDraftItem):
 
     @model_validator(mode='after')
     def valid_edit_fields(self):
-        import re
         if len(set(self.editedFields)) != len(self.editedFields) or any(
-            not re.fullmatch(r'(title|details|sourceText|included|supplements|needsReview|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})', field)
+            not re.fullmatch(r'(title|details|sourceText|included|supplements|needsReview|presentationHighlights|fact:[A-Za-z0-9][A-Za-z0-9_-]{0,99})', field)
             for field in self.editedFields
         ):
             raise ValueError('Invalid edit fields')
@@ -396,13 +475,30 @@ class DesignConfigV2(DesignConfigV1):
     content: ResumeContentV2
 
 
+class PresentationHighlight(HighlightFields):
+    label: str = Field(min_length=1, max_length=80, pattern=_SINGLE_LINE)
+    value: HighlightNumber
+
+    @model_validator(mode='after')
+    def valid_value(self):
+        _check_highlight_value(self)
+        return self
+
+
 class ResumeDisplayItemV3(ResumeDisplayItem):
     order: int = Field(ge=0, le=99)
+    presentationHighlights: Annotated[list[PresentationHighlight], Field(max_length=MAX_HIGHLIGHTS)] | SkipJsonSchema[None] = None
 
 
 class ResumeDisplaySectionV3(ResumeDisplaySection):
     order: int = Field(ge=0, le=9)
     items: list[ResumeDisplayItemV3] = Field(max_length=100)
+
+    @model_validator(mode='after')
+    def valid_highlights(self):
+        for item in self.items:
+            _check_highlight_list(self.kind, item.presentationHighlights)
+        return self
 
 
 class StructuredResumeV3(StrictModel):

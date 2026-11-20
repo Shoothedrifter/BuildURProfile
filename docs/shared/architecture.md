@@ -32,7 +32,9 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 新图顺序为：校验输入 → 选择 Skill 计划 → 固定模板映射 → 注入确认内容 → 可选肖像 → 最终 QA → 提交配置。旧图保留评分节点。Skill 声明稳定 ID、版本、能力、输入输出和超时，执行器只授予当前节点所需能力。
 
-新上传路径由 `resume-parse-v2/v3` 独立队列和 LangGraph 图解析。Web 在私有原件或本机 OCR 文字上复用旧浏览器解析算法，生成仅供 Agent 使用的 `resume-parse-plan-v1` 模块和条目锚点；Python 将来源块对齐锚点，再由 `resume.format.v1` 文本模型逐条整理标题与正文，不能自由拆分或合并条目。用户明确选择时，v3 只对无文字页运行本机 OCR，私有 `resume-source-v2` 标记 OCR 来源与置信度。固定映射和来源校验由代码执行，详见[解析流程 v2](../agent/resume-anchored-formatting.md)。十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存、排序、拆合、自动保存与恢复历史，显式清除待核对状态后，投影剥离来源及隐藏字段，按确认顺序输出 `resume-v3`。原件、块、草稿和历史从上传起 30 天自动删除，可提前删除。重解析候选独立于当前草稿，并在 revision 相同时才可应用。旧浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
+新上传路径由 `resume-parse-v4/v5` 独立队列和 LangGraph 图解析，并兼容已排队的 v2/v3 任务。Web 在私有原件或本机 OCR 文字上复用旧浏览器解析算法，生成仅供 Agent 使用的 `resume-parse-plan-v1` 模块和条目锚点；Python 将来源块对齐锚点，再由 `resume.format.v1/v2` 文本模型逐条整理标题与正文，不能自由拆分或合并条目。用户明确选择时，OCR 工作流只对无文字页运行本机 OCR，私有 `resume-source-v2` 标记 OCR 来源与置信度。固定映射和来源校验由代码执行，详见[解析流程 v2](../agent/resume-anchored-formatting.md)。十模块草稿经会话隔离持久化；用户在编辑页对照原 PDF 保存、排序、拆合、自动保存与恢复历史，显式清除待核对状态后，投影剥离来源及隐藏字段，按确认顺序输出 `resume-v3`。原件、块、草稿和历史从上传起 30 天自动删除，可提前删除。重解析候选独立于当前草稿，并在 revision 相同时才可应用。旧浏览器规则解析仍作为明确标注的兼容入口，候选只留浏览器内存；模型失败不回退旧路径。
+
+校园经历和荣誉奖项按条目保存 `presentationHighlights`。来源定位和未勾选候选留在私有草稿。公开 `resume-v3` 省略该字段时兼容旧展示，空数组表示已关闭高亮，有值时只包含用户确认的成果。
 
 图状态与 checkpoint 可保存任务 ID、清洗后的 brief、评分、配置、Skill 版本、风格与资产 ID、QA 结果。不得保存 PDF 原文、`sourceRefs`、照片字节、密钥和支付数据。照片及风格参考图仅在外部图像请求期间读取。
 
@@ -44,7 +46,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 | 方法与相对路径 | 输入 / 输出 |
 | --- | --- |
-| `POST /lease` | `{workerId}` → `204` 或任务：`id, leaseToken, workflowVersion, brief, config, portraitAssetId, styleId, outputAssetId` |
+| `POST /lease` | `{workerId,supportsPresentationHighlights?}` → `204` 或任务：`id, leaseToken, workflowVersion, brief, config, portraitAssetId, styleId, outputAssetId` |
 | `POST /heartbeat` | `{workerId}` → `{ok:true}`，更新 worker 就绪心跳 |
 | `POST /tasks/:id/heartbeat` | `{leaseToken}` → `{ok,cancelRequested}`，续租并检查取消 |
 | `GET /tasks/:id/output` | `x-agent-lease` → `{assetId,exists}`，查询可复用成图 |
@@ -55,7 +57,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 | `POST /tasks/:id/fail` | `{leaseToken,errorCode,retryable}` → `{ok}` |
 | `POST /tasks/:id/ack-cancel` | `{leaseToken}` → `{ok}` |
 
-除照片下载和成图上传外使用 JSON。所有任务接口同时校验正在运行且未过期的租约；服务令牌不能替代任务租约或浏览器会话。
+除照片下载和成图上传外使用 JSON。解析与生成 Worker 在领取时可通过 `supportsPresentationHighlights: true` 声明支持新成果字段。未声明的 Worker 继续领取兼容任务。所有任务接口同时校验正在运行且未过期的租约；服务令牌不能替代任务租约或浏览器会话。
 
 ## 可靠性与存储
 

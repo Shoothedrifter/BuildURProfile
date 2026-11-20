@@ -87,3 +87,39 @@ it('does not lose assets when merging over a per-item limit', () => {
   expect(merged.sections.find(s=>s.kind==='projects')!.items[0].supplements?.images).toHaveLength(1);
   expect(merged.sections.find(s=>s.kind==='projects')!.items[0].details).toContain('项目乙');
 });
+
+it('keeps confirmed highlights only where a split can locate their value', () => {
+  const draft = projectDraft();
+  const campus = draft.sections.find(section => section.kind === 'campusExperience')!;
+  const initial = draft.sections.find(section => section.kind === 'projects')!.items[0];
+  campus.items = [{ ...initial, title: '校园实践', details: '活动策划说明\n\n互动量增长40%',
+    presentationHighlights: [
+      { id: 'h1', type: 'campus-metric', label: '互动量增长', value: '40', unit: '%', selected: true, origin: 'user' },
+      { id: 'h2', type: 'campus-metric', label: '活动场次', value: '3', unit: '场', selected: true, origin: 'user' }
+    ]
+  }];
+  const result = splitResumeItem(draft, 'campusExperience', initial.itemId, 1, 'new-campus');
+  const [first, second] = result.sections.find(section => section.kind === 'campusExperience')!.items;
+  expect(first.presentationHighlights).toEqual([expect.objectContaining({ id: 'h2', selected: false })]);
+  expect(second.presentationHighlights).toEqual([expect.objectContaining({ id: 'h1', selected: true })]);
+  expect(second.editedFields).toContain('presentationHighlights');
+});
+
+it('returns conflicting merged highlights to review and preserves distinct award tiers', () => {
+  const draft = projectDraft();
+  const awards = draft.sections.find(section => section.kind === 'awards')!;
+  const initial = draft.sections.find(section => section.kind === 'projects')!.items[0];
+  const award = (id: string, level: string, value: string) => ({ id, type: 'award-tier' as const,
+    label: level, level, value, unit: '项', selected: true, origin: 'user' as const });
+  awards.items = [
+    { ...initial, itemId: 'award-first', details: '省级奖项5项',
+      presentationHighlights: [award('h1', '省级', '5')] },
+    { ...initial, itemId: 'award-second', order: 1, details: '省级奖项6项，省部级奖项2项',
+      supplements: { text: '', links: [], images: [] },
+      presentationHighlights: [award('h1', '省级', '6'), award('h2', '省部级', '2')] }
+  ];
+  const result = mergeResumeItems(draft, 'awards', 'award-first', 'award-second', 'combine');
+  const rows = result.sections.find(section => section.kind === 'awards')!.items[0].presentationHighlights!;
+  expect(rows.map(row => [row.level, row.selected])).toEqual([['省级', false], ['省级', false], ['省部级', true]]);
+  expect(new Set(rows.map(row => row.id)).size).toBe(3);
+});

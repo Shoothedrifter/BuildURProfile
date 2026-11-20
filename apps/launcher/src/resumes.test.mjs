@@ -185,6 +185,29 @@ test('fill-empty fills sourceText from candidates, protects edited markers and o
  assert.equal(overwriteDraft(current,candidate).sections[0].items[0].sourceText,'候选原文');
 });
 
+test('reparse keeps explicit cleared highlights and demotes confirmed values on evidence changes', () => {
+ const current = JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ current.version = 'resume-draft-v2';
+ for (const section of current.sections) for (const item of section.items) item.editedFields = [];
+ const section = current.sections.find(entry => entry.kind === 'awards');
+ section.visible = true;
+ section.items = [{ ...current.sections[0].items[0], itemId: 'awards-one', facts: [],
+   presentationHighlights: [], editedFields: ['presentationHighlights'] }];
+ const candidate = structuredClone(current);
+ const incoming = candidate.sections.find(entry => entry.kind === 'awards').items[0];
+ const evidence = incoming.sourceBlockIds[0];
+ const highlight = { id: 'total', type: 'award-total', label: '奖项', value: '10', unit: '项',
+   selected: false, origin: 'source', sourceBlockId: evidence };
+ incoming.presentationHighlights = [highlight];
+ const rows = draft => draft.sections.find(entry => entry.kind === 'awards').items[0].presentationHighlights;
+ assert.deepEqual(rows(mergeEmptyDraft(current, candidate)), []);
+ assert.deepEqual(rows(overwriteDraft(current, candidate)), []);
+ section.items[0].presentationHighlights = [{ ...highlight, selected: true }];
+ assert.equal(rows(overwriteDraft(current, candidate))[0].selected, true);
+ incoming.sourceBlockIds.push('new-evidence');
+ assert.equal(rows(overwriteDraft(current, candidate))[0].selected, false);
+});
+
 test('fill-empty candidate matches stable source, adds reviewed item and never changes edited text',async t=>{
  const s=await readyResume(t),current=(await(await s.request(s.resumeId)).json()).draft;
  current.sections[0].items[0].title='人工标题';
@@ -257,14 +280,14 @@ test('scanned PDF remains private for explicit OCR retry and a mixed PDF marks o
  const scanned=await s.request('upload','POST',pdf(1,false));assert.equal(scanned.status,201);
  const scan=await scanned.json();assert.deepEqual(scan.emptyPages,[1]);
  const first=await(await s.request('parse','POST',JSON.stringify({fileId:scan.fileId,idempotencyKey:'scan-normal'}),{'content-type':'application/json'})).json();
- const normal=s.repo.queue.lease('worker');assert.equal(normal.workflowVersion,'resume-parse-v2');
+ const normal=s.repo.queue.lease('worker');assert.equal(normal.workflowVersion,'resume-parse-v4');
  const overlapping=await s.request('parse','POST',JSON.stringify({fileId:scan.fileId,idempotencyKey:'scan-ocr',ocrRequested:true}),{'content-type':'application/json'});
  assert.equal(overlapping.status,409);
  s.repo.queue.fail(normal.id,normal.leaseToken,'PDF_NO_TEXT',false);
  assert.equal((await(await s.request(first.resumeId+'/status')).json()).errorCode,'PDF_NO_TEXT');
  const retried=await s.request('parse','POST',JSON.stringify({fileId:scan.fileId,idempotencyKey:'scan-ocr',ocrRequested:true}),{'content-type':'application/json'});
  assert.equal(retried.status,202);
- const ocr=s.repo.queue.lease('worker');assert.equal(ocr.workflowVersion,'resume-parse-v3');
+ const ocr=s.repo.queue.lease('worker');assert.equal(ocr.workflowVersion,'resume-parse-v5');
  assert.deepEqual(ocr.ocrPages,[1]);
  assert.deepEqual(Buffer.from(s.repo.readFile(s.db.prepare('SELECT owner_session_id FROM resume_files WHERE id=?').get(scan.fileId).owner_session_id,scan.fileId)),pdf(1,false));
  const mixed=await(await s.request('upload','POST',pdf(2,[true,false]))).json();
@@ -315,7 +338,7 @@ test('mixed PDF OCR uses an independent candidate while current draft remains av
   expectedRevision:1,mode:'fillEmpty',idempotencyKey:'mixed-ocr',ocrRequested:true}),{'content-type':'application/json'});
  assert.equal(candidate.status,202);
  const lease=s.repo.queue.lease('ocr_worker');
- assert.equal(lease.workflowVersion,'resume-parse-v3');
+ assert.equal(lease.workflowVersion,'resume-parse-v5');
  assert.deepEqual(lease.ocrPages,[2]);
  assert.equal((await(await s.request(parsed.resumeId)).json()).revision,1);
  assert.equal((await(await s.request(parsed.resumeId+'/status')).json()).status,'SUCCEEDED');
@@ -391,9 +414,11 @@ test('private resume lease authenticates, reclaims, fences cancelled workers and
  const s=await setup(t),token='r'.repeat(64);
  const handler=createRequestHandler({db:s.db,service:{},resumeRepository:s.repo,agentToken:token,secret:Buffer.alloc(32,7)});
  const internal=async(path,method='POST',body={},lease,auth=token)=>dispatchWebRequest(new Request('http://test/_internal/agent/resume-tasks/'+path,{method,headers:{authorization:'Bearer '+auth,'content-type':'application/json',...(lease?{'x-agent-lease':lease}:{})},...(method==='POST'?{body:JSON.stringify(body)}:{})}),handler);
+ const worker={workerId:'worker',supportsPresentationHighlights:true};
  const file=await(await s.request('upload','POST',pdf())).json(),r=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'lease'}))).json();
  assert.equal((await internal('lease','POST',{workerId:'worker'},null,'bad')).status,403);
- const response=await internal('lease','POST',{workerId:'worker'});assert.equal(response.status,200);const task=await response.json();assert.equal(task.workflowVersion,'resume-parse-v2');assert.equal(task.fileId,file.fileId);assert.equal(task.resumeId,r.resumeId);assert.equal('blocks' in task,false);
+ assert.equal((await internal('lease','POST',{workerId:'legacy_worker'})).status,204);
+ const response=await internal('lease','POST',worker);assert.equal(response.status,200);const task=await response.json();assert.equal(task.workflowVersion,'resume-parse-v4');assert.equal(task.fileId,file.fileId);assert.equal(task.resumeId,r.resumeId);assert.equal('blocks' in task,false);
  assert.deepEqual(Buffer.from(await(await internal(task.id+'/source','GET',{},task.leaseToken)).arrayBuffer()),pdf());
  s.advance(20_000);assert.equal((await internal(task.id+'/heartbeat','POST',{leaseToken:task.leaseToken,stage:'extract_layout',progress:20})).status,200);
  s.advance(20_000);assert.equal((await internal(task.id+'/source','GET',{},task.leaseToken)).status,200);
@@ -405,12 +430,12 @@ test('private resume lease authenticates, reclaims, fences cancelled workers and
  assert.equal((await(await internal(task.id+'/heartbeat','POST',{leaseToken:task.leaseToken})).json()).cancelRequested,true);
  assert.equal((await internal(task.id+'/ack-cancel','POST',{leaseToken:task.leaseToken})).status,200);
  await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'retry'}));
- const next=await(await internal('lease','POST',{workerId:'worker'})).json();assert.notEqual(next.id,task.id);
+ const next=await(await internal('lease','POST',worker)).json();assert.notEqual(next.id,task.id);
  assert.equal((await internal(task.id+'/fail','POST',{leaseToken:task.leaseToken,errorCode:'PARSE_FAILED'})).status,409);
  s.db.prepare('UPDATE resume_parse_tasks SET lease_until=0 WHERE id=?').run(next.id);
  const status=await(await s.request(r.resumeId+'/status')).json();assert.equal(status.status,'QUEUED');assert.equal(status.errorCode,'PARSE_TIMEOUT');assert.equal(status.stage,'queued');assert.equal(status.progress,0);
  s.db.prepare('UPDATE resume_parse_tasks SET next_attempt_at=0 WHERE id=?').run(next.id);
- const reclaimed=await(await internal('lease','POST',{workerId:'worker2'})).json();assert.equal(reclaimed.id,next.id);assert.notEqual(reclaimed.leaseToken,next.leaseToken);
+ const reclaimed=await(await internal('lease','POST',{...worker,workerId:'worker2'})).json();assert.equal(reclaimed.id,next.id);assert.notEqual(reclaimed.leaseToken,next.leaseToken);
  assert.equal((await internal(next.id+'/source','GET',{},next.leaseToken)).status,409);
  assert.equal((await internal(next.id+'/heartbeat','POST',{leaseToken:next.leaseToken})).status,409);
 });
@@ -443,6 +468,39 @@ test('complete persists validated source and draft atomically; edits use revisio
  assert.equal((await s.request(parsed.resumeId,'PATCH',JSON.stringify({revision:1,draft}))).status,409);
  assert.throws(()=>s.repo.queue.complete(task.id,task.leaseToken,source,draft),e=>e.status===409);
  await s.request(parsed.resumeId,'DELETE');assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_parse_tasks').get().n,0);assert.equal(s.db.prepare('SELECT COUNT(*) n FROM resume_parse_requests').get().n,0);
+});
+
+test('new parse completions preserve private unchecked candidates and reject user-origin or unattached rows',async t=>{
+ const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
+ const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'highlights'}))).json();
+ const task=s.repo.queue.lease('worker');
+ assert.equal(task.workflowVersion,'resume-parse-v4');
+ const metadata=s.db.prepare('SELECT * FROM resume_files WHERE id=?').get(file.fileId);
+ const source=JSON.parse(readFileSync('packages/contracts/fixtures/resume-source.v1.json','utf8'));
+ Object.assign(source,{fileId:file.fileId,uploadedAt:new Date(metadata.uploaded_at).toISOString().replace('.000Z','Z'),
+  expiresAt:new Date(metadata.expires_at).toISOString().replace('.000Z','Z')});
+ const draft=JSON.parse(readFileSync('packages/contracts/fixtures/resume-draft.v1.json','utf8'));
+ Object.assign(draft,{fileId:file.fileId,resumeId:parsed.resumeId,revision:1});
+ const basicItem=draft.sections[0].items[0];
+ basicItem.included=false;
+ const award=draft.sections.find(section=>section.kind==='awards');
+ const block={...source.blocks[0],blockId:'award_block',readingOrder:1,text:'共获学科竞赛奖项60项'};
+ source.blocks.push(block);
+ const item={...basicItem,itemId:'item_award',title:'学科竞赛',facts:[],sourceBlockIds:[block.blockId]};
+ award.items=[item];
+ const candidate={id:'source-highlight-0',type:'award-total',label:'学科竞赛奖项',value:'60',unit:'项',
+  origin:'source',sourceBlockId:block.blockId,selected:false};
+ const {sourceBlockId: _sourceBlockId,...manual}=candidate;
+ for (const row of [{...candidate,selected:true},{...manual,origin:'user'},
+  {...candidate,sourceBlockId:source.blocks[0].blockId}]) {
+  item.presentationHighlights=[row];
+  assert.throws(()=>s.repo.queue.complete(task.id,task.leaseToken,source,draft),error=>error.status===400);
+ }
+ item.presentationHighlights=[candidate];
+ assert.equal(s.repo.queue.complete(task.id,task.leaseToken,source,draft).ok,true);
+ const saved=(await(await s.request(parsed.resumeId)).json()).draft;
+ assert.deepEqual(saved.sections.find(section=>section.kind==='awards').items[0].presentationHighlights,[candidate]);
+ assert.equal('presentationHighlights' in saved.sections[0].items[0],false);
 });
 
 test('owner can read trimmed source blocks for original-text cross-check after completion',async t=>{
@@ -511,7 +569,7 @@ test('a queued v1 parse task adopts the anchored v2 workflow when leased',async 
  const s=await setup(t),file=await(await s.request('upload','POST',pdf())).json();
  const parsed=await(await s.request('parse','POST',JSON.stringify({fileId:file.fileId,idempotencyKey:'upgrade'}))).json();
  s.db.prepare("UPDATE resume_parse_tasks SET workflow_version='resume-parse-v1' WHERE resume_id=?").run(parsed.resumeId);
- const task=s.repo.queue.lease('worker');
+ const task=s.repo.queue.lease('worker',{supportsPresentationHighlights:false});
  assert.equal(task.workflowVersion,'resume-parse-v2');
  assert.equal(s.db.prepare('SELECT workflow_version FROM resume_parse_tasks WHERE id=?').get(task.id).workflow_version,'resume-parse-v2');
 });

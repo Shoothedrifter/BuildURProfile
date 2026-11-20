@@ -30,7 +30,7 @@ function OptionalEntry({ item, kind, resolveResumeImage }: {
       </dl>}
       {highlights.length > 0 && <dl className="cyber-optional-highlights"
         aria-label={kind === "awards" ? "竞赛奖项统计" : "实践成果"}>
-        {highlights.map(({ label, value, total }) => <div key={JSON.stringify([label, value])} data-total={total || undefined}>
+        {highlights.map(({ id, label, value, total }) => <div key={id ?? JSON.stringify([label, value])} data-total={total || undefined}>
           <dt>{label}</dt><dd>{value}</dd>
         </div>)}
       </dl>}

@@ -105,7 +105,7 @@ async def test_real_node_bridge_ocr_private_plan_and_completion(monkeypatch):
         client = NodeAgentClient(endpoint["baseUrl"], token)
         try:
             task = await client.lease_resume("python_ocr_integration")
-            assert task and task.workflow_version == "resume-parse-v3" and task.ocr_pages == [1]
+            assert task and task.workflow_version == "resume-parse-v5" and task.ocr_pages == [1]
 
             class MockTextModel:
                 async def generate_json(self, name, schema, prompt):

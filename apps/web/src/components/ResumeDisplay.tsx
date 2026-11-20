@@ -17,7 +17,16 @@ export function ResumeDisplay({resume,resolveImage,skipBasicInfo=false}:{resume:
     {s.items.filter(resumeItemHasContent).map(i => {
       // 统一降级规则（与 StackedCards 同构）：sourceText 有效时展示原文，否则回退 details
       const detailText = i.sourceText?.trim() ? i.sourceText : i.details;
-      return <article className="resume-entry" key={i.itemId}>{i.title && <h3>{i.title}</h3>}{i.details && <p className="resume-entry-body">{i.details}</p>}{detailText.trim() && <details className="resume-entry-detail"><summary>查看详情</summary><div className="project-detail-body"><p>{detailText}</p></div></details>}<ResumeSupplement item={i} resolveImage={resolveImage} excludeIdentity={resume.version==='resume-v2' && s.kind==='basicInfo'}/></article>;
+      return <article className="resume-entry" key={i.itemId}>{i.title && <h3>{i.title}</h3>}
+        {i.details && <p className="resume-entry-body">{i.details}</p>}
+        {Boolean(i.presentationHighlights?.length) && <dl aria-label="作品集成果">
+          {i.presentationHighlights?.map(highlight => <div key={highlight.id}>
+            <dt>{highlight.label}</dt><dd>{highlight.value}{highlight.unit}</dd>
+          </div>)}
+        </dl>}
+        {detailText.trim() && <details className="resume-entry-detail"><summary>查看详情</summary><div className="project-detail-body"><p>{detailText}</p></div></details>}
+        <ResumeSupplement item={i} resolveImage={resolveImage} excludeIdentity={resume.version==='resume-v2' && s.kind==='basicInfo'}/>
+      </article>;
     })}
   </section>)}</>;
 }

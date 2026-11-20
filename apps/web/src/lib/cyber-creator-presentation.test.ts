@@ -70,4 +70,34 @@ describe("赛博科技展示映射", () => {
     expect(presentOptionalEntry({ ...entry, details: "国家级奖项18项、省级奖项33项" }, "awards").highlights)
       .toEqual([{ label: "国家级", value: "18项" }, { label: "省级", value: "33项" }]);
   });
+
+  it("recognizes equivalent wrapped awards and labeled campus outcomes", () => {
+    const one = item("one", [], "本科期间共获学科竞赛奖项60项，其中国家级18项，省级33项，国际级9项");
+    const two = item("two", [], "本科期间共获学科竞赛 ６０ 项\n国家级竞赛 １８ 项，省级竞赛 ３３ 项，国际级竞赛 ９ 项");
+    const three = item("three", [], "本科期间共获学科竞赛奖项60项（其中国家级18项、省级33项、国际级9项）");
+    expect(presentOptionalEntry(two, "awards").highlights).toEqual(presentOptionalEntry(one, "awards").highlights);
+    expect(presentOptionalEntry(three, "awards").highlights).toEqual(presentOptionalEntry(one, "awards").highlights);
+    const campus = presentOptionalEntry(item("campus", [], "时间：2022.10-2024.09\n成果：平台粉丝增长２５％，互动量增长 ４０ %"), "campusExperience");
+    expect(campus.period).toBe("2022.10-2024.09");
+    expect(campus.highlights).toEqual([{ label: "粉丝增长", value: "25%" }, { label: "互动量增长", value: "40%" }]);
+    const signed = item("signed", [], "平台粉丝增长了 +25%，流失率下降 -12%");
+    expect(presentOptionalEntry(signed, "campusExperience").highlights)
+      .toEqual([{ label: "粉丝增长", value: "25%" }, { label: "流失率下降", value: "-12%" }]);
+  });
+
+  it("does not infer totals, cross unrelated lines, or promote conflicting or uncertain counts", () => {
+    const awards = item("awards", [], "GPA：4.0，2024 年\n预计共获奖项60项\n国家级竞赛18项\n省级奖项33项\n省级奖项32项\n\n举办国际级竞赛9场");
+    expect(presentOptionalEntry(awards, "awards").highlights).toEqual([]);
+    const campus = item("campus", [], "粉丝增长25%，粉丝增长30%，未实现互动量增长40%，50%，GPA 4.0");
+    expect(presentOptionalEntry(campus, "campusExperience").highlights).toEqual([]);
+  });
+
+  it("keeps award tier context after an explicit breakdown prefix", () => {
+    const result = (details: string) => presentOptionalEntry(item("awards", [], details), "awards").highlights.map(row => row.value);
+    expect(result("本科期间共获学科竞赛60项。\n包括：国家级18项，省级33项，国际级9项。"))
+      .toEqual(["60项", "18项", "33项", "9项"]);
+    expect(result("本科期间共获学科竞赛 60 项：国家级竞赛 18 项，省级竞赛 33 项，国际级竞赛 9 项。"))
+      .toEqual(["60项", "18项", "33项", "9项"]);
+    expect(result("包括：国家级竞赛18项，省级竞赛33项")).toEqual([]);
+  });
 });

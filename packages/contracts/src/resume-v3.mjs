@@ -1,4 +1,5 @@
 import { cleanResumeV2, RESUME_KINDS } from './resume-v2.mjs';
+import { validPublicHighlights } from './presentation-highlights.mjs';
 
 /** Ordered public content. Private provenance and edit metadata are forbidden. */
 export function cleanResumeV3(raw) {
@@ -20,9 +21,9 @@ export function cleanResumeV3(raw) {
     const items = section.items.map(item => {
       if (!item || typeof item !== 'object' || Array.isArray(item)
           || !Number.isInteger(item.order) || item.order < 0 || item.order >= section.items.length
-          || orders.has(item.order)) fail();
+          || orders.has(item.order) || !validPublicHighlights(section.kind, item)) fail();
       orders.add(item.order);
-      const { order: _order, ...content } = item;
+      const { order: _order, presentationHighlights: _highlights, ...content } = item;
       return content;
     });
     stripped.push({kind:section.kind,items});
@@ -32,7 +33,8 @@ export function cleanResumeV3(raw) {
   const byKind = new Map(clean.sections.map(section=>[section.kind,section]));
   return {version:'resume-v3', sections:[...raw.sections].sort((a,b)=>a.order-b.order).map(section=>({
     kind:section.kind, order:section.order,
-    items:section.items.map((item,index)=>({...byKind.get(section.kind).items[index],order:item.order}))
+    items:section.items.map((item,index)=>({...byKind.get(section.kind).items[index],order:item.order,
+      ...(item.presentationHighlights === undefined ? {} : {presentationHighlights:structuredClone(item.presentationHighlights)})}))
       .sort((a,b)=>a.order-b.order)
   }))};
 }

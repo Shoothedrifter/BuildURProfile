@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { ProofButton, ProofCard } from "./BuilderChrome";
+import { EntryHighlights } from "./EntryHighlights";
 import type { ItemSupplements, ResumeDraftItem, ResumeDraftSection, ResumeModuleKind } from "../../../../packages/contracts/src/resume-draft";
 
 // 左栏模块核对清单：「确认进度 n / 10」+ 每个模块的 ✓/○ 状态，点击展开对应模块
@@ -80,7 +81,7 @@ export function ModuleCard({ kind, label, section, expanded, onToggleExpand, onV
 }
 
 // 单条经历条目：模块开启即展示，保留低置信度警示、原文对照、内容编辑、补充、排序与删除
-export function EntryCard({ kind, label, item, index, total, canAddFacts, moduleOptions, sourceExcerpt,
+export function EntryCard({ kind, label, item, index, total, visible, canAddFacts, moduleOptions, sourceExcerpt,
   onPatchItem, onPatchFactValue, onIncludeFact, onAddFact, onPatchFactLabel,
   onUploadImage, onRemoveImage, imageUrl, onMoveUp, onMoveDown, onRequestRemove, onMoveTo,
   onSplit, onMerge, onDragStart, onDrop }: {
@@ -89,9 +90,10 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
   item: ResumeDraftItem;
   index: number;
   total: number;
+  visible: boolean;
   canAddFacts: boolean;
   moduleOptions: { kind: ResumeModuleKind; label: string }[];
-  sourceExcerpt?: { page: number; text: string }[];
+  sourceExcerpt?: { blockId: string; page: number; text: string }[];
   onPatchItem: (patch: Partial<ResumeDraftItem>) => void;
   onPatchFactValue: (factKey: string, value: string) => void;
   onIncludeFact: (factKey: string, included: boolean) => void;
@@ -109,7 +111,7 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
   onDragStart?: () => void;
   onDrop?: () => void;
 }) {
-  const lowConfidence = item.needsReview || item.confidence < 0.7 || item.segmentationConfidence < 0.7;
+  const lowConfidence = item.confidence < 0.7 || item.segmentationConfidence < 0.7;
   const customFacts = item.facts.filter((fact) => fact.key.startsWith("custom-"));
   const supplements = item.supplements ?? { text: "", links: [], images: [] };
   const patchSupplements = (patch: Partial<ItemSupplements>) =>
@@ -132,10 +134,11 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     </div>
     {lowConfidence && <p className="proof-entry-warn">⚠ AI 识别置信度较低，请确认内容与分类
       （分类 {Math.round(item.confidence * 100)}% · 拆条 {Math.round(item.segmentationConfidence * 100)}%）</p>}
+    {!lowConfidence && item.needsReview && <p className="proof-entry-warn">请核对条目的内容与分类。</p>}
     {item.needsReview && <ProofButton onClick={() => onPatchItem({ needsReview: false })}>已核对</ProofButton>}
     {!!sourceExcerpt?.length && <div className="proof-entry-source">
       <p className="proof-entry-source-head">原文对照（PDF 摘录）</p>
-      {sourceExcerpt.map((block, blockIndex) => <p key={blockIndex} className="proof-entry-source-text">
+      {sourceExcerpt.map((block, blockIndex) => <p key={block.blockId} className="proof-entry-source-text">
         {/* 相邻摘录同页时页码只标一次，避免逐行重复 */}
         {(blockIndex === 0 || sourceExcerpt[blockIndex - 1].page !== block.page) &&
           <span className="proof-entry-source-page">第 {block.page} 页</span>}{block.text}</p>)}
@@ -163,6 +166,9 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
     {canAddFacts && <ProofButton variant="quiet" onClick={onAddFact}>添加字段</ProofButton>}
     {customFacts.map((fact) => <label key={`${fact.key}-label`} className="proof-field"><span>字段名称</span>
       <input value={fact.label} onChange={(event) => onPatchFactLabel(fact.key, event.target.value)} /></label>)}
+    {(kind === "campusExperience" || kind === "awards" || Boolean(item.presentationHighlights?.length)) && <EntryHighlights kind={kind} item={item}
+      visible={visible} sourceExcerpt={sourceExcerpt}
+      onChange={(presentationHighlights) => onPatchItem({ presentationHighlights })} />}
     <div className="proof-supplement">
       <p className="proof-supplement-head">补充内容</p>
       <label className="proof-field"><span>补充说明</span>
@@ -212,6 +218,9 @@ export function EntryCard({ kind, label, item, index, total, canAddFacts, module
         onChange={(event) => onMoveTo(event.target.value as ResumeModuleKind)}>
         {moduleOptions.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}
       </select></label>
+    {Boolean(item.presentationHighlights?.length) && <p className="proof-microcopy">
+      移动到其他模块后，请按新模块重新核对成果。
+    </p>}
   </article>;
 }
 

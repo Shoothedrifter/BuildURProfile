@@ -97,6 +97,46 @@ test("internal Agent bridge leases a queued v5 template generation", async () =>
   }
 });
 
+test("generation leases leave explicit highlight states for capable workers", async () => {
+  const root = mkdtempSync(join(tmpdir(), "burp-highlights-bridge-"));
+  const db = openDatabase(join(root, "app.sqlite"));
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
+  const generationService = createGenerationService({ db, assetRoot: join(root, "assets"), allowPortraits: false });
+  const { input, expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const content = input.content;
+  for (const section of content.resume.sections) for (const item of section.items) item.supplement.images = [];
+  const award = { kind: "awards", order: 9, items: [{ itemId: "award", order: 0, title: "竞赛",
+    details: "共获竞赛奖项4项", facts: [], supplement: { text: "", links: [], images: [] }, presentationHighlights: [] }] };
+  content.resume.sections.push(award);
+  const newer = generationService.enqueue("owner", {
+    brief: { role: input.role, content, templateId: "cyber-creator-v1" }, idempotencyKey: "highlights"
+  });
+  const older = generationService.enqueue("owner", { brief, idempotencyKey: "legacy-brief" });
+  const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: false,
+    agentToken: token, secret: Buffer.alloc(32, 7) });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const legacyLease = await post(base, "/_internal/agent/lease", { workerId: "legacy" });
+    assert.equal((await legacyLease.json()).id, older.id);
+    assert.equal((await post(base, "/_internal/agent/lease", { workerId: "legacy" })).status, 204);
+    assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(newer.id).attempt_count, 0);
+    const lease = await (await post(base, "/_internal/agent/lease", {
+      workerId: "new", supportsPresentationHighlights: true
+    })).json();
+    assert.equal(lease.id, newer.id);
+    assert.deepEqual(lease.brief.content.resume.sections.at(-1).items[0].presentationHighlights, []);
+    const completed = await post(base, `/_internal/agent/tasks/${newer.id}/complete`, {
+      leaseToken: lease.leaseToken, config: { ...expected.config, templateId: "cyber-creator-v1", content: lease.brief.content }
+    });
+    assert.equal(completed.status, 200);
+    assert.deepEqual(generationService.getTask("owner", newer.id).config.content.resume.sections.at(-1).items[0].presentationHighlights, []);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    db.close(); rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("internal Agent bridge streams only leased portrait and fences output and recipe", async () => {
   const root = mkdtempSync(join(tmpdir(), "burp-agent-bridge-photo-"));
   const reference = join(root, "reference.png");

@@ -80,10 +80,11 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
     if (typeof input?.workerId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(input.workerId)) {
       throw new ServiceError(400, "worker ID 无效。");
     }
-    let task = service.leaseNext();
+    const capabilities = { supportsPresentationHighlights: input.supportsPresentationHighlights === true };
+    let task = service.leaseNext(capabilities);
     for (let skipped = 0; task && !SUPPORTED_GENERATION_WORKFLOWS.has(task.workflow_version) && skipped < 20; skipped++) {
       service.fail(task.id, "生成规则已更新，请重新提交作品。", { leaseToken: task.lease_token, retryable: false });
-      task = service.leaseNext();
+      task = service.leaseNext(capabilities);
     }
     if (task && !SUPPORTED_GENERATION_WORKFLOWS.has(task.workflow_version)) {
       service.fail(task.id, "生成规则已更新，请重新提交作品。", { leaseToken: task.lease_token, retryable: false });

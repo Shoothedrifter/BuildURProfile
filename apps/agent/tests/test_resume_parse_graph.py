@@ -90,35 +90,65 @@ async def test_resume_graph_uses_browser_anchors_and_persists_only_metadata():
 
 
 @pytest.mark.asyncio
-async def test_worker_completes_resume_draft():
-    task = ResumeParseTask("task-2", "lease-2", "resume-parse-v2", "resume-2", "file-2", 1,
-                           "2026-11-09T00:00:00Z", "2026-12-09T00:00:00Z")
+@pytest.mark.parametrize("version, managed", [("resume-parse-v2", False), ("resume-parse-v4", True)])
+async def test_worker_completes_resume_draft(version, managed):
+    task = ResumeParseTask.from_json({
+        "id": "task-2", "leaseToken": "lease-2", "workflowVersion": version, "resumeId": "resume-2",
+        "fileId": "file-2", "pageCount": 1, "uploadedAt": "2026-11-09T00:00:00Z",
+        "expiresAt": "2026-12-09T00:00:00Z",
+    })
     client = FakeClient(pdf_at((20, 200, "Jane Doe jane@example.com"),
                                (20, 180, "Campus Student Union")))
     await process_resume_task(task, client, FakeModel(), default_registry(), MemorySaver())
     assert client.completed[1]["resumeId"] == "resume-2"
+    campus = next(s for s in client.completed[1]["sections"] if s["kind"] == "campusExperience")
+    assert ("presentationHighlights" in campus["items"][0]) is managed
+    if managed:
+        assert campus["items"][0]["presentationHighlights"] == []
     assert client.failed is None
 
 
+@pytest.mark.parametrize("version, managed", [("resume-parse-v3", False), ("resume-parse-v5", True)])
+def test_ocr_graph_version_validates_page_list(version, managed):
+    payload = {
+        "id": "task-ocr", "leaseToken": "lease-ocr", "workflowVersion": version, "resumeId": "resume-ocr",
+        "fileId": "file-ocr", "pageCount": 1, "uploadedAt": "2026-11-09T00:00:00Z",
+        "expiresAt": "2026-12-09T00:00:00Z", "ocrPages": [1],
+    }
+    assert ResumeParseTask.from_json(payload).ocr_pages == [1]
+    with pytest.raises(ValueError, match="OCR page"):
+        ResumeParseTask.from_json({**payload, "ocrPages": [2]})
+    if managed:
+        with pytest.raises(ValueError, match="OCR page"):
+            ResumeParseTask.from_json({**payload, "ocrPages": []})
+
+
 @pytest.mark.asyncio
-async def test_ocr_graph_keeps_private_text_out_of_checkpoint_and_marks_review(monkeypatch):
+@pytest.mark.parametrize("version, managed", [("resume-parse-v3", False), ("resume-parse-v5", True)])
+async def test_ocr_graph_keeps_private_text_out_of_checkpoint_and_marks_review(monkeypatch, version, managed):
     tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
-           "5\t1\t1\t1\t1\t1\t20\t30\t100\t18\t55\tJane Doe jane@example.com\n")
+           "5\t1\t1\t1\t1\t1\t20\t30\t100\t18\t55\tJane Doe jane@example.com\n"
+           "5\t1\t1\t2\t1\t1\t20\t50\t100\t18\t95\t共获学科竞赛奖项60项\n"
+           "5\t1\t1\t2\t2\t1\t20\t70\t100\t18\t55\t国家级竞赛18项\n")
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: SimpleNamespace(
         returncode=0, stdout=tsv.encode(), stderr=b""))
 
     class OcrClient(FakeClient):
         async def resume_plan(self, task, pages=None):
-            assert pages == ["Jane Doe jane@example.com"]
+            assert pages == ["Jane Doe jane@example.com\n共获学科竞赛奖项60项\n国家级竞赛18项"]
             return {"version": "resume-parse-plan-v1", "anchors": [
-                {"anchorId": "a0", "kind": "basicInfo", "page": 1, "text": pages[0]}]}
+                {"anchorId": "a0", "kind": "basicInfo", "page": 1, "text": "Jane Doe jane@example.com"},
+                {"anchorId": "a1", "kind": "awards", "page": 1,
+                 "text": "共获学科竞赛奖项60项\n国家级竞赛18项"}]}
 
     class OcrModel:
         async def generate_json(self, name, schema, prompt):
             return {"items": [{"anchorId": "a0", "kind": "basicInfo",
-                "title": "Jane Doe", "details": "jane@example.com", "confidence": .9}]}
+                "title": "Jane Doe", "details": "jane@example.com", "confidence": .9},
+                {"anchorId": "a1", "kind": "awards", "title": "竞赛", "details": "获奖经历",
+                 "confidence": .9}]}
 
-    task = ResumeParseTask("task-ocr", "lease-ocr", "resume-parse-v3", "resume-ocr", "file-ocr", 1,
+    task = ResumeParseTask("task-ocr", "lease-ocr", version, "resume-ocr", "file-ocr", 1,
                            "2026-11-09T00:00:00Z", "2026-12-09T00:00:00Z", [1])
     client = OcrClient(pdf_pages([[]]))
     saver = MemorySaver()
@@ -128,7 +158,14 @@ async def test_ocr_graph_keeps_private_text_out_of_checkpoint_and_marks_review(m
     assert source["version"] == "resume-source-v2"
     assert source["blocks"][0]["sourceType"] == "ocr"
     assert draft["sections"][0]["items"][0]["needsReview"] is True
+    award = next(s for s in draft["sections"] if s["kind"] == "awards")["items"][0]
+    assert ("presentationHighlights" in award) is managed
+    if managed:
+        assert [(h["type"], h["value"]) for h in award["presentationHighlights"]] == [
+            ("award-total", "60"),
+        ]
     assert "Jane Doe" not in str(saver.storage)
+    assert "共获学科竞赛奖项60项" not in str(saver.storage)
 
 
 @pytest.mark.asyncio

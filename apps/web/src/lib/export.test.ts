@@ -151,6 +151,44 @@ it("exports visible campus evidence and excludes hidden awards", async () => {
   }
 });
 
+it("renders equivalent legacy award counts offline and respects an explicit empty highlight list", async () => {
+  const { buildStaticHtml } = await import("../server/export.mjs");
+  const { default: golden } = await import("../../../../packages/contracts/fixtures/agent-golden.v3.json");
+  const base = golden.expected.config;
+  const expected = ["60项", "18项", "33项", "9项"];
+  const inputs = [
+    { details: "共获学科竞赛奖项60项，其中国家级18项，省级33项，国际级9项", expected },
+    { details: "共获学科竞赛 60 项\n国家级竞赛 18 项，省级竞赛 33 项，国际级竞赛 9 项", expected },
+    { details: "共获学科竞赛奖项60项，其中国家级18项，省级33项，国际级9项",
+      expected: [], presentationHighlights: [] },
+    { details: "竞赛成绩见原文", expected: ["60项"],
+      presentationHighlights: [{ id: "total", type: "award-total", label: "学科竞赛奖项", value: "60", unit: "项" }] }
+  ];
+  for (const input of inputs) {
+    const config = { ...base, templateId: "cyber-creator-v1", content: { ...base.content,
+      resume: { ...base.content.resume, sections: [...base.content.resume.sections,
+        { kind: "awards", order: 9, items: [{
+          itemId: "award-one", order: 0, title: "获奖情况", details: input.details,
+          sourceText: "已确认可公开的奖项原文", facts: [], supplement: { text: "", links: [], images: [] },
+          ...(input.presentationHighlights === undefined ? {} : { presentationHighlights: input.presentationHighlights })
+        }] }]
+      }
+    }};
+    const html = buildStaticHtml(config, undefined, undefined, () => ({ mime: "image/png", bytes: Buffer.from([1, 2, 3]) }));
+    const page = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true });
+    try {
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const award = page.window.document.querySelector("#awards");
+      expect([...award!.querySelectorAll(".cyber-optional-highlights dd")].map(element => element.textContent))
+        .toEqual(input.expected);
+      expect(award?.querySelector("details")?.textContent).toContain("已确认可公开的奖项原文");
+      expect(award).toHaveTextContent(input.details.replace(/\s+/g, " "));
+    } finally {
+      page.window.close();
+    }
+  }
+});
+
 it('embeds the cyber creator default portrait into offline HTML', async () => {
   const {buildStaticHtml}=await import('../server/export.mjs');
   const fixture=await import('../../../../packages/contracts/fixtures/agent-golden.v3.json');

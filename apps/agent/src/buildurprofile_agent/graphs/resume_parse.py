@@ -16,11 +16,12 @@ from buildurprofile_agent.skills.anchored_formatter import align_anchors, make_a
 from buildurprofile_agent.skills.pdf_layout import extract_pdf_source
 from buildurprofile_agent.skills.ocr import ocr_pdf_pages
 from buildurprofile_agent.skills.registry import SkillRegistry, default_registry
-from buildurprofile_agent.transport.node_api import CancelRequested, ResumeParseTask
+from buildurprofile_agent.transport.node_api import (
+    CancelRequested, HIGHLIGHT_RESUME_WORKFLOWS, OCR_RESUME_WORKFLOWS,
+    RESUME_WORKFLOWS, ResumeParseTask,
+)
 
 
-WORKFLOW_VERSION = "resume-parse-v2"
-OCR_WORKFLOW_VERSION = "resume-parse-v3"
 NODES = ("validate_source", "extract_layout", "classify_sections", "map_design_modules",
          "format_items", "verify_evidence", "complete_draft")
 
@@ -46,6 +47,7 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
     registry = registry or default_registry()
     run = ResumeParseRun()
     private: dict[str, Any] = {}
+    uses_ocr = task.workflow_version in OCR_RESUME_WORKFLOWS
 
     async def progress(stage: str, count: int) -> dict:
         status = await client.heartbeat_resume(task, stage=stage, progress=count)
@@ -57,7 +59,7 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
         if (state["task_id"] != task.id or state["file_id"] != task.file_id
                 or state["resume_id"] != task.resume_id
                 or state["workflow_version"] != task.workflow_version
-                or task.workflow_version not in {WORKFLOW_VERSION, OCR_WORKFLOW_VERSION}):
+                or task.workflow_version not in RESUME_WORKFLOWS):
             raise ValueError("SKILL_VERSION_MISMATCH")
         await progress("validate_source", 5)
         private["pdf"] = await client.resume_source(task)
@@ -67,7 +69,7 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
 
     async def extract_layout(_: ResumeParseState) -> dict:
         pdf = private.pop("pdf")
-        if task.workflow_version == OCR_WORKFLOW_VERSION:
+        if uses_ocr:
             await progress("ocr_pages", 12)
             run.source = await asyncio.to_thread(ocr_pdf_pages, pdf, task.ocr_pages,
                 file_id=task.file_id, uploaded_at=task.uploaded_at, expires_at=task.expires_at)
@@ -76,7 +78,7 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
                 uploaded_at=task.uploaded_at, expires_at=task.expires_at)
         if run.source.pageCount != task.page_count:
             raise ValueError("PARSE_FAILED: PDF page count mismatch")
-        if task.workflow_version == OCR_WORKFLOW_VERSION:
+        if uses_ocr:
             pages = ["\n".join(block.text for block in run.source.blocks if block.page == page)
                      for page in range(1, run.source.pageCount + 1)]
             private["plan"] = await client.resume_plan(task, pages)
@@ -94,7 +96,7 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
         return await progress("map_design_modules", 50)
 
     async def format_items(_: ResumeParseState) -> dict:
-        skill_id = "resume.format.v2" if task.workflow_version == OCR_WORKFLOW_VERSION else "resume.format.v1"
+        skill_id = "resume.format.v2" if uses_ocr else "resume.format.v1"
         descriptor = registry.describe(skill_id)
         private["formatted"] = await registry.run(skill_id, {"source": run.source,
             "anchors": private["anchors"]}, grants={"text_model": model},
@@ -103,7 +105,8 @@ def build_resume_parse_graph(task: ResumeParseTask, client: Any, model: Any,
 
     async def verify_evidence(_: ResumeParseState) -> dict:
         run.draft = make_anchored_draft(run.source, task.resume_id, private.pop("anchors"),
-                                        private.pop("formatted"))
+                                        private.pop("formatted"),
+                                        include_highlights=task.workflow_version in HIGHLIGHT_RESUME_WORKFLOWS)
         validate_resume_draft(run.draft, run.source)
         return await progress("verify_evidence", 90)
 

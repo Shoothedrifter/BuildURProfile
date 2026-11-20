@@ -42,6 +42,80 @@ def v2_source(*pages: list[dict]) -> dict:
             "pageCount": len(pages), "blocks": blocks}
 
 
+@pytest.mark.parametrize("award_lines", [
+    ["共获学科竞赛 60 项", "国家级竞赛 18 项，省级竞赛 33 项，国际级竞赛 9 项"],
+    ["共获学科竞赛奖项60项（其中国家级18项、省级33项、国际级9项）"],
+    ["共获学科竞赛60项。", "包括：国家级18项，省级33项，国际级9项。"],
+    ["共获学科竞赛60项：国家级竞赛18项，省级竞赛33项，国际级竞赛9项。"],
+])
+def test_highlight_candidates_use_only_anchored_source_and_preserve_legacy_drafts(award_lines):
+    lines = [*award_lines,
+        "国家级竞赛 2 项", "成果：平台粉丝增长２５％，互动量增长40.0%",
+        "预计收藏量增长15%", "粉丝增长30%", "报名人数降低了-12.0%，转发量提升+10%",
+    ]
+    split = len(award_lines)
+    raw = source(*lines)
+    plan = {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "awards", "page": 1, "text": "\n".join(award_lines)},
+        {"anchorId": "a1", "kind": "awards", "page": 1, "text": lines[split]},
+        {"anchorId": "a2", "kind": "campusExperience", "page": 1, "text": "\n".join(lines[split + 1:])},
+    ]}
+    anchors = align_anchors(raw, plan)
+    formatted = [{"anchorId": anchor["anchorId"], "kind": anchor["kind"],
+                  "title": "摘要", "details": "同一来源", "confidence": .95} for anchor in anchors]
+
+    def items(draft, kind):
+        return next(section["items"] for section in draft["sections"] if section["kind"] == kind)
+
+    def build(formatted_items, **kwargs):
+        return make_anchored_draft(raw, "resume-1", anchors, formatted_items,
+                                   **kwargs).model_dump(exclude_none=True)
+
+    first = build(formatted, include_highlights=True)
+    second = build([{**item, "details": "另一种措辞和换行\n"} for item in formatted],
+                   include_highlights=True)
+    expected = [
+        ("award-total", "学科竞赛奖项", "60", "项", "p1_b0"),
+        ("award-tier", "国家级", "18", "项", f"p1_b{split - 1}"),
+        ("award-tier", "省级", "33", "项", f"p1_b{split - 1}"),
+        ("award-tier", "国际级", "9", "项", f"p1_b{split - 1}"),
+    ]
+    for draft in (first, second):
+        award, isolated = items(draft, "awards")
+        actual = award["presentationHighlights"]
+        assert [(h["type"], h["label"], h["value"], h["unit"], h["sourceBlockId"])
+                for h in actual] == expected
+        assert all(h["selected"] is False and h["origin"] == "source" for h in actual)
+        assert isolated["presentationHighlights"] == []
+        campus = items(draft, "campusExperience")[0]["presentationHighlights"]
+        assert [(h["label"], h["value"], h["unit"], h["sourceBlockId"]) for h in campus] == [
+            ("互动量增长", "40", "%", f"p1_b{split + 1}"),
+            ("报名人数降低", "-12", "%", f"p1_b{split + 4}"),
+            ("转发量提升", "10", "%", f"p1_b{split + 4}"),
+        ]
+    assert "presentationHighlights" not in items(build(formatted), "awards")[0]
+
+
+def test_optional_highlight_error_keeps_item_source_and_formatted_details(monkeypatch):
+    from buildurprofile_agent.skills import anchored_formatter
+
+    def fail(*args):
+        raise ValueError("synthetic extractor failure")
+
+    monkeypatch.setattr(anchored_formatter, "extract_presentation_highlights", fail)
+    raw = source("共获学科竞赛奖项60项")
+    anchors = align_anchors(raw, {"version": "resume-parse-plan-v1", "anchors": [
+        {"anchorId": "a0", "kind": "awards", "page": 1, "text": "共获学科竞赛奖项60项"},
+    ]})
+    draft = make_anchored_draft(raw, "resume-1", anchors, [
+        {"anchorId": "a0", "kind": "awards", "title": "竞赛经历", "details": "奖项汇总", "confidence": .95},
+    ], include_highlights=True)
+    item = next(section.items[0] for section in draft.sections if section.kind == "awards")
+    assert item.presentationHighlights == []
+    assert item.sourceText == "共获学科竞赛奖项60项"
+    assert item.details == "奖项汇总"
+
+
 def test_browser_anchor_without_pdfplumber_evidence_cannot_disappear_silently():
     raw = source("项目甲", "完成模型训练")
     plan = {"version": "resume-parse-plan-v1", "anchors": [

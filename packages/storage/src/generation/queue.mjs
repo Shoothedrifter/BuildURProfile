@@ -76,13 +76,19 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, (brief?.templateId || config?.templateId) ? "python-agent-v6" : (brief?.content?.resume?.version === "resume-v3" || config?.content?.resume?.version === "resume-v3") ? "python-agent-v4" : (brief?.content?.resume?.version === "resume-v2" || config?.content?.resume?.version === "resume-v2") ? "python-agent-v3" : WORKFLOW_VERSION, time, time);
     return getTask(sessionId, id);
   }
-  function leaseNext() {
+  function leaseNext({ supportsPresentationHighlights = true } = {}) {
     for (let scanned = 0; scanned < 20; scanned++) {
       const time = now();
       db.prepare("UPDATE generations SET status='CANCELLED',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status='RUNNING' AND cancel_requested_at IS NOT NULL AND lease_until<=?")
         .run(time, time);
-      const row = db.prepare("SELECT * FROM generations WHERE (status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?) ORDER BY created_at LIMIT 1")
-        .get(time, time);
+      // Older Agents cannot decode even an explicit empty array. Leave those tasks queued for a capable worker.
+      const row = db.prepare(`SELECT * FROM generations
+        WHERE ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))
+          AND (? OR NOT EXISTS (
+            SELECT 1 FROM json_tree(COALESCE(brief_json, config_json, '{}'), '$.content.resume.sections')
+            WHERE key='presentationHighlights'
+          ))
+        ORDER BY created_at LIMIT 1`).get(time, time, Number(supportsPresentationHighlights));
       if (!row) return null;
       if (row.attempt_count >= maxAttempts) {
         db.prepare("UPDATE generations SET status='FAILED',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))")
