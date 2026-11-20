@@ -46,6 +46,23 @@ it("keeps the hero stage at an integer multiple of the 384px portrait source", (
   expect(stage).toMatch(/width:\s*min\(100%,\s*24rem\)/);
 });
 
+// 像素画布纪律（对标 jld2nd.dev）：纯实心黑画布 + 真实方块装饰。
+// 任何 gradient（CRT 扫描线、repeating 线网格、mask 渐隐）都会把「方块像素」
+// 退化成「纹理」，这是横线状背景的根因，禁止再次引入。
+it("keeps the pixel canvas free of gradients", () => {
+  const blocks = cssSource.match(/\.pixel-[\w-]+[^{}]*\{[^}]*\}/g) ?? [];
+  const offenders = blocks.filter(block => block.includes("gradient("));
+  expect(offenders).toEqual([]);
+});
+
+// 画布必须是中性黑（jld2nd 同款 #121212）；蓝黑底色会让暗部发蓝灰，
+// 削弱「纯黑画布」的观感。面板与边框令牌同样走中性灰黑。
+it("uses a neutral black canvas", () => {
+  expect(cssSource).toMatch(/--pixel-page:\s*#121212/);
+  expect(cssSource).toMatch(/--pixel-panel:\s*#1a1a1c/);
+  expect(cssSource).toMatch(/--pixel-border:\s*#3d3d44/);
+});
+
 it("keeps the legacy entry selector spaced and limits right alignment to Agent tools", () => {
   document.body.innerHTML = `
     <div class="proof-entry-top" data-testid="legacy-entry">

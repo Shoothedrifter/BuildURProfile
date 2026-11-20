@@ -2101,12 +2101,12 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-fact-private { align-self: center; color: var(--proof-muted); font-size: 12px; }
 
 .pixel-world {
-  --pixel-page: #11151d;
-  --pixel-panel: #171d28;
+  --pixel-page: #121212;
+  --pixel-panel: #1a1a1c;
   --pixel-text: #fff3df;
-  --pixel-muted: #b9c3d2;
+  --pixel-muted: #b6bcc3;
   --pixel-accent: #ffd166;
-  --pixel-border: #465063;
+  --pixel-border: #3d3d44;
   --pixel-shadow: #5a410d;
   --pixel-gutter: clamp(1.25rem, 7cqi, 8rem);
   --pixel-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
@@ -2119,16 +2119,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   color-scheme: dark;
   position: relative;
-}
-
-/* CRT 扫描线氛围层：极淡、零交互成本，随页面滚动固定 */
-.pixel-world::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 4;
-  pointer-events: none;
-  background: repeating-linear-gradient(0deg, transparent 0 2px, #ffffff0d 2px 3px);
 }
 
 /* 像素字体标签层：固定 UI 文案与姓名走 FusionPixel 子集，正文保持现代无衬线。
@@ -2328,15 +2318,31 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   background: var(--pixel-accent);
   animation: pixel-blink 1.1s steps(2, jump-none) infinite;
 }
+/* 舞台地台：不用线网格（纹理会让像素退化），只用边线框出地平线，
+   再以两个 12px 实心方块做散点装饰——对标 jld2nd 的「真实方块」语汇。 */
 .pixel-stage-grid {
   position: absolute;
   inset: 15% 7% 3%;
   z-index: -1;
-  border-inline: 1px solid #46506355;
+  border-inline: 1px solid var(--pixel-border);
   border-bottom: 1px solid var(--pixel-border);
-  background: repeating-linear-gradient(90deg, transparent 0 30px, #46506355 30px 32px),
-    repeating-linear-gradient(0deg, transparent 0 30px, #46506355 30px 32px);
-  mask-image: linear-gradient(transparent, #000 33%);
+}
+.pixel-stage-grid::before,
+.pixel-stage-grid::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+}
+.pixel-stage-grid::before {
+  left: 12px;
+  bottom: 12px;
+  background: var(--pixel-accent);
+}
+.pixel-stage-grid::after {
+  right: 24px;
+  top: 24px;
+  background: var(--pixel-border);
 }
 .pixel-portrait {
   display: block;

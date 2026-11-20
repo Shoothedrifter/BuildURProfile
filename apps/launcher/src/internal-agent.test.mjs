@@ -195,7 +195,7 @@ test("Pixel World uses the existing leased recipe and asset endpoints", async (t
     assert.equal((await fetch(`${path}/recipe`, { headers: { authorization: headers.authorization } })).status, 409);
     const recipe = await (await fetch(`${path}/recipe`, { headers })).json();
     assert.equal(recipe.id, "pixel-halfbody-v1");
-    assert.equal(recipe.version, "1.0.0");
+    assert.equal(recipe.version, "1.1.0");
     assert.equal(recipe.referenceImages.length, 1);
     assert.match(recipe.referenceImages[0].dataBase64, /^iVBOR/);
     const output = await fetch(`${path}/output`, { method: "POST", headers: { ...headers, "content-type": "image/png" }, body: png });

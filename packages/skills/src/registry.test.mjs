@@ -120,7 +120,7 @@ test("Wibi adapter verifies pinned manifest and resources and exposes license", 
 
 test("Pixel World loads only the hash-pinned original style reference", t => {
   const recipe = loadPixelAvatarRecipe("pixel-halfbody-v1");
-  assert.equal(recipe.version, "1.0.0");
+  assert.equal(recipe.version, "1.1.0");
   assert.equal(recipe.referencePaths.length, 1);
   const root = mkdtempSync(join(tmpdir(), "pixel-reference-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

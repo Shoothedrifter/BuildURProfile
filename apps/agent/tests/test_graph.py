@@ -259,7 +259,7 @@ async def test_v7_pixel_avatar_uses_leased_capabilities_and_reuses_output():
 
     class PixelClient(FakeClient):
         async def recipe(self, task):
-            return {"id": "pixel-halfbody-v1", "version": "1.0.0",
+            return {"id": "pixel-halfbody-v1", "version": "1.1.0",
                     "license": "LicenseRef-BuildURProfile-Original-Preview-1.0",
                     "instructions": "square pixel bust", "referenceImages": ["pinned-reference"]}
 
@@ -282,7 +282,7 @@ async def test_v7_pixel_avatar_drops_output_when_cancelled_while_the_provider_ru
 
     class PixelClient(FakeClient):
         async def recipe(self, task):
-            return {"id": task.style_id, "version": "1.0.0",
+            return {"id": task.style_id, "version": "1.1.0",
                     "license": "LicenseRef-BuildURProfile-Original-Preview-1.0", "referenceImages": ["reference"]}
 
     class CancellingProvider(FakeProvider):

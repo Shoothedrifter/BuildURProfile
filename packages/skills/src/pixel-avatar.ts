@@ -19,10 +19,10 @@ export function loadPixelAvatarRecipe(id: string, root = resourceRoot()) {
     throw new Error("像素肖像参考图校验失败。");
   }
   return {
-    id, version: "1.0.0", manifestVersion: "1",
+    id, version: "1.1.0", manifestVersion: "1",
     license: "LicenseRef-BuildURProfile-Original-Preview-1.0", attribution: "BuildURProfile 原创像素角色",
     localSummary: "限定色板、方形硬边像素网格，单人头肩及上胸，轮廓清晰。",
-    instructions: "Draw the person in image 0 as one centered original pixel-art bust. Copy the skin tone, hairstyle, and visible accessories from image 0 only. For bare eyes in image 0, draw bare eyes and keep the nose bridge clear. Only draw glasses when glasses are visible in image 0. Do not add frames, headset, jewelry or other accessories to a bare face. Image 1 is only for the size of pixel clusters and hard-edged shading. Draw head, shoulders and upper chest with a clear silhouette and two or three flat shade levels. Use exact solid #F000A8 for the entire background, without gradients, noise, shadow, border, props or text. Keep the head fully inside the square and the person centered.",
+    instructions: "Draw the person in image 0 as one centered original pixel-art bust. Copy the skin tone, hairstyle, and visible accessories from image 0 only. For bare eyes in image 0, draw bare eyes and keep the nose bridge clear. Only draw glasses when glasses are visible in image 0. Do not add frames, headset, jewelry or other accessories to a bare face. Image 1 is only for the size of pixel clusters and hard-edged shading. Draw head, shoulders and upper chest with a clear silhouette and two or three flat shade levels. Use a limited palette of roughly ten colors with flat fills only: crisp hard pixel edges, no gradients, no anti-aliasing, no soft shading or noise. Use exact solid #F000A8 for the entire background, without gradients, noise, shadow, border, props or text. Keep the head fully inside the square and the person centered.",
     referencePaths: [path]
   };
 }

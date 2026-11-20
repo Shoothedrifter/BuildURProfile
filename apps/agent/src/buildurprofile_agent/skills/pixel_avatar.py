@@ -4,18 +4,35 @@ from collections import deque
 from colorsys import rgb_to_hsv
 import io
 
-from PIL import Image
+from PIL import Image, ImageEnhance
 
 from ..providers.base import GeneratedImage, ImageProviderError
 
 STYLE_ID = "pixel-halfbody-v1"
-RECIPE_VERSION = "1.0.0"
+RECIPE_VERSION = "1.1.0"
 RECIPE_LICENSE = "LicenseRef-BuildURProfile-Original-Preview-1.0"
 SOURCE_BYTES_LIMIT = 10 * 1024 * 1024
 MASTER_EDGE = 64
 OUTPUT_EDGE = 512
 MATTE = (240, 0, 168)
 NEIGHBORS = ((-1, 0), (1, 0), (0, -1), (0, 1))
+# 混合色板（对标 jld2nd 角色画的平涂纪律）：
+# - 中性色固定 5 级（黑到白），灰阶不因彩色聚类偏色；
+# - 彩色自适应 8 色，每张照片保留本人发色/肤色/服装主色；
+# - 先提饱和再量化：照片的灰蒙连续调压平后仍靠色块对比立形。
+NEUTRAL_PALETTE = ((16, 16, 16), (64, 64, 64), (128, 128, 128), (196, 196, 196), (244, 244, 244))
+PALETTE_COLORS = 8
+SATURATION_BOOST = 1.35
+
+
+def _quantize_flat(image: Image.Image) -> Image.Image:
+    boosted = ImageEnhance.Color(image).enhance(SATURATION_BOOST)
+    colorful = boosted.quantize(colors=PALETTE_COLORS, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    palette = [channel for index in range(PALETTE_COLORS) for channel in colorful.getpalette()[index * 3:index * 3 + 3]]
+    palette.extend(channel for color in NEUTRAL_PALETTE for channel in color)
+    swatch = Image.new("P", (1, 1))
+    swatch.putpalette(palette)
+    return boosted.quantize(palette=swatch, dither=Image.Dither.NONE)
 
 
 def _is_magenta(color: tuple[int, int, int]) -> bool:
@@ -86,7 +103,7 @@ def normalize_pixel_avatar(image: GeneratedImage) -> GeneratedImage:
         alpha = _background_mask(master)
         if alpha is not None:
             master = _remove_matte_spill(master, alpha)
-        image = master.quantize(colors=32, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).convert("RGB")
+        image = _quantize_flat(master).convert("RGB")
         if alpha is not None:
             image.putalpha(alpha)
         encoded = io.BytesIO()
