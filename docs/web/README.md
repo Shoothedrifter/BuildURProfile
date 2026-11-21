@@ -25,7 +25,7 @@ PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块�
 | `src/App.tsx` | 页面阶段、字段确认、异步任务与支付返回后的动作恢复 |
 | `src/components/BuilderExperience.tsx`、`BuilderChrome.tsx` | 六屏制作流程、暖色描边导航、进度、资料模块和交付状态 |
 | `src/styles.css` | 首页、制作流程、作品展示及兼容页面的容器宽度、栅格和响应式断点 |
-| `src/ShowcasePage.tsx`、`src/components/CyberCreatorPage.tsx`、`src/components/PixelWorldPage.tsx` | 按显式模板标识分流的作品页、旧骨架、跑马灯、堆叠卡片和编辑面板 |
+| `src/ShowcasePage.tsx`、`src/components/CyberCreatorPage.tsx`、`src/components/PixelWorldPage.tsx`、`src/components/PixelWorldProjects.tsx`、`src/components/PixelAvatarEditor.tsx` | 按显式模板标识分流的作品页、旧骨架、跑马灯、堆叠卡片、像素世界章节与作品档案/详情、本机像素头像候选编辑 |
 | `src/lib/pdf.ts`、`src/lib/resume.ts` | 本地 PDF 提取与规则解析 |
 | `src/lib/*Api.ts` | 带会话与 CSRF 的同源服务端请求 |
 | `src/lib/presentation.ts`、`src/lib/resumePresentation.ts` | 项目、技能和经历的保守展示规则 |
@@ -62,6 +62,6 @@ npm run build
 
 头像风格由网站模板决定。赛博科技使用「低清晰印刷感动漫」，像素世界风在生成基础作品后允许本机作者另建像素头像候选。前端只在作者点击生成时上传照片，服务端按模板选择配方。选中的像素头像只进入当前预览，刷新、分享和导出均使用默认角色。旧复古扁平配方仅供历史任务兼容读取。
 
-新流程生成只提交已保存的 `resumeId/revision`、角色和 `templateId`，服务端重新投影。`resume-v3.sections` 按用户确认的模块和条目顺序进入预览、项目编辑、分享和导出。赛博科技项目使用独立拼贴卡片，像素世界风使用连续滚动章节、整行作品档案和项目详情窗口，其他模板使用 StackedCards。像素世界风首屏可直达作品，详情保留已确认的项目正文、媒体和作者命名的链接。分享地址保留 `#share=<token>` 并使用查询参数定位项目，单文件 HTML 使用片段定位。正文保留换行，补充信息跟随原条目。草稿编辑 800 毫秒后串行自动保存，可恢复最近 10 版。无肖像生成成功会在「我的项目」出现未付款草稿。 [Pixel World 作品集架构](pixel-world-architecture.md)
+新流程生成只提交已保存的 `resumeId/revision`、角色和 `templateId`，服务端重新投影。`resume-v3.sections` 按用户确认的模块和条目顺序进入预览、项目编辑、分享和导出。赛博科技项目使用独立拼贴卡片，像素世界风使用连续滚动章节、整行作品档案和项目详情窗口，其他模板使用 StackedCards。像素世界风首屏可直达作品，详情保留已确认的项目正文、媒体和作者命名的链接。分享地址保留 `#share=<token>` 并使用查询参数定位项目，单文件 HTML 使用片段定位。正文保留换行，补充信息跟随原条目。像素世界风的章节与文件标签使用 Fusion Pixel 12px 中文等宽字体（OFL 许可，随仓库分发，完整字体不进公开目录）：页面经 `/api/pixel-font` 按需子集化 woff2，单文件导出内嵌 data URI 子集。草稿编辑 800 毫秒后串行自动保存，可恢复最近 10 版。无肖像生成成功会在「我的项目」出现未付款草稿。 [Pixel World 作品集架构](pixel-world-architecture.md)
 
 私有原件到期后，已有项目图片继续通过独立作品资产读取。图片权限及保留规则见[架构与协议](../shared/architecture.md#简历图片与作品资产)。旧 `resume-v1` 项目继续使用兼容展示和编辑路径。

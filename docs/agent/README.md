@@ -45,7 +45,7 @@ Cloudflare 适配器使用 `@cf/black-forest-labs/flux-2-klein-4b`，经 `httpx`
 
 运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 资源到私有 `data/wibi-style-pinned/`。赛博科技固定使用「低清晰印刷感动漫」，采用极近景构图。旧版「复古扁平动画头」配方仅供已入队任务兼容读取。Node 校验资源哈希后，通过有效租约把配方交给 Python。
 
-像素世界风使用 `python-agent-v7`。基础作品先由 `design.template.v2`、`resume.compose.v5` 和 `artifact.qa.v4` 生成。可选肖像任务由 `avatar.pixel.v1` 处理，使用固定版本 `pixel-halfbody-v1` 与仓库自有参考图，即使其他模板配置 OpenAI 也使用 Cloudflare。Pillow 将结果量化到 64 像素母版再整数倍放大。二值透明边缘通过校验时直接输出透明 PNG，否则保留带底色角色卡。整个流程只调用图像编辑模型。
+像素世界风使用 `python-agent-v7`。基础作品先由 `design.template.v2`、`resume.compose.v5` 和 `artifact.qa.v4` 生成。可选肖像任务由 `avatar.pixel.v1` 处理，使用固定配方 `pixel-halfbody-v1` 与仓库自有参考图，即使其他模板配置 OpenAI 也使用 Cloudflare。Pillow 将成图缩到 32 像素母版，提饱和后映射到实测自 jld2nd.dev 的固定 14 色色板（无灰阶、无抖动平涂，暗部用深棕红替代灰），再整数倍放大为 512 输出。二值透明边缘通过校验时直接输出透明 PNG，否则保留带底色角色卡。整个流程只调用图像编辑模型。
 
 照片字节和供应商密钥不进入图状态或 checkpoint；供应商失败应明确报错，不伪造成功成图。超时、取消与有限重试规则见[架构与协议](../shared/architecture.md)。
 
