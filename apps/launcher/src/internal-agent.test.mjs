@@ -152,7 +152,10 @@ test("Pixel World workers lease only their advertised avatar versions", async t 
   const config = { ...expected.config, templateId: "pixel-world-v1" };
   for (const section of config.content.resume.sections) for (const item of section.items) item.supplement.images = [];
   const photo = service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
+  const currentAvatar = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "current" });
+  now++;
   const detailedAvatar = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "detailed" });
+  db.prepare("UPDATE generations SET workflow_version='python-agent-v9' WHERE id=?").run(detailedAvatar.id);
   now++;
   const layeredAvatar = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "layered" });
   db.prepare("UPDATE generations SET workflow_version='python-agent-v8' WHERE id=?").run(layeredAvatar.id);
@@ -178,8 +181,19 @@ test("Pixel World workers lease only their advertised avatar versions", async t 
   const detailedLease = await (await request("lease", { ...worker, supportsPixelDetailedAvatar: true })).json();
   assert.equal(detailedLease.id, detailedAvatar.id);
   assert.equal(detailedLease.workflowVersion, "python-agent-v9");
+  const olderWorker = { ...worker, supportsPixelLayerAvatar: true, supportsPixelDetailedAvatar: true };
+  assert.equal((await request("lease", olderWorker)).status, 204);
+  assert.equal((await request("lease", { ...olderWorker, supportsPixelLayeredHairAvatar: "true" })).status, 204);
+  assert.equal((await request("lease", { workerId: worker.workerId, supportsPixelLayeredHairAvatar: true })).status, 204);
+  assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(currentAvatar.id).attempt_count, 0);
+  const currentResponse = await request("lease", { ...worker, supportsPixelLayeredHairAvatar: true });
+  assert.equal(currentResponse.status, 200);
+  const currentLease = await currentResponse.json();
+  assert.equal(currentLease.id, currentAvatar.id);
+  assert.equal(currentLease.workflowVersion, "python-agent-v10");
 
-  for (const avatarLease of [layeredLease, detailedLease]) {
+  const avatarLeases = [layeredLease, detailedLease, currentLease];
+  for (const avatarLease of avatarLeases) {
     assert.equal(avatarLease.brief, null);
     const { id, leaseToken } = avatarLease;
     const path = `tasks/${id}`;
@@ -200,7 +214,7 @@ test("Pixel World workers lease only their advertised avatar versions", async t 
   }
   assert.equal(db.prepare("SELECT count(*) n FROM projects").get().n, 1);
   now += 7 * 24 * 60 * 60 * 1000;
-  for (const { id } of [layeredLease, detailedLease]) {
+  for (const { id } of avatarLeases) {
     const expired = service.getTask("owner", id);
     assert.equal(expired.status, "EXPIRED");
     assert.equal(expired.heroArtwork, undefined);
@@ -208,7 +222,7 @@ test("Pixel World workers lease only their advertised avatar versions", async t 
   }
 });
 
-test("the detailed avatar publishes actionable failures without rescheduling", async t => {
+test("the current Pixel World avatar publishes actionable failures without rescheduling", async t => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-layer-errors-"));
   const db = openDatabase(":memory:");
   t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
@@ -224,13 +238,14 @@ test("the detailed avatar publishes actionable failures without rescheduling", a
     PIXEL_PHOTO_UNCLEAR: /清晰单人照/,
     PIXEL_TRAITS_INVALID: /特征识别结果无效/,
     PIXEL_NO_SUPPORTED_TRAITS: /默认角色/,
+    SKILL_VERSION_MISMATCH: /生成规则已更新/,
     PIXEL_CANDIDATE_EXPIRED: /候选头像已过期.*重新选择照片/,
     PIXEL_PHOTO_EXPIRED: /源照片已过期.*重新选择照片/
   };
   for (const [errorCode, message] of Object.entries(cases)) {
     const task = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: errorCode });
     if (errorCode === "PIXEL_PHOTO_EXPIRED") now += 24 * 60 * 60 * 1000;
-    const lease = await (await request("lease", { workerId: "pixel", supportsPixelWorld: true, supportsPixelDetailedAvatar: true })).json();
+    const lease = await (await request("lease", { workerId: "pixel", supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true })).json();
     assert.equal(lease.id, task.id);
     if (errorCode === "PIXEL_PHOTO_EXPIRED") {
       const headers = { "x-agent-lease": lease.leaseToken };

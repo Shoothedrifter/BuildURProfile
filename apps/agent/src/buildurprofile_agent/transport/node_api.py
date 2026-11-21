@@ -110,11 +110,13 @@ class NodeAgentClient:
         return response
 
     async def lease(self, worker_id: str, *, supports_pixel_layer_avatar: bool = False,
-                    supports_pixel_detailed_avatar: bool = False) -> AgentTask | None:
+                    supports_pixel_detailed_avatar: bool = False,
+                    supports_pixel_layered_hair_avatar: bool = False) -> AgentTask | None:
         response = await self._request("POST", "/_internal/agent/lease", json={
             "workerId": worker_id, "supportsPresentationHighlights": True, "supportsPixelWorld": True,
             "supportsPixelLayerAvatar": supports_pixel_layer_avatar,
             "supportsPixelDetailedAvatar": supports_pixel_detailed_avatar,
+            "supportsPixelLayeredHairAvatar": supports_pixel_layered_hair_avatar,
         })
         return None if response.status_code == 204 else AgentTask.from_json(response.json())
 

@@ -13,7 +13,7 @@ from typing import TypeVar
 import httpx
 from PIL import Image, ImageOps
 
-from ..contracts import PixelAvatarTraits, PixelAvatarTraitsV2
+from ..contracts import PixelAvatarTraits, PixelAvatarTraitsV2, PixelAvatarTraitsV3
 from ..transport.node_api import Portrait
 from .base import ImageProviderError
 from .cloudflare_images import API_ROOT
@@ -173,7 +173,57 @@ QUESTIONS_V2 = {
     "neckwear": QUESTIONS["neckwear"],
 }
 
-_Traits = TypeVar("_Traits", PixelAvatarTraits, PixelAvatarTraitsV2)
+QUESTIONS_V3 = {
+    **QUESTIONS_V2,
+    "hair_length": {
+        "type": "choice",
+        "instructions": (
+            "Trace the primary person's longest clearly visible sections of hair relative to the shoulder line. "
+            "For a shag, wolf cut or other layered haircut, check the lower side and back sections. "
+            "Shorter face-framing pieces do not determine the total length."
+        ),
+        "criteria": {
+            "short": "The longest visible ends stop above the shoulders, with the area below visible and free of hair.",
+            "shoulder_length": "The longest ends reach the shoulder line and do not continue clearly below it.",
+            "long": "A section clearly continues below the shoulder line, even if its ends are out of frame.",
+            "unknown": "Neither the longest ends nor their position in relation to the shoulders can be determined.",
+        },
+    },
+    "below_shoulder_locks": {
+        "type": "choice",
+        "instructions": "Check the torso beside the neck and across the upper chest. Is there a continuous lock of the subject's own hair below their shoulder line?",
+        "criteria": {
+            "visible": "At least one lock of hair can be traced past the shoulder line or down over the upper chest, even when the lock is thin or cropped at the bottom.",
+            "absent": "The shoulders and upper chest are visible and no locks of the subject's hair extend below the shoulder line.",
+            "unknown": "The relevant area is cropped, obstructed, or a lock of hair cannot be distinguished from clothing or background.",
+        },
+    },
+    "wispy_fringe": {
+        "type": "choice",
+        "instructions": "Can you see short lightweight strands from the front hairline falling down onto the center of the forehead with small visible gaps between them?",
+        "criteria": {
+            "visible": "Airy or see-through bangs. Thin separate strands end at different heights across the center of the forehead with clear gaps of bare skin between them.",
+            "absent": "The central forehead is bare, has a dense straight fringe with an even edge, or has just long stray strands sweeping sideways.",
+            "unknown": "The central forehead or strands cannot be seen reliably.",
+        },
+    },
+    "hair_layers": {
+        "type": "choice",
+        "instructions": "Check the sides of the main person's loose hair for a layered haircut. Compare loose locks at the cheeks or chin with the rest of the hair below the shoulders.",
+        "criteria": {
+            "face_framing": "Distinct loose sections end or curl out at cheek, chin or neck level, while the lower sections extend much farther. This can appear in a shag or wolf cut.",
+            "none": "The loose hair has a mostly even outline or the main sides extend to similar lengths, without distinct short layered ends around the face.",
+            "unknown": "The side lengths cannot be compared because the hair is tied, cropped or obstructed.",
+        },
+    },
+}
+
+_Traits = TypeVar("_Traits", PixelAvatarTraits, PixelAvatarTraitsV2, PixelAvatarTraitsV3)
+_TRAIT_THRESHOLDS = {
+    "subject": Decimal("0.80"),
+    # This refinement only changes the silhouette of already recognized loose long hair.
+    "hair_layers": Decimal("0.60"),
+}
 
 
 def _prepare_jpeg(portrait: Portrait) -> bytes:
@@ -233,7 +283,7 @@ def _select_answer(field: str, answer: object, options: dict[str, str]) -> str:
     top, runner_up, *_ = sorted(scores.values(), reverse=True)
     if abs(sum(scores.values()) - 1) > Decimal("0.001") or scores[choice] != top:
         raise ImageProviderError("PIXEL_TRAITS_INVALID")
-    threshold = Decimal("0.80") if field == "subject" else Decimal("0.70")
+    threshold = _TRAIT_THRESHOLDS.get(field, Decimal("0.70"))
     if top < threshold or top - runner_up < Decimal("0.20"):
         return "unclear" if field == "subject" else "unknown"
     return choice
@@ -252,10 +302,16 @@ def _read_traits(response: httpx.Response, questions: dict, traits_model: type[_
         answers = payload["result"]["answers"]
         if not isinstance(answers, dict) or answers.keys() != questions.keys():
             raise ImageProviderError("PIXEL_TRAITS_INVALID")
-        return traits_model.model_validate({
+        traits = {
             field: _select_answer(field, answer, questions[field]["criteria"])
             for field, answer in answers.items()
-        })
+        }
+        if traits_model is PixelAvatarTraitsV3:
+            if traits.pop("below_shoulder_locks") == "visible":
+                traits["hair_length"] = "long"
+            if traits.pop("wispy_fringe") == "visible" and traits["bangs"] in ("straight", "unknown"):
+                traits["bangs"] = "wispy"
+        return traits_model.model_validate(traits)
     except (KeyError, TypeError, ValueError, RecursionError, DecimalException):
         raise ImageProviderError("PIXEL_TRAITS_INVALID") from None
 
@@ -315,3 +371,8 @@ class CloudflarePixelVisionProvider(_CloudflarePixelVisionProvider):
 class CloudflarePixelVisionProviderV2(_CloudflarePixelVisionProvider):
     async def classify(self, portrait: Portrait) -> PixelAvatarTraitsV2:
         return await self._classify(portrait, QUESTIONS_V2, PixelAvatarTraitsV2)
+
+
+class CloudflarePixelVisionProviderV3(_CloudflarePixelVisionProvider):
+    async def classify(self, portrait: Portrait) -> PixelAvatarTraitsV3:
+        return await self._classify(portrait, QUESTIONS_V3, PixelAvatarTraitsV3)

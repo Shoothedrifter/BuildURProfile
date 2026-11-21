@@ -1,13 +1,17 @@
 from concurrent.futures import ThreadPoolExecutor
 from functools import reduce
+from hashlib import sha256
 import io
 
 from PIL import Image, ImageChops
 import pytest
 
-from buildurprofile_agent.contracts import PixelAvatarTraitsV2
+from buildurprofile_agent.contracts import PixelAvatarTraitsV2, PixelAvatarTraitsV3
 from buildurprofile_agent.skills import pixel_avatar_layers as legacy
 from buildurprofile_agent.skills import pixel_avatar_layers_v2 as detailed
+
+
+_BLUE_HAIR = {(41, 60, 102, 255), (70, 99, 154, 255), (112, 147, 191, 255)}
 
 
 def traits(**overrides):
@@ -31,6 +35,58 @@ def image_for(**overrides):
         assert image.format == "PNG"
         assert image.mode == "RGBA" and image.size == (1254, 1254)
         return image.copy()
+
+
+def layered_image_for(**overrides):
+    selection = PixelAvatarTraitsV3.model_validate(
+        traits().model_dump() | {"hair_layers": "unknown"} | overrides
+    )
+    result = detailed.render_layered_hair_pixel_avatar(selection)
+    assert result is not None
+    with Image.open(io.BytesIO(result.bytes)) as image:
+        assert image.format == "PNG"
+        assert image.mode == "RGBA" and image.size == (1254, 1254)
+        return image.copy()
+
+
+def test_wispy_bangs_have_distinct_tapered_strands_and_open_forehead():
+    wispy = layered_image_for(hair_length="long", hair_tie="loose", hair_color="blue", bangs="wispy")
+    no_bangs = image_for(hair_length="long", hair_tie="loose", hair_color="blue", bangs="none")
+    for tip in ((585, 495), (657, 513), (747, 495)):
+        assert wispy.getpixel(tip) in _BLUE_HAIR
+    for gap in ((621, 477), (693, 477)):
+        assert wispy.getpixel(gap) == no_bangs.getpixel(gap)
+        assert wispy.getpixel(gap) not in _BLUE_HAIR
+
+
+def test_long_loose_layers_frame_the_face_and_reach_below_the_shoulders():
+    short = image_for(hair_length="short", hair_color="blue", bangs="none")
+    long = layered_image_for(
+        hair_length="long", hair_tie="loose", hair_color="blue", bangs="wispy",
+        hair_layers="face_framing",
+    )
+    for point in ((459, 765), (801, 765)):
+        assert long.getpixel(point) in _BLUE_HAIR
+    for point in ((477, 1035), (765, 1017)):
+        assert short.getpixel(point) not in _BLUE_HAIR
+        assert long.getpixel(point) in _BLUE_HAIR
+
+    layers = legacy.load_pixel_avatar_layers()
+    base = layers._image("base")
+    difference = reduce(ImageChops.lighter, ImageChops.difference(long, base).split())
+    assert not ImageChops.multiply(difference, layers._image("hard-lock")).getbbox()
+    assert not any(long.getchannel("A").histogram()[1:255])
+
+
+@pytest.mark.parametrize("hair_layers", ("none", "unknown"))
+def test_long_straight_hair_without_face_framing_uses_original_layers(hair_layers):
+    choices = {"hair_length": "long", "hair_tie": "loose", "hair_color": "blue", "bangs": "straight"}
+    assert layered_image_for(**choices, hair_layers=hair_layers).tobytes() == image_for(**choices).tobytes()
+
+
+def test_detailed_v9_blue_hair_output_remains_pinned():
+    original = image_for(hair_color="blue", hair_length="long", bangs="straight")
+    assert sha256(original.tobytes()).hexdigest() == "c0bb4086111c43699ce307f538cc457b906f472b46ca78b2791aa25245afb783"
 
 
 @pytest.mark.parametrize("overrides", (

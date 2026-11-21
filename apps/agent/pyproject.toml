@@ -35,6 +35,7 @@ buildurprofile_agent = [
   "resources/pixel-avatar-v1/*.png",
   "resources/pixel-avatar-v1/manifest.json",
   "resources/pixel-avatar-v2/artwork.json",
+  "resources/pixel-avatar-v3/artwork.json",
 ]
 
 [tool.pytest.ini_options]

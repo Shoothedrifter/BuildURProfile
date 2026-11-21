@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[3]
 async def test_real_node_bridge_pixel_avatar_stays_private(tmp_path):
     import base64
     import httpx
-    from buildurprofile_agent.providers.cloudflare_pixel_vision import CloudflarePixelVisionProviderV2
+    from buildurprofile_agent.providers.cloudflare_pixel_vision import CloudflarePixelVisionProviderV3
 
     token = "p" * 64
     proc = subprocess.Popen(["node", "apps/agent/tests/fixtures/pixel-bridge-server.mjs"], cwd=ROOT,
@@ -45,9 +45,10 @@ async def test_real_node_bridge_pixel_avatar_stays_private(tmp_path):
         Image.new("RGB", (512, 512), "#435266").save(stream, format="PNG")
         image_b64 = base64.b64encode(stream.getvalue()).decode()
         requests = []
-        choices = {"subject": "usable", "hair_length": "long", "hair_tie": "loose", "bangs": "side_swept",
-                   "hair_color": "pink", "glasses": "frames",
-                   "headwear": "none", "earwear": "none", "neckwear": "choker"}
+        choices = {"subject": "usable", "hair_length": "short", "hair_tie": "loose", "bangs": "straight",
+                   "hair_color": "blue", "glasses": "none", "headwear": "none", "earwear": "none",
+                   "neckwear": "none", "below_shoulder_locks": "visible", "wispy_fringe": "visible",
+                   "hair_layers": "face_framing"}
 
         def cloudflare_response(request):
             body = json.loads(request.content)
@@ -77,19 +78,21 @@ async def test_real_node_bridge_pixel_avatar_stays_private(tmp_path):
             try:
                 assert await client.lease("legacy_worker") is None
                 assert await client.lease("v8_worker", supports_pixel_layer_avatar=True) is None
-                task = await client.lease("pixel_worker", supports_pixel_layer_avatar=True,
-                                          supports_pixel_detailed_avatar=True)
-                assert task and task.id == queued["id"] and task.workflow_version == "python-agent-v9"
-                provider = CloudflarePixelVisionProviderV2(account_id="a" * 32, api_token="test-token", http=cf)
+                assert await client.lease("v9_worker", supports_pixel_detailed_avatar=True) is None
+                task = await client.lease("pixel_worker", supports_pixel_layered_hair_avatar=True)
+                assert task and task.id == queued["id"] and task.workflow_version == "python-agent-v10"
+                provider = CloudflarePixelVisionProviderV3(account_id="a" * 32, api_token="test-token", http=cf)
                 async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "avatar-checkpoints.sqlite")) as saver:
                     await saver.setup()
                     await process_task(task, client, object(), default_registry(), saver, "pixel_worker",
-                                       pixel_detailed_vision=provider)
+                                       pixel_layered_hair_vision=provider)
                     assert len(requests) == 1
                     async for record in saver.alist(None):
                         snapshot = json.dumps(record.checkpoint, default=str)
                         assert image_b64 not in snapshot and requests[0] not in snapshot
-                        assert '"hair_length"' not in snapshot and '"bangs"' not in snapshot and '"probabilities"' not in snapshot
+                        private_traits = ("hair_length", "bangs", "hair_layers", "below_shoulder_locks",
+                                          "wispy_fringe", "probabilities")
+                        assert not any(f'"{field}"' in snapshot for field in private_traits)
             finally:
                 await client.close()
             result = (await owner.get(f"/api/generations/{task.id}")).raise_for_status().json()
@@ -100,9 +103,11 @@ async def test_real_node_bridge_pixel_avatar_stays_private(tmp_path):
             with Image.open(io.BytesIO(asset.content)) as candidate:
                 assert candidate.size == (1254, 1254)
                 assert candidate.mode == "RGBA" and candidate.getpixel((0, 0))[3] == 0
-                scalp = candidate.crop((450, 160, 800, 260))
-                colors = scalp.getcolors(maxcolors=scalp.width * scalp.height)
-                assert any(r > g + 30 and b > g + 8 for _, (r, g, b, a) in colors if a == 255)
+                for point in ((657, 513), (477, 1035)):
+                    red, green, blue, alpha = candidate.getpixel(point)
+                    assert blue > green > red and alpha == 255
+                red, green, blue, alpha = candidate.getpixel((621, 477))
+                assert red > green > blue and alpha == 255
             await other.get("/api/session")
             assert (await other.get(url)).status_code == 404
             assert (await owner.get(f"/api/projects/{project['id']}")).json() == project

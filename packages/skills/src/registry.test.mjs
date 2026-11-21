@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPixelAvatarRecipe } from "./pixel-avatar.ts";
+import { TEMPLATE_PORTRAIT_POLICIES } from "./avatar-catalog.ts";
 
 const answers = { "e-presence": 2, "e-type": 2, "k-pace": 2, "k-cards": 2,
   "p-tone": 1, "p-strength": 2, "s-browse": 2, "s-control": 2 };
@@ -116,6 +117,10 @@ test("Wibi adapter verifies pinned manifest and resources and exposes license", 
   assert.throws(() => loadStyleRecipe("crayon-flat-naive"), /未知肖像风格/);
   assert.throws(() => loadStyleRecipe("textile-toy-portrait"), /未知肖像风格/);
   assert.throws(() => loadStyleRecipe("../other"), /未知肖像风格/);
+});
+
+test("Pixel World keeps its public style ID with the current avatar pipeline", () => {
+  assert.deepEqual(TEMPLATE_PORTRAIT_POLICIES["pixel-world-v1"], { pipelineId: "avatar.pixel.v4", styleId: "pixel-halfbody-v1" });
 });
 
 test("Pixel World loads only the hash-pinned original style reference", t => {

@@ -307,7 +307,7 @@ def layered_pixel_task():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("version", ["python-agent-v8", "python-agent-v9"])
+@pytest.mark.parametrize("version", ["python-agent-v8", "python-agent-v9", "python-agent-v10"])
 async def test_layered_avatar_accepts_only_a_pixel_portrait_with_existing_config(version):
     item = replace(layered_pixel_task(), workflow_version=version)
     invalid = [replace(item, portrait_asset_id=None, style_id=None),
@@ -323,7 +323,7 @@ async def test_layered_avatar_accepts_only_a_pixel_portrait_with_existing_config
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("exists", [True, False])
-@pytest.mark.parametrize("version", ["python-agent-v8", "python-agent-v9"])
+@pytest.mark.parametrize("version", ["python-agent-v8", "python-agent-v9", "python-agent-v10"])
 async def test_layered_avatar_reuses_candidate_or_fails_expired_without_reading_photo(exists, version):
     class CachedClient(FakeClient):
         async def output(self, task):

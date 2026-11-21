@@ -10,10 +10,12 @@ import { validateImage } from "./assets.mjs";
 export const WORKFLOW_VERSION = "python-agent-v2";
 export const PIXEL_LAYER_WORKFLOW_VERSION = "python-agent-v8";
 export const PIXEL_DETAILED_WORKFLOW_VERSION = "python-agent-v9";
+export const PIXEL_LAYERED_HAIR_WORKFLOW_VERSION = "python-agent-v10";
 export const PIXEL_CANDIDATE_EXPIRED_MESSAGE = "候选头像已过期，请重新选择照片。";
 
 export function isPixelCandidateWorkflow(version) {
-  return version === PIXEL_LAYER_WORKFLOW_VERSION || version === PIXEL_DETAILED_WORKFLOW_VERSION;
+  return version === PIXEL_LAYER_WORKFLOW_VERSION || version === PIXEL_DETAILED_WORKFLOW_VERSION ||
+    version === PIXEL_LAYERED_HAIR_WORKFLOW_VERSION;
 }
 
 export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, maxAttempts, retryBaseMs,
@@ -84,7 +86,7 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     }
     const id = randomUUID(), time = now();
     const resumeVersion = (brief ?? config)?.content?.resume?.version;
-    const workflowVersion = templateId === "pixel-world-v1" && portraitAssetId ? PIXEL_DETAILED_WORKFLOW_VERSION
+    const workflowVersion = templateId === "pixel-world-v1" && portraitAssetId ? PIXEL_LAYERED_HAIR_WORKFLOW_VERSION
       : templateId === "pixel-world-v1" ? "python-agent-v7"
       : templateId ? "python-agent-v6"
       : resumeVersion === "resume-v3" ? "python-agent-v4"
@@ -95,7 +97,8 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     return getTask(sessionId, id);
   }
   function leaseNext({ supportsPresentationHighlights = true, supportsPixelWorld = false, supportsPixelLayerAvatar = false,
-    supportsPixelDetailedAvatar = false } = {}) {
+    supportsPixelDetailedAvatar = false, supportsPixelLayeredHairAvatar = false } = {}) {
+    const canLeaseLayeredHair = supportsPixelWorld === true && supportsPixelLayeredHairAvatar === true;
     for (let scanned = 0; scanned < 20; scanned++) {
       const time = now();
       db.prepare("UPDATE generations SET status='CANCELLED',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status='RUNNING' AND cancel_requested_at IS NOT NULL AND lease_until<=?")
@@ -106,12 +109,13 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
           AND (? OR workflow_version <> 'python-agent-v7')
           AND (? OR workflow_version <> '${PIXEL_LAYER_WORKFLOW_VERSION}')
           AND (? OR workflow_version <> '${PIXEL_DETAILED_WORKFLOW_VERSION}')
+          AND (? OR workflow_version <> '${PIXEL_LAYERED_HAIR_WORKFLOW_VERSION}')
           AND (? OR NOT EXISTS (
             SELECT 1 FROM json_tree(COALESCE(brief_json, config_json, '{}'), '$.content.resume.sections')
             WHERE key='presentationHighlights'
           ))
         ORDER BY created_at LIMIT 1`).get(time, time, Number(supportsPixelWorld), Number(supportsPixelLayerAvatar),
-          Number(supportsPixelDetailedAvatar), Number(supportsPresentationHighlights));
+          Number(supportsPixelDetailedAvatar), Number(canLeaseLayeredHair), Number(supportsPresentationHighlights));
       if (!row) return null;
       // A task with a stored candidate can finalize once without classifying the photo again.
       const canFinalize = isPixelCandidateWorkflow(row.workflow_version) && row.output_asset_id && row.attempt_count === maxAttempts;

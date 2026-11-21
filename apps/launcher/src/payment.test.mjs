@@ -43,7 +43,7 @@ test("concurrent checkout reuses one pending order and a server price snapshot",
   assert.equal(db.prepare("SELECT amount_fen FROM orders").get().amount_fen, 199);
 });
 
-test("a v9 Pixel World candidate cannot be persisted or delivered", async t => {
+test("a v10 Pixel World candidate cannot be persisted or delivered", async t => {
   const assetRoot = mkdtempSync(join(tmpdir(), "burp-pixel-delivery-"));
   t.after(() => rmSync(assetRoot, { recursive: true, force: true }));
   const base = pixelConfig();
@@ -52,8 +52,8 @@ test("a v9 Pixel World candidate cannot be persisted or delivered", async t => {
   const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=";
   const photo = generation.savePortrait("owner", `data:image/png;base64,${image}`);
   const task = generation.enqueue("owner", { config: base, portraitAssetId: photo.id, idempotencyKey: "delivery-preview" });
-  const lease = generation.leaseNext({ supportsPixelWorld: true, supportsPixelDetailedAvatar: true });
-  assert.equal(lease?.workflow_version, "python-agent-v9");
+  const lease = generation.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
+  assert.equal(lease?.workflow_version, "python-agent-v10");
   const assetId = generation.storeOutput(task.id, { bytes: Buffer.from(image, "base64"), mime: "image/png" }, lease.lease_token);
   assert.equal(generation.complete(task.id, { config: base, leaseToken: lease.lease_token }), true);
   const { heroArtwork, config: unchanged } = generation.getTask("owner", task.id);

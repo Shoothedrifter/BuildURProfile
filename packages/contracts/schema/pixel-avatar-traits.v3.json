@@ -1,0 +1,132 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "subject": {
+      "enum": [
+        "usable",
+        "multiple_people",
+        "no_person",
+        "unclear"
+      ],
+      "title": "Subject",
+      "type": "string"
+    },
+    "hair_length": {
+      "enum": [
+        "short",
+        "shoulder_length",
+        "long",
+        "unknown"
+      ],
+      "title": "Hair Length",
+      "type": "string"
+    },
+    "hair_tie": {
+      "enum": [
+        "loose",
+        "single_ponytail",
+        "twin_tails",
+        "other",
+        "unknown"
+      ],
+      "title": "Hair Tie",
+      "type": "string"
+    },
+    "bangs": {
+      "enum": [
+        "none",
+        "straight",
+        "side_swept",
+        "curtain",
+        "wispy",
+        "unknown"
+      ],
+      "title": "Bangs",
+      "type": "string"
+    },
+    "hair_color": {
+      "enum": [
+        "dark",
+        "brown",
+        "pink",
+        "red",
+        "purple",
+        "blue",
+        "blond",
+        "gray_white",
+        "vivid",
+        "unknown"
+      ],
+      "title": "Hair Color",
+      "type": "string"
+    },
+    "glasses": {
+      "enum": [
+        "none",
+        "frames",
+        "other",
+        "unknown"
+      ],
+      "title": "Glasses",
+      "type": "string"
+    },
+    "headwear": {
+      "enum": [
+        "none",
+        "hair_clip",
+        "headband",
+        "hat",
+        "other",
+        "unknown"
+      ],
+      "title": "Headwear",
+      "type": "string"
+    },
+    "earwear": {
+      "enum": [
+        "none",
+        "earring",
+        "headphones",
+        "other",
+        "unknown"
+      ],
+      "title": "Earwear",
+      "type": "string"
+    },
+    "neckwear": {
+      "enum": [
+        "none",
+        "choker",
+        "necklace",
+        "scarf",
+        "other",
+        "unknown"
+      ],
+      "title": "Neckwear",
+      "type": "string"
+    },
+    "hair_layers": {
+      "enum": [
+        "face_framing",
+        "none",
+        "unknown"
+      ],
+      "title": "Hair Layers",
+      "type": "string"
+    }
+  },
+  "required": [
+    "subject",
+    "hair_length",
+    "hair_tie",
+    "bangs",
+    "hair_color",
+    "glasses",
+    "headwear",
+    "earwear",
+    "neckwear",
+    "hair_layers"
+  ],
+  "title": "PixelAvatarTraitsV3",
+  "type": "object"
+}

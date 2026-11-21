@@ -51,6 +51,12 @@ TRAITS_V2 = {
     "bangs": "straight", "hair_color": "pink", "glasses": "frames", "headwear": "none",
     "earwear": "unknown", "neckwear": "choker",
 }
+OPTIONS_V3 = {
+    **OPTIONS_V2,
+    "hair_layers": ("face_framing", "none", "unknown"),
+    "below_shoulder_locks": ("visible", "absent", "unknown"),
+    "wispy_fringe": ("visible", "absent", "unknown"),
+}
 
 
 def portrait(image_format="PNG", size=(24, 18), **save_options):
@@ -84,8 +90,11 @@ def response_data_v2(**answers):
 
 async def classify(respond, source=None, *, account_id=ACCOUNT_ID, api_token=TOKEN, version=1):
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
-        provider_class = (cloudflare_pixel_vision.CloudflarePixelVisionProvider if version == 1
-                          else cloudflare_pixel_vision.CloudflarePixelVisionProviderV2)
+        provider_class = cloudflare_pixel_vision.CloudflarePixelVisionProvider
+        if version == 2:
+            provider_class = cloudflare_pixel_vision.CloudflarePixelVisionProviderV2
+        elif version == 3:
+            provider_class = cloudflare_pixel_vision.CloudflarePixelVisionProviderV3
         provider = provider_class(
             account_id=account_id, api_token=api_token, http=http,
         )
@@ -173,6 +182,50 @@ async def test_clef_v2_rejects_v1_answers():
     with pytest.raises(ImageProviderError) as error:
         await classify(lambda _: httpx.Response(200, json=response_data()), version=2)
     assert error.value.code == "PIXEL_TRAITS_INVALID"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("length", "bangs", "locks", "fringe", "expected"), [
+    ("short", "straight", "visible", "visible", ("long", "wispy")),
+    ("unknown", "unknown", "visible", "visible", ("long", "wispy")),
+    ("short", "straight", "absent", "absent", ("short", "straight")),
+    ("unknown", "unknown", "unknown", "unknown", ("unknown", "unknown")),
+    ("long", "side_swept", "visible", "visible", ("long", "side_swept")),
+])
+async def test_clef_v3_uses_visible_hair_evidence_without_changing_color(length, bangs, locks, fringe, expected):
+    choices = dict(TRAITS_V2, hair_length=length, hair_tie="loose", bangs=bangs, hair_color="blue",
+                   hair_layers="face_framing",
+                   below_shoulder_locks=locks, wispy_fringe=fringe)
+
+    def respond(request):
+        payload = json.loads(request.content)
+        assert len(payload["images"]) == 1
+        assert payload["questions"].keys() == OPTIONS_V3.keys()
+        for field, question in payload["questions"].items():
+            assert question["criteria"].keys() == set(OPTIONS_V3[field])
+        answers = {field: answer(field, choice, options=OPTIONS_V3) for field, choice in choices.items()}
+        return httpx.Response(200, json={"success": True, "result": {"answers": answers}})
+
+    traits = await classify(respond, version=3)
+    assert (traits.hair_length, traits.bangs) == expected
+    assert traits.hair_color == "blue" and traits.hair_tie == "loose"
+    assert traits.hair_layers == "face_framing"
+    assert traits.model_dump().keys() == TRAITS_V2.keys() | {"hair_layers"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("layers", "expected"), [
+    ({"face_framing": 0.62, "none": 0.34, "unknown": 0.04}, "face_framing"),
+    ({"face_framing": 0.59, "none": 0.34, "unknown": 0.07}, "unknown"),
+])
+async def test_clef_v3_face_framing_requires_clear_evidence_separate_from_wispy(layers, expected):
+    choices = dict(TRAITS_V2, hair_length="long", hair_tie="loose", hair_layers="face_framing",
+                   below_shoulder_locks="visible", wispy_fringe="absent")
+    answers = {field: answer(field, choice, options=OPTIONS_V3) for field, choice in choices.items()}
+    answers["hair_layers"]["probabilities"] = layers
+    traits = await classify(lambda _: httpx.Response(200, json={"result": {"answers": answers}}), version=3)
+    assert traits.hair_layers == expected
+    assert traits.bangs == "straight"
 
 
 @pytest.mark.asyncio

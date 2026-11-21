@@ -6,7 +6,8 @@ import { loadStyleRecipe } from "../../../../../packages/skills/src/wibi.ts";
 import { PIXEL_AVATAR_STYLE_ID } from "../../../../../packages/skills/src/avatar-catalog.ts";
 import { loadPixelAvatarRecipe } from "../../../../../packages/skills/src/pixel-avatar.ts";
 import {
-  isPixelCandidateWorkflow, PIXEL_CANDIDATE_EXPIRED_MESSAGE, PIXEL_DETAILED_WORKFLOW_VERSION, PIXEL_LAYER_WORKFLOW_VERSION
+  isPixelCandidateWorkflow, PIXEL_CANDIDATE_EXPIRED_MESSAGE, PIXEL_LAYER_WORKFLOW_VERSION,
+  PIXEL_DETAILED_WORKFLOW_VERSION, PIXEL_LAYERED_HAIR_WORKFLOW_VERSION
 } from "../../../../../packages/storage/src/generation/queue.mjs";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -14,7 +15,7 @@ const IMAGE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/
 const RETRYABLE_CODES = new Set(["PROVIDER_RATE_LIMIT", "PROVIDER_UNAVAILABLE"]);
 const SUPPORTED_GENERATION_WORKFLOWS = new Set([
   "python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", "python-agent-v6", "python-agent-v7",
-  PIXEL_LAYER_WORKFLOW_VERSION, PIXEL_DETAILED_WORKFLOW_VERSION
+  PIXEL_LAYER_WORKFLOW_VERSION, PIXEL_DETAILED_WORKFLOW_VERSION, PIXEL_LAYERED_HAIR_WORKFLOW_VERSION
 ]);
 const ERROR_MESSAGES = {
   PROVIDER_RATE_LIMIT: "图像服务暂时繁忙，系统会在限定次数内重试。",
@@ -99,7 +100,8 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
       supportsPresentationHighlights: input.supportsPresentationHighlights === true,
       supportsPixelWorld: input.supportsPixelWorld === true,
       supportsPixelLayerAvatar: input.supportsPixelLayerAvatar === true,
-      supportsPixelDetailedAvatar: input.supportsPixelDetailedAvatar === true
+      supportsPixelDetailedAvatar: input.supportsPixelDetailedAvatar === true,
+      supportsPixelLayeredHairAvatar: input.supportsPixelLayeredHairAvatar === true
     };
     let task = service.leaseNext(capabilities);
     for (let skipped = 0; task && !SUPPORTED_GENERATION_WORKFLOWS.has(task.workflow_version) && skipped < 20; skipped++) {

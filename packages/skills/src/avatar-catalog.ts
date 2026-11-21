@@ -10,11 +10,11 @@ export const AVATAR_STYLES = [
 export type AvatarStyleId = (typeof AVATAR_STYLES)[number]["id"];
 export const DEFAULT_AVATAR_STYLE_ID: AvatarStyleId = "lofi-print-anime";
 export const TEMPLATE_PORTRAIT_POLICIES: Partial<Record<TemplateId, Readonly<{
-  pipelineId: "avatar.wibi.v1" | "avatar.pixel.v3";
+  pipelineId: "avatar.wibi.v1" | "avatar.pixel.v4";
   styleId: AvatarStyleId;
 }>>> = {
   "cyber-creator-v1": { pipelineId: "avatar.wibi.v1", styleId: "lofi-print-anime" },
-  "pixel-world-v1": { pipelineId: "avatar.pixel.v3", styleId: PIXEL_AVATAR_STYLE_ID }
+  "pixel-world-v1": { pipelineId: "avatar.pixel.v4", styleId: PIXEL_AVATAR_STYLE_ID }
 };
 
 export function listAvatarStyles(): Array<{ id: string; label: string; description: string }> {

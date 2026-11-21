@@ -39,6 +39,11 @@ class PixelAvatarTraitsV2(StrictModel):
     neckwear: Literal["none", "choker", "necklace", "scarf", "other", "unknown"]
 
 
+class PixelAvatarTraitsV3(PixelAvatarTraitsV2):
+    bangs: Literal["none", "straight", "side_swept", "curtain", "wispy", "unknown"]
+    hair_layers: Literal["face_framing", "none", "unknown"]
+
+
 class Profile(StrictModel):
     name: str = Field(min_length=1, max_length=12000)
     role: str = Field(max_length=12000)

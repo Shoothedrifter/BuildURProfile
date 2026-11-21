@@ -8,8 +8,11 @@ from typing import Any, NotRequired, TypedDict
 import httpx
 from langgraph.graph import END, START, StateGraph
 
-from . import PIXEL_DETAILED_WORKFLOW, PIXEL_IMAGE_WORKFLOW, PIXEL_LAYER_WORKFLOW
-from .contracts import clean_brief, clean_config, GenerationBriefV2, DesignConfigV2, GenerationBriefV3, DesignConfigV3, GenerationBriefV4, DesignConfigV4, PixelAvatarTraits, PixelAvatarTraitsV2
+from . import PIXEL_DETAILED_WORKFLOW, PIXEL_IMAGE_WORKFLOW, PIXEL_LAYERED_HAIR_WORKFLOW, PIXEL_LAYER_WORKFLOW
+from .contracts import (
+    clean_brief, clean_config, GenerationBriefV2, DesignConfigV2, GenerationBriefV3, DesignConfigV3,
+    GenerationBriefV4, DesignConfigV4, PixelAvatarTraits, PixelAvatarTraitsV2, PixelAvatarTraitsV3,
+)
 from .providers.base import GeneratedImage, ImageProviderError
 from .skills.registry import SkillRegistry
 from .skills.pixel_avatar import STYLE_ID as PIXEL_STYLE_ID
@@ -17,7 +20,7 @@ from .transport.node_api import AgentTask, NodeAgentClient, Portrait
 
 
 SUPPORTED_WORKFLOWS = ("python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", "python-agent-v6",
-                       PIXEL_IMAGE_WORKFLOW, PIXEL_LAYER_WORKFLOW, PIXEL_DETAILED_WORKFLOW)
+                       PIXEL_IMAGE_WORKFLOW, PIXEL_LAYER_WORKFLOW, PIXEL_DETAILED_WORKFLOW, PIXEL_LAYERED_HAIR_WORKFLOW)
 DESIGN_SKILLS = ("assessment.score.v1", "design.map.v1", "resume.compose.v2")
 AVATAR_SKILL = "avatar.wibi.v1"
 QA_SKILL = "artifact.qa.v1"
@@ -64,19 +67,31 @@ def render_detailed_pixel_layers(traits: PixelAvatarTraitsV2) -> GeneratedImage:
     return image
 
 
+def render_layered_hair_pixel_layers(traits: PixelAvatarTraitsV3) -> GeneratedImage:
+    from .skills.pixel_avatar_layers_v2 import render_layered_hair_pixel_avatar
+
+    image = render_layered_hair_pixel_avatar(traits)
+    if image is None:
+        raise ImageProviderError("PIXEL_NO_SUPPORTED_TRAITS")
+    return image
+
+
 def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: Any,
                            registry: SkillRegistry, *, checkpointer: Any = None, pixel_provider: Any = None,
-                           pixel_vision: Any = None, pixel_detailed_vision: Any = None) -> Any:
-    detailed = task.workflow_version == PIXEL_DETAILED_WORKFLOW
-    layered = detailed or task.workflow_version == PIXEL_LAYER_WORKFLOW
-    pixel = layered or task.workflow_version == PIXEL_IMAGE_WORKFLOW
+                           pixel_vision: Any = None, pixel_detailed_vision: Any = None,
+                           pixel_layered_hair_vision: Any = None) -> Any:
+    layered_workflows = {
+        PIXEL_LAYER_WORKFLOW: ("avatar.pixel.v2", pixel_vision, render_pixel_layers),
+        PIXEL_DETAILED_WORKFLOW: ("avatar.pixel.v3", pixel_detailed_vision, render_detailed_pixel_layers),
+        PIXEL_LAYERED_HAIR_WORKFLOW: ("avatar.pixel.v4", pixel_layered_hair_vision, render_layered_hair_pixel_layers),
+    }
+    layered = layered_workflows.get(task.workflow_version)
+    pixel = layered is not None or task.workflow_version == PIXEL_IMAGE_WORKFLOW
     templated = pixel or task.workflow_version in ("python-agent-v5", "python-agent-v6")
     enriched = templated or task.workflow_version in ("python-agent-v3", "python-agent-v4")
     ordered = templated or task.workflow_version == "python-agent-v4"
-    if detailed:
-        avatar_skill = "avatar.pixel.v3"
-    elif layered:
-        avatar_skill = "avatar.pixel.v2"
+    if layered:
+        avatar_skill, vision, render = layered
     elif pixel:
         avatar_skill = "avatar.pixel.v1"
     else:
@@ -164,8 +179,6 @@ def build_generation_graph(task: AgentTask, client: NodeAgentClient, provider: A
                   "output_exists": output_exists,
                   "check_cancel": lambda: client.check_cancel(task)}
         if layered:
-            vision = pixel_detailed_vision if detailed else pixel_vision
-            render = render_detailed_pixel_layers if detailed else render_pixel_layers
             grants.update({"read_output_status": lambda: client.output(task),
                            "classify_portrait": vision.classify if vision is not None else None,
                            "compose_layers": lambda traits: asyncio.to_thread(render, traits)})

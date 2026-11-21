@@ -373,7 +373,7 @@ test("failed asset metadata insert does not leave a private portrait file", () =
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("new Pixel World photo tasks are local, session-owned and use the detailed workflow", t => {
+test("new Pixel World photo tasks are local, session-owned and use the layered hair workflow", t => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-photo-"));
   const db = openDatabase(":memory:");
   t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
@@ -388,8 +388,8 @@ test("new Pixel World photo tasks are local, session-owned and use the detailed 
   const task = service.enqueue("owner", options);
   assert.equal(service.enqueue("owner", options).id, task.id);
   assert.equal(db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id).style_id, "pixel-halfbody-v1");
-  const lease = service.leaseNext({ supportsPixelWorld: true, supportsPixelDetailedAvatar: true });
-  assert.equal(lease?.workflow_version, "python-agent-v9");
+  const lease = service.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
+  assert.equal(lease?.workflow_version, "python-agent-v10");
   assert.throws(() => closed.savePortrait("owner", png), { status: 403 });
   assert.throws(() => closed.enqueue("owner", options), { status: 403 });
   assert.throws(() => service.enqueue("other", options), { status: 404 });
@@ -399,7 +399,7 @@ test("new Pixel World photo tasks are local, session-owned and use the detailed 
     templateId: config.templateId, portraitAssetId, idempotencyKey: "pixel-with-brief" }), { status: 400 });
 });
 
-for (const workflowVersion of ["python-agent-v7", "python-agent-v8"]) {
+for (const workflowVersion of ["python-agent-v7", "python-agent-v8", "python-agent-v9"]) {
   test(`retrying an existing ${workflowVersion} Pixel World photo request preserves its original workflow`, t => {
     const root = mkdtempSync(join(tmpdir(), "burp-pixel-replay-"));
     const db = openDatabase(":memory:");
@@ -423,7 +423,7 @@ for (const workflowVersion of ["python-agent-v7", "python-agent-v8"]) {
   });
 }
 
-for (const workflowVersion of ["python-agent-v8", "python-agent-v9"]) {
+for (const workflowVersion of ["python-agent-v8", "python-agent-v9", "python-agent-v10"]) {
   test(`a stored ${workflowVersion} Pixel World candidate gets one completion lease after the retry cap`, t => {
     const root = mkdtempSync(join(tmpdir(), "burp-pixel-completion-"));
     const db = openDatabase(":memory:");
@@ -435,10 +435,10 @@ for (const workflowVersion of ["python-agent-v8", "python-agent-v9"]) {
     const photo = service.savePortrait("owner", png);
     const task = service.enqueue("owner", { config: { ...expected.config, templateId: "pixel-world-v1" },
       portraitAssetId: photo.id, idempotencyKey: "completion-after-last-attempt" });
-    if (workflowVersion === "python-agent-v8") {
+    if (workflowVersion !== "python-agent-v10") {
       db.prepare("UPDATE generations SET workflow_version=? WHERE id=?").run(workflowVersion, task.id);
     }
-    const caps = { supportsPixelWorld: true, supportsPixelLayerAvatar: true, supportsPixelDetailedAvatar: true };
+    const caps = { supportsPixelWorld: true, supportsPixelLayerAvatar: true, supportsPixelDetailedAvatar: true, supportsPixelLayeredHairAvatar: true };
     const initialLease = service.leaseNext(caps);
     assert.equal(initialLease?.workflow_version, workflowVersion);
     const assetId = service.storeOutput(task.id,
@@ -597,7 +597,7 @@ test("an attached Pixel World candidate with a missing file cannot be reused", (
     const portrait = service.savePortrait("a", png);
     const task = service.enqueue("a", { portraitAssetId: portrait.id, idempotencyKey: "missing-result",
       config: { ...config, templateId: "pixel-world-v1" } });
-    const lease = service.leaseNext({ supportsPixelWorld: true, supportsPixelDetailedAvatar: true });
+    const lease = service.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
     const assetId = service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" }, lease.lease_token);
     assert.equal(service.outputExists(assetId), true);
     rmSync(join(root, assetId));

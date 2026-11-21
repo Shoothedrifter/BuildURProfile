@@ -45,7 +45,7 @@ Cloudflare 适配器使用 `@cf/black-forest-labs/flux-2-klein-4b`，经 `httpx`
 
 运行 `npm run setup:avatar` 安装固定提交 `17880b82ea35c1fe1ec4b8f907a053d314df464f` 的 Wibi 资源到私有 `data/wibi-style-pinned/`。赛博科技固定使用「低清晰印刷感动漫」，采用极近景构图。旧版「复古扁平动画头」配方仅供已入队任务兼容读取。Node 校验资源哈希后，通过有效租约把配方交给 Python。
 
-像素世界风的基础作品使用 `python-agent-v7`，由 `design.template.v2`、`resume.compose.v5` 和 `artifact.qa.v4` 生成。新的本机头像任务使用 `python-agent-v9` 和 `avatar.pixel.v3`。Cloudflare Workers AI Clef 分别识别发长、扎发、刘海、发色和可见配饰。Agent 将短发、齐肩发、长发、单马尾、双马尾、齐刘海、侧分刘海、八字刘海及镜框合成到固定角色底稿，发色可选深色、暖棕、粉、红、紫、蓝、金、灰白。不确定的特征沿用底稿或已确认的其他特征。头颈配饰的显示取决于已打包素材。已入队的 v7 整图与 v8 分层任务分别使用 `avatar.pixel.v1` 与 `avatar.pixel.v2`。
+像素世界风的基础作品使用 `python-agent-v7`，由 `design.template.v2`、`resume.compose.v5` 和 `artifact.qa.v4` 生成。新的本机头像任务使用 `python-agent-v10` 和 `avatar.pixel.v4`。Cloudflare Workers AI Clef 分别识别发长、扎发、刘海、发色和可见配饰，并单独确认过肩发束、碎刘海和脸侧分层。确认有过肩发束时使用长发；确认有碎刘海可细化齐刘海或补足未确认的刘海。脸侧分层只应用于长发散发造型。Agent 使用固定图层和同一角色底稿，发色支持深色、暖棕、粉、红、紫、蓝、金、灰白。头颈配饰的显示取决于已打包素材。已入队的 v7、v8、v9 任务分别使用 `avatar.pixel.v1`、`avatar.pixel.v2`、`avatar.pixel.v3`。
 
 照片字节、识别分布、响应正文和供应商密钥只用于当前操作。分层任务复用有效候选时省去识别调用。已绑定候选到期或照片到期时提示重新选照片。超时、取消与有限重试规则见[架构与协议](../shared/architecture.md)。
 

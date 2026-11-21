@@ -7,7 +7,7 @@ import json
 
 from PIL import Image, ImageChops, ImageDraw
 
-from ..contracts import PixelAvatarTraitsV2
+from ..contracts import PixelAvatarTraitsV2, PixelAvatarTraitsV3
 from ..providers.base import GeneratedImage
 from .pixel_avatar_layers import (
     PixelAvatarLayers,
@@ -20,6 +20,7 @@ from .pixel_avatar_layers import (
 
 
 _ARTWORK_SHA256 = "95403499c2f01a7ffa11d8f209c78604b37aaf24549ea60bf788ba6d537924b4"
+_LAYERED_ARTWORK_SHA256 = "9ba90dab420d63e30828d3b31396d8341df02000c8d91e36ebafd286cef4a336"
 _CELL = 18
 _GRID = (70, 70)
 _SHADES = ("shadow", "mid", "light")
@@ -64,6 +65,22 @@ def _artwork() -> dict[str, tuple[Image.Image, ...]]:
         raise PermissionError("Invalid detailed Pixel World artwork") from None
 
 
+@lru_cache(maxsize=1)
+def _layered_artwork() -> dict[str, tuple[Image.Image, ...]]:
+    pack = files("buildurprofile_agent").joinpath("resources", "pixel-avatar-v3")
+    try:
+        shapes = json.loads(_read_pinned(pack, "artwork.json", _LAYERED_ARTWORK_SHA256))
+        return {
+            "long-top": (_mask(shapes["long-top"]),),
+            "loose-long": tuple(_mask(polygons) for polygons in shapes["loose-long"]),
+            "wispy": tuple(_mask(polygons) for polygons in shapes["wispy"]),
+        }
+    except PermissionError:
+        raise
+    except (KeyError, OSError, TypeError, ValueError):
+        raise PermissionError("Invalid layered Pixel World artwork") from None
+
+
 def _paint_layer(
     output: Image.Image,
     artwork: tuple[Image.Image, ...],
@@ -97,6 +114,21 @@ def _base_with_hair(
 
 
 def render_detailed_pixel_avatar(traits: PixelAvatarTraitsV2) -> GeneratedImage | None:
+    return _render_pixel_avatar(traits)
+
+
+def render_layered_hair_pixel_avatar(traits: PixelAvatarTraitsV3) -> GeneratedImage | None:
+    loose_long = (
+        traits.hair_length == "long"
+        and traits.hair_tie in ("loose", "unknown")
+        and traits.hair_layers == "face_framing"
+    )
+    return _render_pixel_avatar(traits, loose_long=loose_long, wispy=traits.bangs == "wispy")
+
+
+def _render_pixel_avatar(
+    traits: PixelAvatarTraitsV2, *, loose_long: bool = False, wispy: bool = False,
+) -> GeneratedImage | None:
     if traits.subject != "usable":
         return None
 
@@ -130,11 +162,16 @@ def render_detailed_pixel_avatar(traits: PixelAvatarTraitsV2) -> GeneratedImage 
     base = layers._image("base")
     allowed = Image.new("L", _SIZE)
     artwork = _artwork() if ponytail or fringe or cut_name else {}
+    layered_artwork = _layered_artwork() if loose_long or wispy else {}
     cut = artwork[cut_name][0] if cut_name else None
+    if loose_long:
+        cut = layered_artwork["long-top"][0]
     output = _base_with_hair(layers, base, style, cut if not ponytail else None, palette)
 
     if style != "short" or ponytail or fringe or palette is not None:
         allowed = layers._image("allow-recolor")
+    if loose_long:
+        _paint_layer(output, layered_artwork["loose-long"], palette or _DARK, allowed)
     if ponytail:
         back = layers._image("allow-back")
         if cut is not None:
@@ -149,7 +186,9 @@ def render_detailed_pixel_avatar(traits: PixelAvatarTraitsV2) -> GeneratedImage 
         forehead = ImageChops.multiply(artwork["forehead"][0], layers._image("allow-front"))
         output.paste(base, mask=forehead)
         output.paste(_FOREHEAD, mask=ImageChops.multiply(forehead, layers._image("allow-restore")))
-        if traits.bangs in _FRINGES:
+        if wispy:
+            _paint_layer(output, layered_artwork["wispy"], palette or _DARK, allowed)
+        elif traits.bangs in _FRINGES:
             _paint_layer(output, artwork[traits.bangs], palette or _DARK, allowed)
     if glasses:
         output.alpha_composite(layers._image("glasses"))

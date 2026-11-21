@@ -56,6 +56,22 @@ def test_pixel_traits_v2_schema_matches_strict_agent_boundary():
     assert json.loads((ROOT / "pixel-avatar-traits.v2.json").read_text()) == PixelAvatarTraitsV2.model_json_schema()
 
 
+def test_pixel_traits_v3_schema_matches_strict_agent_boundary():
+    import pytest
+    from pydantic import ValidationError
+    from buildurprofile_agent.contracts import PixelAvatarTraitsV2, PixelAvatarTraitsV3
+
+    sample = {"subject": "usable", "hair_length": "long", "hair_tie": "loose", "hair_layers": "face_framing",
+              "bangs": "wispy", "hair_color": "blue", "glasses": "none", "headwear": "none",
+              "earwear": "unknown", "neckwear": "none"}
+    assert PixelAvatarTraitsV3.model_validate(sample).model_dump() == sample
+    with pytest.raises(ValidationError):
+        PixelAvatarTraitsV3.model_validate({**sample, "hair_layers": "custom"})
+    with pytest.raises(ValidationError):
+        PixelAvatarTraitsV2.model_validate({key: value for key, value in sample.items() if key != "hair_layers"})
+    assert json.loads((ROOT / "pixel-avatar-traits.v3.json").read_text()) == PixelAvatarTraitsV3.model_json_schema()
+
+
 def test_structured_resume_is_accepted_without_source_excerpts():
     resume = {"version": "resume-v1", "basicInfo": [{"key": "name", "label": "姓名", "value": "张三"}],
               "jobIntent": [], "selfEvaluation": [], "education": [], "workExperience": [], "projects": [],

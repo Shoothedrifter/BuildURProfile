@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from buildurprofile_agent.contracts import DesignConfigV1, GenerationBriefV1, DesignConfigV2, GenerationBriefV2, DesignConfigV3, GenerationBriefV3, DesignConfigV4, GenerationBriefV4, ResumeDraftV1, ResumeDraftV2
-from buildurprofile_agent.contracts import PixelAvatarTraits, PixelAvatarTraitsV2
+from buildurprofile_agent.contracts import PixelAvatarTraits, PixelAvatarTraitsV2, PixelAvatarTraitsV3
 
 
 root = Path(__file__).resolve().parents[1] / "packages/contracts/schema"
@@ -15,6 +15,7 @@ for name, model in (("generation-brief.v1.json", GenerationBriefV1),
                     ("generation-brief.v4.json", GenerationBriefV4), ("design-config.v4.json", DesignConfigV4),
                     ("resume-draft.v1.json", ResumeDraftV1), ("resume-draft.v2.json", ResumeDraftV2),
                     ("pixel-avatar-traits.v1.json", PixelAvatarTraits),
-                    ("pixel-avatar-traits.v2.json", PixelAvatarTraitsV2)):
+                    ("pixel-avatar-traits.v2.json", PixelAvatarTraitsV2),
+                    ("pixel-avatar-traits.v3.json", PixelAvatarTraitsV3)):
     (root / name).write_text(json.dumps(model.model_json_schema(), ensure_ascii=False,
                                        indent=2) + "\n")
