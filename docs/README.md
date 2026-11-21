@@ -12,6 +12,7 @@
 | Next.js 前端、PDF 解析、编辑、展示与单测 | [Web](web/README.md) |
 | “赛博科技”固定作品集模板 P0 规格与实施计划 | [规格](web/cyber-creator-p0-spec.md) · [计划](web/cyber-creator-p0-plan.md) |
 | “像素世界风”固定作品集模板 | [作品集架构](web/pixel-world-architecture.md) · [V1 实施计划](web/pixel-world-v1-plan.md) |
+| 像素角色照片识别与图层合成 | [TDD 实施计划](agent/pixel-avatar-layered-plan.md) |
 | 校园成果与荣誉统计一致性 | [P0/P1 实施计划](web/cyber-highlights-p0-p1-plan.md) |
 | Next.js 服务端接口、任务、资产与 Launcher 入口 | [API 与 Launcher](api/README.md) |
 | 支付配置、沙箱与上线验收 | [支付与交付](api/payment.md) |
