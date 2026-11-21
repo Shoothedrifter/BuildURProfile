@@ -38,12 +38,12 @@ it("keeps every named grid-template area rectangular", () => {
   expect(broken).toEqual([]);
 });
 
-// 像素画必须整数倍缩放：默认头像是 384x384（12x 的 32 网格），舞台主宽度
-// 收敛到 24rem（=384px，1:1）才能让 image-rendering: pixelated 的颗粒均匀；
-// 非整数倍（如 38rem=608px≈1.58x）会出现像素列宽不一的糊感。
-it("keeps the hero stage at an integer multiple of the 384px portrait source", () => {
+// 像素画必须整数倍缩放：头像源是 512x512（16x 的 32 网格），舞台主宽度
+// 收敛到 32rem（=512px，1:1）才能让 image-rendering: pixelated 的颗粒均匀；
+// 非整数倍（如 24rem=384px=0.75x）会出现像素列宽不一的糊感。
+it("keeps the hero stage at an integer multiple of the 512px portrait source", () => {
   const stage = cssSource.match(/\.pixel-stage\s*\{[^}]*\}/)?.[0] ?? "";
-  expect(stage).toMatch(/width:\s*min\(100%,\s*24rem\)/);
+  expect(stage).toMatch(/width:\s*min\(100%,\s*32rem\)/);
 });
 
 // 像素画布纪律（对标 jld2nd.dev）：纯实心黑画布 + 真实方块装饰。
@@ -61,6 +61,15 @@ it("uses a neutral black canvas", () => {
   expect(cssSource).toMatch(/--pixel-page:\s*#121212/);
   expect(cssSource).toMatch(/--pixel-panel:\s*#1a1a1c/);
   expect(cssSource).toMatch(/--pixel-border:\s*#3d3d44/);
+});
+
+// UI accent 全套对齐 jld2nd 原站令牌：lime #CEFF00 强调、纯白正文、#9e9e9e 灰、
+// 纯黑硬边投影。头像管线使用同一套固定色板，同框不冲突。
+it("aligns UI tokens with the jld2nd palette", () => {
+  expect(cssSource).toMatch(/--pixel-accent:\s*#ceff00/);
+  expect(cssSource).toMatch(/--pixel-text:\s*#ffffff/);
+  expect(cssSource).toMatch(/--pixel-muted:\s*#9e9e9e/);
+  expect(cssSource).toMatch(/--pixel-shadow:\s*#000000/);
 });
 
 it("keeps the legacy entry selector spaced and limits right alignment to Agent tools", () => {

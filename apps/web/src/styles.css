@@ -2103,11 +2103,11 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .pixel-world {
   --pixel-page: #121212;
   --pixel-panel: #1a1a1c;
-  --pixel-text: #fff3df;
-  --pixel-muted: #b6bcc3;
-  --pixel-accent: #ffd166;
+  --pixel-text: #ffffff;
+  --pixel-muted: #9e9e9e;
+  --pixel-accent: #ceff00;
   --pixel-border: #3d3d44;
-  --pixel-shadow: #5a410d;
+  --pixel-shadow: #000000;
   --pixel-gutter: clamp(1.25rem, 7cqi, 8rem);
   --pixel-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
   --pixel-font: "FusionPixel", var(--pixel-mono);
@@ -2200,7 +2200,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 
 .pixel-hero {
   display: grid;
-  /* 构图参照 jld2nd：左侧大字身份区拿主空间，右侧像素角色台（24rem 定宽）。
+  /* 构图参照 jld2nd：左侧大字身份区拿主空间，右侧像素角色台（32rem 定宽）。
      注意：stage 必须保持连续矩形，press 行只能放在 stage 跨度之外，
      否则整条 grid-template 声明无效（见 styles.test.ts 矩形校验） */
   grid-template:
@@ -2279,8 +2279,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   position: relative;
   grid-area: stage;
   align-self: end;
-  /* 24rem=384px 与头像源图 1:1，保证 pixelated 颗粒均匀（见 styles.test.ts 整数倍合同） */
-  width: min(100%, 24rem);
+  /* 32rem=512px 与头像源图 1:1，保证 pixelated 颗粒均匀（见 styles.test.ts 整数倍合同） */
+  width: min(100%, 32rem);
   aspect-ratio: 1 / 1;
   isolation: isolate;
 }
@@ -2599,7 +2599,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
     padding-top: 2.4rem;
   }
   .pixel-hero h1 { font-size: clamp(2.8rem, 11cqi, 4.25rem); }
-  .pixel-stage { width: min(92%, 22rem); margin-inline: auto; }
+  .pixel-stage { width: min(92%, 32rem); margin-inline: auto; }
   .pixel-about { grid-template-columns: minmax(0, 1fr); }
   .pixel-about-glyph { display: none; }
   .pixel-project-row:has(.pixel-project-cover) { grid-template-columns: minmax(0, 1fr); }

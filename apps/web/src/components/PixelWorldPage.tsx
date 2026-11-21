@@ -63,7 +63,7 @@ function PixelPortrait({ artwork, defaultUrl }: { artwork: DesignConfigV4["heroA
     <div className="pixel-stage-grid" aria-hidden="true" />
     <div className="pixel-speech pixel-label" aria-hidden="true">你好！<i /></div>
     <img className="pixel-portrait" src={showPortrait ? portrait : defaultUrl}
-      alt={showPortrait ? artwork?.alt || "个人像素头像" : "像素世界风默认角色"} width="384" height="384"
+      alt={showPortrait ? artwork?.alt || "个人像素头像" : "像素世界风默认角色"} width="512" height="512"
       onError={showPortrait ? () => setFailedPortrait(portrait) : undefined} />
   </div>;
 }

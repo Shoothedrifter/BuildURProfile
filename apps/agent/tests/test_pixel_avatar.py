@@ -28,9 +28,9 @@ def test_pixel_avatar_quantizes_and_upscales_without_blurring():
         assert image.getpixel((204, 165))[3] == 255
         assert set(image.getchannel("A").tobytes()) == {0, 255}
         assert len([color for _, color in image.getcolors(64) if color[3] == 255]) <= 32
-        for y in range(0, 512, 8):
-            for x in range(0, 512, 8):
-                assert len(image.crop((x, y, x + 8, y + 8)).getcolors(2)) == 1
+        for y in range(0, 512, 16):
+            for x in range(0, 512, 16):
+                assert len(image.crop((x, y, x + 16, y + 16)).getcolors(2)) == 1
 
 
 def test_pixel_avatar_keeps_a_card_without_a_reliable_background():
@@ -56,7 +56,8 @@ def test_pixel_avatar_replaces_matte_spill_only_on_the_outer_edge():
     from buildurprofile_agent.skills.pixel_avatar import normalize_pixel_avatar
 
     with Image.open(io.BytesIO(rendered_fixture().bytes)) as image:
-        ImageDraw.Draw(image).rectangle((128, 105, 135, 405), fill="#b41461")
+        # spill 条宽 16px=新网格 1 格（512÷32）：保证格内不被 BOX 均值与躯干混色
+        ImageDraw.Draw(image).rectangle((128, 105, 143, 405), fill="#b41461")
         source = io.BytesIO()
         image.save(source, format="PNG")
     with Image.open(io.BytesIO(normalize_pixel_avatar(GeneratedImage(source.getvalue())).bytes)) as result:
@@ -79,18 +80,47 @@ def gradient_fixture(background="#f000a8"):
     return GeneratedImage(buffer.getvalue())
 
 
+def test_pixel_avatar_uses_a_coarse_32_grid():
+    # 对标 jld2nd 实测（2026-11）：站点像素画 17~27 格宽、每格 21~34 屏幕像素；
+    # 旧 64 格网格在 384/512 舞台上每格只有 6~8px，观感是「细马赛克」而非「大方块」。
+    # 网格必须降到 32 格：512 输出中每 16px 块单色，且相邻块存在异色
+    # （后者防止整幅单色图让断言假阳性）。
+    from buildurprofile_agent.skills.pixel_avatar import normalize_pixel_avatar
+
+    normalized = normalize_pixel_avatar(rendered_fixture())
+    with Image.open(io.BytesIO(normalized.bytes)) as image:
+        blocks = [image.crop((x, y, x + 16, y + 16)).getcolors(2)
+                  for y in range(0, 512, 16) for x in range(0, 512, 16)]
+        assert all(len(block) == 1 for block in blocks)
+        centers = [image.getpixel((x + 8, y + 8)) for y in range(0, 512, 16) for x in range(0, 512, 16)]
+        assert len(set(centers)) >= 2
+
+
 def test_pixel_avatar_flattens_continuous_tones_to_a_limited_palette():
-    # 对标 jld2nd 角色画的 6-10 色平涂：连续调输入须压平到「少数自适应彩色 + 固定中性」，
+    # 对标 jld2nd 角色画的 6-10 色平涂：连续调输入须压平到固定色板容量之内，
     # 旧 MEDIANCUT 32 会保留整条渐变（30+ 色），观感是马赛克照片而非像素画。
     from buildurprofile_agent.skills.pixel_avatar import normalize_pixel_avatar
 
     normalized = normalize_pixel_avatar(gradient_fixture())
     with Image.open(io.BytesIO(normalized.bytes)) as image:
         colors = [color for _, color in image.getcolors(256) if color[3] == 255]
-        assert len(colors) <= 13  # 8 自适应彩色 + 5 级固定中性（黑到白）
-        for y in range(0, 512, 8):
-            for x in range(0, 512, 8):
-                assert len(image.crop((x, y, x + 8, y + 8)).getcolors(2)) == 1
+        assert len(colors) <= 14  # jld2nd 固定色板共 14 色
+        for y in range(0, 512, 16):
+            for x in range(0, 512, 16):
+                assert len(image.crop((x, y, x + 16, y + 16)).getcolors(2)) == 1
+
+
+def test_pixel_avatar_maps_to_the_fixed_jld_palette():
+    # 严格对标 jld2nd.dev：所有输出色必须来自站点像素画实测的固定色板，
+    # 不再有任何自适应彩色——这是「像素画」与「马赛克照片」的分界线。
+    from buildurprofile_agent.skills.pixel_avatar import PIXEL_PALETTE, normalize_pixel_avatar
+
+    allowed = {(*color, 255) for color in PIXEL_PALETTE}
+    for source in (gradient_fixture(), rendered_fixture(body="#8a5a3a")):
+        normalized = normalize_pixel_avatar(source)
+        with Image.open(io.BytesIO(normalized.bytes)) as image:
+            used = {color for _, color in image.getcolors(4096) if color[3] == 255}
+            assert used <= allowed
 
 
 def test_pixel_avatar_saturates_washed_out_tones():

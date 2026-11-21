@@ -12,26 +12,36 @@ STYLE_ID = "pixel-halfbody-v1"
 RECIPE_VERSION = "1.1.0"
 RECIPE_LICENSE = "LicenseRef-BuildURProfile-Original-Preview-1.0"
 SOURCE_BYTES_LIMIT = 10 * 1024 * 1024
-MASTER_EDGE = 64
+MASTER_EDGE = 32  # 对标 jld2nd 粗网格（17~27 格宽）：512 输出中每格 16px，方块感立形
 OUTPUT_EDGE = 512
 MATTE = (240, 0, 168)
 NEIGHBORS = ((-1, 0), (1, 0), (0, -1), (0, 1))
-# 混合色板（对标 jld2nd 角色画的平涂纪律）：
-# - 中性色固定 5 级（黑到白），灰阶不因彩色聚类偏色；
-# - 彩色自适应 8 色，每张照片保留本人发色/肤色/服装主色；
-# - 先提饱和再量化：照片的灰蒙连续调压平后仍靠色块对比立形。
-NEUTRAL_PALETTE = ((16, 16, 16), (64, 64, 64), (128, 128, 128), (196, 196, 196), (244, 244, 244))
-PALETTE_COLORS = 8
+# jld2nd.dev 固定色板（2026-11 实测自站点像素画 SVG fill 全集）：
+# 全套无灰阶——暗部用深棕红、亮部用白，颜色纪律是「像素画」的核心；
+# 照片头像提饱和后做最近邻映射，肤色落到 pink/cream/orange/dark-maroon 档。
+PIXEL_PALETTE = (
+    (0, 0, 0),         # black（轮廓/暗部）
+    (255, 255, 255),   # white（高光/留白）
+    (206, 255, 0),     # lime（主强调）
+    (247, 206, 0),     # yellow
+    (247, 118, 63),    # orange
+    (238, 59, 62),     # red
+    (105, 29, 26),     # dark-maroon（阴影/深肤色）
+    (246, 205, 219),   # pink（浅肤色）
+    (238, 231, 213),   # cream（米白肤色）
+    (0, 141, 227),     # blue
+    (7, 150, 237),     # sky
+    (140, 101, 255),   # purple
+    (15, 171, 147),    # teal
+    (0, 255, 195),     # mint
+)
 SATURATION_BOOST = 1.35
 
 
 def _quantize_flat(image: Image.Image) -> Image.Image:
     boosted = ImageEnhance.Color(image).enhance(SATURATION_BOOST)
-    colorful = boosted.quantize(colors=PALETTE_COLORS, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-    palette = [channel for index in range(PALETTE_COLORS) for channel in colorful.getpalette()[index * 3:index * 3 + 3]]
-    palette.extend(channel for color in NEUTRAL_PALETTE for channel in color)
     swatch = Image.new("P", (1, 1))
-    swatch.putpalette(palette)
+    swatch.putpalette([channel for color in PIXEL_PALETTE for channel in color])
     return boosted.quantize(palette=swatch, dither=Image.Dither.NONE)
 
 
