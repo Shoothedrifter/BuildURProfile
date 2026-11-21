@@ -13,6 +13,49 @@ def test_checked_in_json_contracts_match_python_boundary():
         assert json.loads((ROOT / filename).read_text()) == model.model_json_schema()
 
 
+def test_pixel_traits_schema_matches_strict_agent_boundary():
+    import pytest
+    from pydantic import ValidationError
+    from buildurprofile_agent import contracts
+
+    assert hasattr(contracts, "PixelAvatarTraits"), "pixel traits boundary is missing"
+    model = contracts.PixelAvatarTraits
+    sample = {
+        "subject": "usable", "hair_style": "twin_tails", "hair_color": "dark",
+        "glasses": "none", "headwear": "unknown", "earwear": "unknown", "neckwear": "choker",
+    }
+    assert model.model_validate(sample).model_dump() == sample
+    with pytest.raises(ValidationError):
+        model.model_validate({**sample, "hair_style": "shoulder length"})
+    with pytest.raises(ValidationError):
+        model.model_validate({**sample, "confidence": 0.9})
+    with pytest.raises(ValidationError):
+        model.model_validate({key: value for key, value in sample.items() if key != "subject"})
+    assert json.loads((ROOT / "pixel-avatar-traits.v1.json").read_text()) == model.model_json_schema()
+
+
+def test_pixel_traits_v2_schema_matches_strict_agent_boundary():
+    import pytest
+    from pydantic import ValidationError
+    from buildurprofile_agent.contracts import PixelAvatarTraits, PixelAvatarTraitsV2
+
+    sample = {
+        "subject": "usable", "hair_length": "shoulder_length", "hair_tie": "single_ponytail",
+        "bangs": "straight", "hair_color": "pink", "glasses": "frames", "headwear": "none",
+        "earwear": "unknown", "neckwear": "choker",
+    }
+    assert PixelAvatarTraitsV2.model_validate(sample).model_dump() == sample
+    with pytest.raises(ValidationError):
+        PixelAvatarTraitsV2.model_validate({**sample, "hair_style": "long"})
+    with pytest.raises(ValidationError):
+        PixelAvatarTraitsV2.model_validate({**sample, "hair_length": "medium"})
+    with pytest.raises(ValidationError):
+        PixelAvatarTraitsV2.model_validate({key: value for key, value in sample.items() if key != "bangs"})
+    with pytest.raises(ValidationError):
+        PixelAvatarTraits.model_validate(sample)
+    assert json.loads((ROOT / "pixel-avatar-traits.v2.json").read_text()) == PixelAvatarTraitsV2.model_json_schema()
+
+
 def test_structured_resume_is_accepted_without_source_excerpts():
     resume = {"version": "resume-v1", "basicInfo": [{"key": "name", "label": "姓名", "value": "张三"}],
               "jobIntent": [], "selfEvaluation": [], "education": [], "workExperience": [], "projects": [],

@@ -9,6 +9,7 @@ import subprocess
 
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from PIL import Image
 
 from buildurprofile_agent.skills.registry import default_registry
@@ -21,10 +22,10 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 @pytest.mark.asyncio
-async def test_real_node_bridge_pixel_avatar_stays_private():
+async def test_real_node_bridge_pixel_avatar_stays_private(tmp_path):
     import base64
     import httpx
-    from buildurprofile_agent.providers.cloudflare_images import CloudflareImageProvider
+    from buildurprofile_agent.providers.cloudflare_pixel_vision import CloudflarePixelVisionProviderV2
 
     token = "p" * 64
     proc = subprocess.Popen(["node", "apps/agent/tests/fixtures/pixel-bridge-server.mjs"], cwd=ROOT,
@@ -44,10 +45,22 @@ async def test_real_node_bridge_pixel_avatar_stays_private():
         Image.new("RGB", (512, 512), "#435266").save(stream, format="PNG")
         image_b64 = base64.b64encode(stream.getvalue()).decode()
         requests = []
+        choices = {"subject": "usable", "hair_length": "long", "hair_tie": "loose", "bangs": "side_swept",
+                   "hair_color": "pink", "glasses": "frames",
+                   "headwear": "none", "earwear": "none", "neckwear": "choker"}
 
         def cloudflare_response(request):
-            requests.append(request)
-            return httpx.Response(200, json={"success": True, "result": {"image": image_b64}})
+            body = json.loads(request.content)
+            assert request.url.path.endswith("/@cf/cloudflare/clef")
+            assert len(body["images"]) == 1 and set(body["questions"]) == set(choices)
+            requests.append(body["images"][0]["base64"])
+            answers = {}
+            for key, question in body["questions"].items():
+                choice = choices[key]
+                answers[key] = {"type": "choice", "choice": choice, "confidence": 1.0,
+                                "probabilities": {option: int(option == choice) for option in question["criteria"]}}
+            return httpx.Response(200, json={"success": True, "result": {"model": "clef",
+                "answers": answers, "usage": {"input_tokens": 100, "output_tokens": 0}}})
 
         async with (httpx.AsyncClient(base_url=base, trust_env=False) as owner,
                     httpx.AsyncClient(base_url=base, trust_env=False) as other,
@@ -61,12 +74,22 @@ async def test_real_node_bridge_pixel_avatar_stays_private():
                                                                 "idempotencyKey": "pixel-bridge"},
                                        headers=headers)).raise_for_status().json()
             client = NodeAgentClient(base, token)
-            saver = MemorySaver()
             try:
-                task = await client.lease("pixel_worker")
-                assert task and task.id == queued["id"] and task.workflow_version == "python-agent-v7"
-                provider = CloudflareImageProvider(account_id="a" * 32, api_token="test-token", http=cf)
-                await process_task(task, client, object(), default_registry(), saver, "pixel_worker", pixel_provider=provider)
+                assert await client.lease("legacy_worker") is None
+                assert await client.lease("v8_worker", supports_pixel_layer_avatar=True) is None
+                task = await client.lease("pixel_worker", supports_pixel_layer_avatar=True,
+                                          supports_pixel_detailed_avatar=True)
+                assert task and task.id == queued["id"] and task.workflow_version == "python-agent-v9"
+                provider = CloudflarePixelVisionProviderV2(account_id="a" * 32, api_token="test-token", http=cf)
+                async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "avatar-checkpoints.sqlite")) as saver:
+                    await saver.setup()
+                    await process_task(task, client, object(), default_registry(), saver, "pixel_worker",
+                                       pixel_detailed_vision=provider)
+                    assert len(requests) == 1
+                    async for record in saver.alist(None):
+                        snapshot = json.dumps(record.checkpoint, default=str)
+                        assert image_b64 not in snapshot and requests[0] not in snapshot
+                        assert '"hair_length"' not in snapshot and '"bangs"' not in snapshot and '"probabilities"' not in snapshot
             finally:
                 await client.close()
             result = (await owner.get(f"/api/generations/{task.id}")).raise_for_status().json()
@@ -74,12 +97,15 @@ async def test_real_node_bridge_pixel_avatar_stays_private():
             url = result["heroArtwork"]["assetUrl"]
             asset = (await owner.get(url)).raise_for_status()
             assert asset.headers["content-type"] == "image/png"
+            with Image.open(io.BytesIO(asset.content)) as candidate:
+                assert candidate.size == (1254, 1254)
+                assert candidate.mode == "RGBA" and candidate.getpixel((0, 0))[3] == 0
+                scalp = candidate.crop((450, 160, 800, 260))
+                colors = scalp.getcolors(maxcolors=scalp.width * scalp.height)
+                assert any(r > g + 30 and b > g + 8 for _, (r, g, b, a) in colors if a == 255)
             await other.get("/api/session")
             assert (await other.get(url)).status_code == 404
             assert (await owner.get(f"/api/projects/{project['id']}")).json() == project
-            assert len(requests) == 1
-            async for state in saver.alist(None):
-                assert image_b64 not in json.dumps(state.checkpoint, default=str)
     finally:
         proc.terminate()
         try:

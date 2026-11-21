@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import random
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -297,6 +298,81 @@ async def test_v7_pixel_avatar_drops_output_when_cancelled_while_the_provider_ru
     await process_task(item, client, FakeProvider(), default_registry(), MemorySaver(), pixel_provider=CancellingProvider())
     assert client.cancelled and client.writes == 0
     assert client.completed is None
+
+
+def layered_pixel_task():
+    golden = json.loads((FIXTURE.parent / "agent-golden.v3.json").read_text())
+    return replace(task(portrait=True), workflow_version="python-agent-v8", brief=None,
+                   config={**golden["expected"]["config"], "templateId": "pixel-world-v1"}, style_id="pixel-halfbody-v1")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", ["python-agent-v8", "python-agent-v9"])
+async def test_layered_avatar_accepts_only_a_pixel_portrait_with_existing_config(version):
+    item = replace(layered_pixel_task(), workflow_version=version)
+    invalid = [replace(item, portrait_asset_id=None, style_id=None),
+               replace(item, config={**item.config, "templateId": "cyber-creator-v1"}),
+               replace(item, config=None, brief={"templateId": "pixel-world-v1"}),
+               replace(item, style_id="lofi-print-anime")]
+    for candidate in invalid:
+        client = FakeClient()
+        await process_task(candidate, client, FakeProvider(), default_registry(), MemorySaver())
+        assert client.failed == ("INVALID_BRIEF", False)
+        assert client.writes == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exists", [True, False])
+@pytest.mark.parametrize("version", ["python-agent-v8", "python-agent-v9"])
+async def test_layered_avatar_reuses_candidate_or_fails_expired_without_reading_photo(exists, version):
+    class CachedClient(FakeClient):
+        async def output(self, task):
+            return {"assetId": "known-candidate", "exists": exists}
+
+        async def portrait(self, task):
+            pytest.fail("a task with an attached output must not read or reclassify its photo")
+
+    item = replace(layered_pixel_task(), workflow_version=version)
+    client = CachedClient()
+    await process_task(item, client, FakeProvider(), default_registry(), MemorySaver())
+    assert client.writes == 0
+    assert client.completed == (item.config if exists else None)
+    assert client.failed == (None if exists else ("PIXEL_CANDIDATE_EXPIRED", False))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [True, False])
+async def test_v8_stops_after_classification_if_cancelled_or_no_supported_changes(cancel):
+    from buildurprofile_agent.contracts import PixelAvatarTraits
+
+    client = FakeClient()
+
+    class Vision:
+        async def classify(self, portrait):
+            assert portrait.mime == "image/png"
+            client.cancelled = cancel
+            return PixelAvatarTraits(subject="usable", hair_style="short", hair_color="dark", glasses="none",
+                                     headwear="hat", earwear="none", neckwear="choker")
+
+    await process_task(layered_pixel_task(), client, FakeProvider(), default_registry(), MemorySaver(), pixel_vision=Vision())
+    assert client.writes == 0 and client.completed is None
+    assert client.failed == (None if cancel else ("PIXEL_NO_SUPPORTED_TRAITS", False))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subject", ["multiple_people", "no_person", "unclear"])
+async def test_v8_unusable_photo_has_no_candidate(subject):
+    from buildurprofile_agent.contracts import PixelAvatarTraits
+
+    class Vision:
+        async def classify(self, portrait):
+            return PixelAvatarTraits(subject=subject, hair_style="long", hair_color="brown", glasses="frames",
+                                     headwear="unknown", earwear="unknown", neckwear="unknown")
+
+    client = FakeClient()
+    await process_task(layered_pixel_task(), client, FakeProvider(), default_registry(), MemorySaver(), pixel_vision=Vision())
+    assert client.writes == 0 and client.completed is None
+    assert client.failed == ("PIXEL_PHOTO_UNCLEAR", False)
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ from .design import style_to_config, template_to_config
 from .resume import compose_resume, compose_resume_v3, compose_resume_v4, compose_resume_v5
 from .avatar import generate_avatar
 from .pixel_avatar import generate_pixel_avatar
+from .pixel_avatar_v2 import generate_detailed_pixel_avatar, generate_layered_pixel_avatar
 from .artifact import verify_artifact, verify_artifact_v2, verify_artifact_v3, verify_artifact_v4
 from .section_classifier import classify_sections
 from .item_splitter import split_items
@@ -22,7 +23,7 @@ from .anchored_formatter import format_anchors
 
 KNOWN_CAPABILITIES = frozenset({
     "read_portrait", "load_recipe", "existing_output", "store_output", "store_cutout", "output_exists",
-    "image_provider", "check_cancel", "text_model",
+    "image_provider", "check_cancel", "text_model", "classify_portrait", "compose_layers", "read_output_status",
 })
 
 
@@ -96,6 +97,10 @@ def default_registry() -> SkillRegistry:
         "store_output", "store_cutout", "output_exists", "image_provider", "check_cancel"}), False, 30 * 60.0, generate_avatar))
     registry.register(Skill("avatar.pixel.v1", "1.0.0", frozenset({"read_portrait", "load_recipe", "existing_output",
         "store_output", "output_exists", "image_provider", "check_cancel"}), False, 200.0, generate_pixel_avatar))
+    layered_avatar = frozenset({"read_portrait", "classify_portrait", "compose_layers",
+        "read_output_status", "store_output", "output_exists", "check_cancel"})
+    registry.register(Skill("avatar.pixel.v2", "2.0.0", layered_avatar, False, 35.0, generate_layered_pixel_avatar))
+    registry.register(Skill("avatar.pixel.v3", "3.0.0", layered_avatar, False, 35.0, generate_detailed_pixel_avatar))
     registry.register(Skill("artifact.qa.v1", "1.0.0", frozenset({"output_exists"}), True, 5.0, verify_artifact))
     registry.register(Skill("resume.sections.v1", "1.0.0", frozenset({"text_model"}), True, 120.0,
                             lambda inputs, grants: classify_sections(inputs["source"], grants["text_model"])))

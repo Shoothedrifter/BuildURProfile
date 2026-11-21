@@ -373,7 +373,7 @@ test("failed asset metadata insert does not leave a private portrait file", () =
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("Pixel World photo tasks are local, session-owned and pinned to a recipe", t => {
+test("new Pixel World photo tasks are local, session-owned and use the detailed workflow", t => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-photo-"));
   const db = openDatabase(":memory:");
   t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
@@ -388,7 +388,8 @@ test("Pixel World photo tasks are local, session-owned and pinned to a recipe", 
   const task = service.enqueue("owner", options);
   assert.equal(service.enqueue("owner", options).id, task.id);
   assert.equal(db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id).style_id, "pixel-halfbody-v1");
-  assert.equal(service.leaseNext({ supportsPixelWorld: true }).workflow_version, "python-agent-v7");
+  const lease = service.leaseNext({ supportsPixelWorld: true, supportsPixelDetailedAvatar: true });
+  assert.equal(lease?.workflow_version, "python-agent-v9");
   assert.throws(() => closed.savePortrait("owner", png), { status: 403 });
   assert.throws(() => closed.enqueue("owner", options), { status: 403 });
   assert.throws(() => service.enqueue("other", options), { status: 404 });
@@ -397,6 +398,62 @@ test("Pixel World photo tasks are local, session-owned and pinned to a recipe", 
   assert.throws(() => service.enqueueResume("owner", { resumeId: "synthetic", revision: 1, role: brief.role,
     templateId: config.templateId, portraitAssetId, idempotencyKey: "pixel-with-brief" }), { status: 400 });
 });
+
+for (const workflowVersion of ["python-agent-v7", "python-agent-v8"]) {
+  test(`retrying an existing ${workflowVersion} Pixel World photo request preserves its original workflow`, t => {
+    const root = mkdtempSync(join(tmpdir(), "burp-pixel-replay-"));
+    const db = openDatabase(":memory:");
+    t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+    let now = Date.now();
+    db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 2 * 86400000);
+    const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => now });
+    const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+    const config = { ...expected.config, templateId: "pixel-world-v1" };
+    const { id: portraitAssetId } = service.savePortrait("owner", png);
+    const request = { config, portraitAssetId, idempotencyKey: "pixel-before-deployment" };
+    const task = service.enqueue("owner", request);
+    db.prepare("UPDATE generations SET workflow_version=? WHERE id=?").run(workflowVersion, task.id);
+
+    assert.equal(service.enqueue("owner", request).id, task.id);
+    assert.equal(service.leaseNext({ supportsPixelWorld: true, supportsPixelLayerAvatar: true, supportsPixelDetailedAvatar: true }).workflow_version, workflowVersion);
+    now += 86400001;
+    assert.equal(service.enqueue("owner", request).id, task.id);
+    assert.throws(() => service.enqueue("owner", { ...request, idempotencyKey: "expired-new" }), { status: 404 });
+    assert.equal(db.prepare("SELECT count(*) n FROM generations").get().n, 1);
+  });
+}
+
+for (const workflowVersion of ["python-agent-v8", "python-agent-v9"]) {
+  test(`a stored ${workflowVersion} Pixel World candidate gets one completion lease after the retry cap`, t => {
+    const root = mkdtempSync(join(tmpdir(), "burp-pixel-completion-"));
+    const db = openDatabase(":memory:");
+    t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+    let now = Date.now();
+    db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 86400000);
+    const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => now, leaseMs: 1000, maxAttempts: 1 });
+    const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+    const photo = service.savePortrait("owner", png);
+    const task = service.enqueue("owner", { config: { ...expected.config, templateId: "pixel-world-v1" },
+      portraitAssetId: photo.id, idempotencyKey: "completion-after-last-attempt" });
+    if (workflowVersion === "python-agent-v8") {
+      db.prepare("UPDATE generations SET workflow_version=? WHERE id=?").run(workflowVersion, task.id);
+    }
+    const caps = { supportsPixelWorld: true, supportsPixelLayerAvatar: true, supportsPixelDetailedAvatar: true };
+    const initialLease = service.leaseNext(caps);
+    assert.equal(initialLease?.workflow_version, workflowVersion);
+    const assetId = service.storeOutput(task.id,
+      { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" }, initialLease.lease_token);
+
+    now += 1001;
+    const completionLease = service.leaseNext(caps);
+    assert.equal(completionLease?.output_asset_id, assetId);
+    assert.equal(completionLease?.attempt_count, 2);
+    assert.notEqual(completionLease?.lease_token, initialLease.lease_token);
+    now += 1001;
+    assert.equal(service.leaseNext(caps), null);
+    assert.equal(service.getTask("owner", task.id).status, "FAILED");
+  });
+}
 
 test("cyber template derives its fixed portrait style and rejects a mismatched choice", () => {
   const db = openDatabase(":memory:");
@@ -526,5 +583,26 @@ test("expired hero is not returned as a successful preview", () => {
     const expired = service.getTask("a", task.id);
     assert.equal(expired.status, "EXPIRED");
     assert.equal(expired.heroArtwork, undefined);
+  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test("an attached Pixel World candidate with a missing file cannot be reused", () => {
+  const db = openDatabase(":memory:");
+  const root = mkdtempSync(join(tmpdir(), "burp-pixel-missing-output-"));
+  try {
+    const time = Date.now();
+    db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", time, time + 86400000);
+    const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
+    const config = JSON.parse(readFileSync(new URL("../../../packages/contracts/fixtures/agent-golden.v3.json", import.meta.url))).expected.config;
+    const portrait = service.savePortrait("a", png);
+    const task = service.enqueue("a", { portraitAssetId: portrait.id, idempotencyKey: "missing-result",
+      config: { ...config, templateId: "pixel-world-v1" } });
+    const lease = service.leaseNext({ supportsPixelWorld: true, supportsPixelDetailedAvatar: true });
+    const assetId = service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" }, lease.lease_token);
+    assert.equal(service.outputExists(assetId), true);
+    rmSync(join(root, assetId));
+    assert.equal(service.getLeasedTask(task.id, lease.lease_token).output_asset_id, assetId);
+    assert.equal(service.outputExists(assetId), false);
+    assert.throws(() => service.readArtworkAsset("a", assetId), { status: 404 });
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });

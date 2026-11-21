@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { generateKeyPairSync } from "node:crypto";
 import { bindPaymentEnvironment, openDatabase } from "../../web/src/server/database.mjs";
 import { createPaymentService } from "../../web/src/server/service.mjs";
+import { createGenerationService } from "../../web/src/server/generations.mjs";
+import { buildStaticHtml } from "../../web/src/server/export.mjs";
 import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
 import { createAlipayGateway } from "../../web/src/server/gateway.mjs";
 import { loadSandboxPaymentEnv, paymentConfig, resolveRepoRoot } from "../../web/src/server/config.mjs";
@@ -41,23 +43,41 @@ test("concurrent checkout reuses one pending order and a server price snapshot",
   assert.equal(db.prepare("SELECT amount_fen FROM orders").get().amount_fen, 199);
 });
 
-test("Pixel World personal artwork cannot be persisted or delivered", async () => {
+test("a v9 Pixel World candidate cannot be persisted or delivered", async t => {
+  const assetRoot = mkdtempSync(join(tmpdir(), "burp-pixel-delivery-"));
+  t.after(() => rmSync(assetRoot, { recursive: true, force: true }));
   const base = pixelConfig();
   const { id, revision } = service.createProject("owner", base);
-  const withPortrait = { ...base, heroArtwork: { assetUrl: "data:image/png;base64,aGVsbG8=", styleId: "forged-style", alt: "私有图" } };
+  const generation = createGenerationService({ db, assetRoot, minPixels: 1, now: () => time });
+  const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=";
+  const photo = generation.savePortrait("owner", `data:image/png;base64,${image}`);
+  const task = generation.enqueue("owner", { config: base, portraitAssetId: photo.id, idempotencyKey: "delivery-preview" });
+  const lease = generation.leaseNext({ supportsPixelWorld: true, supportsPixelDetailedAvatar: true });
+  assert.equal(lease?.workflow_version, "python-agent-v9");
+  const assetId = generation.storeOutput(task.id, { bytes: Buffer.from(image, "base64"), mime: "image/png" }, lease.lease_token);
+  assert.equal(generation.complete(task.id, { config: base, leaseToken: lease.lease_token }), true);
+  const { heroArtwork, config: unchanged } = generation.getTask("owner", task.id);
+  assert.equal(heroArtwork.assetUrl, `/api/hero-assets/${assetId}`);
+  const withPortrait = { ...unchanged, heroArtwork };
   assert.throws(() => service.createProject("owner", withPortrait), { status: 400 });
   assert.throws(() => service.updateProject("owner", id, withPortrait), { status: 400 });
+  assert.throws(() => service.updateProject("owner", id, { ...unchanged,
+    heroArtwork: { ...heroArtwork, assetUrl: `data:image/png;base64,${image}`, styleId: "forged-style" } }), { status: 400 });
   assert.throws(() => service.createProject("owner", { ...withPortrait, templateId: "cyber-creator-v1",
-    heroArtwork: { ...withPortrait.heroArtwork, styleId: "pixel-halfbody-v1" } }), { status: 400 });
+    heroArtwork: { ...heroArtwork, assetUrl: `data:image/png;base64,${image}` } }), { status: 400 });
   assert.equal(service.getProject("owner", id).revision, revision);
   await service.notify(paidNotice(await service.checkout("owner", id, "share")));
   const share = service.publish("owner", id);
   const download = service.issueDownload("owner", id);
+  assert.deepEqual(service.readShare(share.token).config, unchanged);
+  const html = buildStaticHtml(service.getDownload("owner", download.token).config, "", "");
+  const art = readFileSync("apps/web/public/pixel-world-base.svg").toString("base64");
+  assert.ok(html.includes(`data:image/svg+xml;base64,${art}`));
+  assert.ok(!html.includes(assetId));
   db.prepare("UPDATE projects SET config_json=? WHERE id=?").run(JSON.stringify(withPortrait), id);
   assert.throws(() => service.publish("owner", id), { status: 400 });
   assert.throws(() => service.issueDownload("owner", id), { status: 400 });
   assert.throws(() => service.getDownload("owner", download.token), { status: 400 });
-  assert.equal(service.readShare(share.token).config.templateId, "pixel-world-v1");
   db.prepare("UPDATE shares SET config_json=? WHERE token=?").run(JSON.stringify(withPortrait), share.token);
   assert.throws(() => service.readShare(share.token), { status: 400 });
 });

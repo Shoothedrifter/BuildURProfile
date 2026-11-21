@@ -8,6 +8,13 @@ const DAY = 24 * 60 * 60 * 1000;
 const MAX_IMAGE = 10 * 1024 * 1024;
 const MIMES = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
 
+function readPrivateImage(path, unavailable) {
+  try { return readFileSync(/*turbopackIgnore: true*/ path); } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    throw new ServiceError(404, unavailable);
+  }
+}
+
 export function validateImage(bytes, declaredMime, minPixels) {
   if (!Buffer.isBuffer(bytes) || bytes.length < 40 || bytes.length > MAX_IMAGE) throw new ServiceError(400, "照片大小或内容无效（最大 10 MiB）。");
   let info;
@@ -51,9 +58,9 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
     if (!row) throw new ServiceError(404, "图片不存在或无权访问。");
     const compactPath = join(assetRoot, `${id}.webp`);
     if (kind === "hero" && existsSync(compactPath)) {
-      return { bytes: readFileSync(/*turbopackIgnore: true*/ compactPath), mime: "image/webp", kind };
+      return { bytes: readPrivateImage(compactPath, "图片不存在或无权访问。"), mime: "image/webp", kind };
     }
-    return { bytes: readFileSync(/*turbopackIgnore: true*/ row.path), mime: row.mime, kind: row.kind };
+    return { bytes: readPrivateImage(row.path, "图片不存在或无权访问。"), mime: row.mime, kind: row.kind };
   }
   function readArtworkAsset(sessionId, id) {
     const row = db.prepare("SELECT kind FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind IN ('hero','hero_cutout') AND expires_at>?").get(id, sessionId, now());
@@ -63,10 +70,11 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
   function readAssetForWorker(id) {
     const row = db.prepare("SELECT * FROM avatar_assets WHERE id=? AND kind='portrait' AND expires_at>?").get(id, now());
     if (!row) throw new ServiceError(404, "源照片已过期或不存在。");
-    return { bytes: readFileSync(/*turbopackIgnore: true*/ row.path), mime: row.mime };
+    return { bytes: readPrivateImage(row.path, "源照片已过期或不存在。"), mime: row.mime };
   }
   function outputExists(id) {
-    return Boolean(db.prepare("SELECT 1 FROM avatar_assets WHERE id=? AND kind='hero' AND expires_at>?").get(id, now()));
+    const row = db.prepare("SELECT path FROM avatar_assets WHERE id=? AND kind='hero' AND expires_at>?").get(id, now());
+    return Boolean(row && (existsSync(row.path) || existsSync(join(assetRoot, `${id}.webp`))));
   }
   function cutoutExists(id) {
     return Boolean(db.prepare("SELECT 1 FROM avatar_assets WHERE id=? AND kind='hero_cutout' AND expires_at>?").get(id, now()));

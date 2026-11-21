@@ -8,6 +8,13 @@ import { cleanGenerationBrief } from "./brief.mjs";
 import { validateImage } from "./assets.mjs";
 
 export const WORKFLOW_VERSION = "python-agent-v2";
+export const PIXEL_LAYER_WORKFLOW_VERSION = "python-agent-v8";
+export const PIXEL_DETAILED_WORKFLOW_VERSION = "python-agent-v9";
+export const PIXEL_CANDIDATE_EXPIRED_MESSAGE = "候选头像已过期，请重新选择照片。";
+
+export function isPixelCandidateWorkflow(version) {
+  return version === PIXEL_LAYER_WORKFLOW_VERSION || version === PIXEL_DETAILED_WORKFLOW_VERSION;
+}
 
 export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, maxAttempts, retryBaseMs,
   allowPortraits, requireBrief }) {
@@ -16,8 +23,9 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     const deleted = row.project_id && db.prepare("SELECT deleted_at FROM projects WHERE id=?").get(row.project_id)?.deleted_at != null;
     const expired = deleted || row.status === "SUCCEEDED" && row.output_asset_id && !assets.outputExists(row.output_asset_id);
     const cancelling = row.status === "RUNNING" && row.cancel_requested_at != null;
+    const expiredMessage = isPixelCandidateWorkflow(row.workflow_version) ? PIXEL_CANDIDATE_EXPIRED_MESSAGE : "成图已过期，请重新上传照片生成。";
     return { id: row.id, ...(row.project_id ? {projectId:row.project_id} : {}), status: expired ? "EXPIRED" : cancelling ? "CANCELLING" : row.status, styleId: row.style_id,
-      error: deleted ? "作品已删除，请重新生成。" : expired ? "成图已过期，请重新上传照片生成。" : row.error,
+      error: deleted ? "作品已删除，请重新生成。" : expired ? expiredMessage : row.error,
       ...(row.status === "SUCCEEDED" && !expired && row.config_json ? { config: JSON.parse(row.config_json) } : {}),
       ...(row.status === "SUCCEEDED" && row.output_asset_id && !expired ? { heroArtwork: { assetUrl: `/api/hero-assets/${row.output_asset_id}`, styleId: row.style_id,
         alt: row.style_id === PIXEL_AVATAR_STYLE_ID ? "个人像素头像" : "根据本人肖像生成的动画风格虚拟形象",
@@ -62,8 +70,6 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
         styleId ??= DEFAULT_AVATAR_STYLE_ID;
         if (styleId !== DEFAULT_AVATAR_STYLE_ID) throw new ServiceError(400, "未知肖像风格。");
       }
-      const asset = db.prepare("SELECT id FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind='portrait' AND expires_at>?").get(portraitAssetId, sessionId, now());
-      if (!asset) throw new ServiceError(404, "照片不存在或无权访问。");
     } else if (styleId) throw new ServiceError(400, "未上传照片时不能选择生图风格。");
     const existing = db.prepare("SELECT * FROM generations WHERE owner_session_id=? AND idempotency_key=?").get(sessionId, idempotencyKey);
     if (existing) {
@@ -71,9 +77,15 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
         (!safeBrief && existing.config_json !== safeConfig) || existing.brief_json !== safeBrief) throw new ServiceError(409, "生成请求标识已用于其他内容。");
       return publicTask(existing);
     }
+    if (portraitAssetId) {
+      const asset = db.prepare("SELECT id FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind='portrait' AND expires_at>?")
+        .get(portraitAssetId, sessionId, now());
+      if (!asset) throw new ServiceError(404, "照片不存在或无权访问。");
+    }
     const id = randomUUID(), time = now();
     const resumeVersion = (brief ?? config)?.content?.resume?.version;
-    const workflowVersion = templateId === "pixel-world-v1" ? "python-agent-v7"
+    const workflowVersion = templateId === "pixel-world-v1" && portraitAssetId ? PIXEL_DETAILED_WORKFLOW_VERSION
+      : templateId === "pixel-world-v1" ? "python-agent-v7"
       : templateId ? "python-agent-v6"
       : resumeVersion === "resume-v3" ? "python-agent-v4"
       : resumeVersion === "resume-v2" ? "python-agent-v3"
@@ -82,7 +94,8 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, workflowVersion, time, time);
     return getTask(sessionId, id);
   }
-  function leaseNext({ supportsPresentationHighlights = true, supportsPixelWorld = false } = {}) {
+  function leaseNext({ supportsPresentationHighlights = true, supportsPixelWorld = false, supportsPixelLayerAvatar = false,
+    supportsPixelDetailedAvatar = false } = {}) {
     for (let scanned = 0; scanned < 20; scanned++) {
       const time = now();
       db.prepare("UPDATE generations SET status='CANCELLED',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status='RUNNING' AND cancel_requested_at IS NOT NULL AND lease_until<=?")
@@ -91,13 +104,18 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       const row = db.prepare(`SELECT * FROM generations
         WHERE ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))
           AND (? OR workflow_version <> 'python-agent-v7')
+          AND (? OR workflow_version <> '${PIXEL_LAYER_WORKFLOW_VERSION}')
+          AND (? OR workflow_version <> '${PIXEL_DETAILED_WORKFLOW_VERSION}')
           AND (? OR NOT EXISTS (
             SELECT 1 FROM json_tree(COALESCE(brief_json, config_json, '{}'), '$.content.resume.sections')
             WHERE key='presentationHighlights'
           ))
-        ORDER BY created_at LIMIT 1`).get(time, time, Number(supportsPixelWorld), Number(supportsPresentationHighlights));
+        ORDER BY created_at LIMIT 1`).get(time, time, Number(supportsPixelWorld), Number(supportsPixelLayerAvatar),
+          Number(supportsPixelDetailedAvatar), Number(supportsPresentationHighlights));
       if (!row) return null;
-      if (row.attempt_count >= maxAttempts) {
+      // A task with a stored candidate can finalize once without classifying the photo again.
+      const canFinalize = isPixelCandidateWorkflow(row.workflow_version) && row.output_asset_id && row.attempt_count === maxAttempts;
+      if (row.attempt_count >= maxAttempts && !canFinalize) {
         db.prepare("UPDATE generations SET status='FAILED',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))")
           .run("生成任务重试次数已达上限。", time, row.id, time, time);
         continue;
@@ -181,7 +199,14 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       const time=now(),row=db.prepare('SELECT * FROM generations WHERE id=?').get(id);
       if(!row || row.cancel_requested_at!=null || (leaseToken ? row.status!=='RUNNING' || row.lease_token!==leaseToken || row.lease_until<=time : row.status!=='QUEUED')) return false;
       const safeConfig=config ? cleanConfig(config) : row.config_json;
-      if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version)){
+      if (isPixelCandidateWorkflow(row.workflow_version)) {
+        const queuedConfig = JSON.parse(row.config_json);
+        if (!row.portrait_asset_id || row.brief_json || row.style_id !== PIXEL_AVATAR_STYLE_ID || queuedConfig?.templateId !== "pixel-world-v1"
+          || !isDeepStrictEqual(JSON.parse(safeConfig), queuedConfig)) {
+          throw new ServiceError(400, "头像生成结果与原作品配置不一致。");
+        }
+        if (!row.output_asset_id || !assets.outputExists(row.output_asset_id)) return false;
+      } else if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version)){
         const confirmedBrief=JSON.parse(row.brief_json || row.config_json), published=JSON.parse(safeConfig || 'null');
         if(!published || !isDeepStrictEqual(published.content,confirmedBrief.content)
           || ['python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version) && published.templateId!==confirmedBrief.templateId)

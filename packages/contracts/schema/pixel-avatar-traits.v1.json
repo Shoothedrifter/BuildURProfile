@@ -1,0 +1,94 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "subject": {
+      "enum": [
+        "usable",
+        "multiple_people",
+        "no_person",
+        "unclear"
+      ],
+      "title": "Subject",
+      "type": "string"
+    },
+    "hair_style": {
+      "enum": [
+        "short",
+        "long",
+        "twin_tails",
+        "other",
+        "unknown"
+      ],
+      "title": "Hair Style",
+      "type": "string"
+    },
+    "hair_color": {
+      "enum": [
+        "dark",
+        "brown",
+        "blond",
+        "gray_white",
+        "vivid",
+        "unknown"
+      ],
+      "title": "Hair Color",
+      "type": "string"
+    },
+    "glasses": {
+      "enum": [
+        "none",
+        "frames",
+        "other",
+        "unknown"
+      ],
+      "title": "Glasses",
+      "type": "string"
+    },
+    "headwear": {
+      "enum": [
+        "none",
+        "hair_clip",
+        "headband",
+        "hat",
+        "other",
+        "unknown"
+      ],
+      "title": "Headwear",
+      "type": "string"
+    },
+    "earwear": {
+      "enum": [
+        "none",
+        "earring",
+        "headphones",
+        "other",
+        "unknown"
+      ],
+      "title": "Earwear",
+      "type": "string"
+    },
+    "neckwear": {
+      "enum": [
+        "none",
+        "choker",
+        "necklace",
+        "scarf",
+        "other",
+        "unknown"
+      ],
+      "title": "Neckwear",
+      "type": "string"
+    }
+  },
+  "required": [
+    "subject",
+    "hair_style",
+    "hair_color",
+    "glasses",
+    "headwear",
+    "earwear",
+    "neckwear"
+  ],
+  "title": "PixelAvatarTraits",
+  "type": "object"
+}

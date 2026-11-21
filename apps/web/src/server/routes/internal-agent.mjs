@@ -5,11 +5,17 @@ import { ServiceError } from "../service.mjs";
 import { loadStyleRecipe } from "../../../../../packages/skills/src/wibi.ts";
 import { PIXEL_AVATAR_STYLE_ID } from "../../../../../packages/skills/src/avatar-catalog.ts";
 import { loadPixelAvatarRecipe } from "../../../../../packages/skills/src/pixel-avatar.ts";
+import {
+  isPixelCandidateWorkflow, PIXEL_CANDIDATE_EXPIRED_MESSAGE, PIXEL_DETAILED_WORKFLOW_VERSION, PIXEL_LAYER_WORKFLOW_VERSION
+} from "../../../../../packages/storage/src/generation/queue.mjs";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 const RETRYABLE_CODES = new Set(["PROVIDER_RATE_LIMIT", "PROVIDER_UNAVAILABLE"]);
-const SUPPORTED_GENERATION_WORKFLOWS = new Set(["python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", "python-agent-v6", "python-agent-v7"]);
+const SUPPORTED_GENERATION_WORKFLOWS = new Set([
+  "python-agent-v2", "python-agent-v3", "python-agent-v4", "python-agent-v5", "python-agent-v6", "python-agent-v7",
+  PIXEL_LAYER_WORKFLOW_VERSION, PIXEL_DETAILED_WORKFLOW_VERSION
+]);
 const ERROR_MESSAGES = {
   PROVIDER_RATE_LIMIT: "图像服务暂时繁忙，系统会在限定次数内重试。",
   PROVIDER_UNAVAILABLE: "图像服务暂时不可用，系统会在限定次数内重试。",
@@ -17,6 +23,12 @@ const ERROR_MESSAGES = {
   PROVIDER_TIMEOUT: "图像生成超时。请检查任务状态后再尝试。",
   PROVIDER_REJECTED: "图像服务未能处理这张照片，请更换照片或风格。",
   PIXEL_OUTPUT_INVALID: "这次成图不符合像素头像要求。请重新生成或换一张照片。",
+  PIXEL_PHOTO_INVALID: "照片格式或内容无效，请重新选择 PNG、JPEG 或 WebP 格式的照片。",
+  PIXEL_PHOTO_UNCLEAR: "无法确认一位清晰的主要人物，请换一张清晰单人照。",
+  PIXEL_TRAITS_INVALID: "照片特征识别结果无效，请重试。",
+  PIXEL_NO_SUPPORTED_TRAITS: "这张照片没有可应用的造型特征。你可以保留当前头像、使用默认角色，或换一张照片。",
+  PIXEL_PHOTO_EXPIRED: "源照片已过期，请重新选择照片。",
+  PIXEL_CANDIDATE_EXPIRED: PIXEL_CANDIDATE_EXPIRED_MESSAGE,
   STYLE_UNAVAILABLE: "所选风格资源暂不可用。",
   SKILL_VERSION_MISMATCH: "生成规则已更新，请重新提交作品。",
   INVALID_BRIEF: "已确认的展示内容无效，请重新提交作品。",
@@ -85,7 +97,9 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
     }
     const capabilities = {
       supportsPresentationHighlights: input.supportsPresentationHighlights === true,
-      supportsPixelWorld: input.supportsPixelWorld === true
+      supportsPixelWorld: input.supportsPixelWorld === true,
+      supportsPixelLayerAvatar: input.supportsPixelLayerAvatar === true,
+      supportsPixelDetailedAvatar: input.supportsPixelDetailedAvatar === true
     };
     let task = service.leaseNext(capabilities);
     for (let skipped = 0; task && !SUPPORTED_GENERATION_WORKFLOWS.has(task.workflow_version) && skipped < 20; skipped++) {
@@ -137,7 +151,8 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
   }
   if (req.method === "GET" && action === "recipe") {
     const row = requireLease(service, id, req.headers["x-agent-lease"]);
-    if (!portraitEnabled || !row.style_id || service.isCancelRequested(id, req.headers["x-agent-lease"])) {
+    if (!portraitEnabled || !row.style_id || isPixelCandidateWorkflow(row.workflow_version) ||
+      service.isCancelRequested(id, req.headers["x-agent-lease"])) {
       throw new ServiceError(409, "当前任务没有可用的肖像风格。");
     }
     const recipe = styleLoader(row.style_id);

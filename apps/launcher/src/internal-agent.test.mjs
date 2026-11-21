@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { openDatabase } from "../../../packages/storage/src/database.mjs";
 import { createGenerationService } from "../../../packages/storage/src/generations.mjs";
 import { styleToConfig } from "../../../packages/skills/src/mapping.ts";
-import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
+import { createPaymentHttpServer, createRequestHandler, dispatchWebRequest } from "../../web/src/server/http.mjs";
 
 const token = "a".repeat(64);
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=", "base64");
@@ -22,6 +22,14 @@ function config() {
 function jsonHeaders(extra = {}) { return { authorization: `Bearer ${token}`, "content-type": "application/json", ...extra }; }
 async function post(base, path, body, headers = {}) {
   return fetch(`${base}${path}`, { method: "POST", headers: jsonHeaders(headers), body: JSON.stringify(body) });
+}
+function agentRequests(db, generationService) {
+  const handler = createRequestHandler({ db, service: {}, generationService, portraitEnabled: true,
+    agentToken: token, secret: Buffer.alloc(32, 7) });
+  return (path, body, headers = {}) => dispatchWebRequest(new Request(`http://test/_internal/agent/${path}`, {
+    method: body === undefined ? "GET" : "POST", headers: jsonHeaders(headers),
+    body: body === undefined || Buffer.isBuffer(body) ? body : JSON.stringify(body)
+  }), handler);
 }
 
 test("internal Agent bridge requires token and leases only the versioned public brief", async () => {
@@ -133,6 +141,108 @@ test("Pixel World lease skips workers without support", async (t) => {
   }
 });
 
+test("Pixel World workers lease only their advertised avatar versions", async t => {
+  const root = mkdtempSync(join(tmpdir(), "burp-pixel-layer-bridge-"));
+  const db = openDatabase(":memory:");
+  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  let now = Date.now();
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 100_000);
+  const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => now });
+  const { input, expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const config = { ...expected.config, templateId: "pixel-world-v1" };
+  for (const section of config.content.resume.sections) for (const item of section.items) item.supplement.images = [];
+  const photo = service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
+  const detailedAvatar = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "detailed" });
+  now++;
+  const layeredAvatar = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "layered" });
+  db.prepare("UPDATE generations SET workflow_version='python-agent-v8' WHERE id=?").run(layeredAvatar.id);
+  now++;
+  const baseWork = service.enqueue("owner", { brief: { role: input.role, content: config.content, templateId: config.templateId }, idempotencyKey: "base" });
+  const request = agentRequests(db, service);
+  const worker = { workerId: "pixel", supportsPixelWorld: true, supportsPresentationHighlights: true };
+  const baseLease = await (await request("lease", worker)).json();
+  assert.equal(baseLease.id, baseWork.id);
+  assert.equal(baseLease.workflowVersion, "python-agent-v7");
+  assert.equal((await request("lease", worker)).status, 204);
+  assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(detailedAvatar.id).attempt_count, 0);
+  assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(layeredAvatar.id).attempt_count, 0);
+  assert.equal((await request(`tasks/${baseWork.id}/complete`, { leaseToken: baseLease.leaseToken, config })).status, 200);
+  assert.ok(service.getTask("owner", baseWork.id).projectId);
+
+  const layeredLease = await (await request("lease", { ...worker, supportsPixelLayerAvatar: true })).json();
+  assert.equal(layeredLease.id, layeredAvatar.id);
+  assert.equal(layeredLease.workflowVersion, "python-agent-v8");
+  assert.equal((await request("lease", { ...worker, supportsPixelLayerAvatar: true })).status, 204);
+  assert.equal((await request("lease", { ...worker, supportsPixelDetailedAvatar: "true" })).status, 204);
+  assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(detailedAvatar.id).attempt_count, 0);
+  const detailedLease = await (await request("lease", { ...worker, supportsPixelDetailedAvatar: true })).json();
+  assert.equal(detailedLease.id, detailedAvatar.id);
+  assert.equal(detailedLease.workflowVersion, "python-agent-v9");
+
+  for (const avatarLease of [layeredLease, detailedLease]) {
+    assert.equal(avatarLease.brief, null);
+    const { id, leaseToken } = avatarLease;
+    const path = `tasks/${id}`;
+    const complete = `${path}/complete`;
+    assert.equal((await request(complete, { leaseToken, config })).status, 409);
+    const headers = { "x-agent-lease": leaseToken };
+    assert.equal((await request(`${path}/recipe`, undefined, headers)).status, 409);
+    const output = await request(`${path}/output`, png, { ...headers, "content-type": "image/png" });
+    assert.equal(output.status, 200);
+    const { assetId } = await output.json();
+    assert.equal((await request(complete, { leaseToken, config: { ...config, templateId: "minimal-v1" } })).status, 400);
+    assert.equal((await request(complete, { leaseToken, config: { ...config, marquee: { ...config.marquee, speed: config.marquee.speed + 1 } } })).status, 400);
+    assert.equal((await request(complete, { leaseToken, config })).status, 200);
+    const result = service.getTask("owner", id);
+    assert.deepEqual(result.config, avatarLease.config);
+    assert.deepEqual(result.heroArtwork, { assetUrl: `/api/hero-assets/${assetId}`, styleId: "pixel-halfbody-v1", alt: "个人像素头像" });
+    assert.equal(result.projectId, undefined);
+  }
+  assert.equal(db.prepare("SELECT count(*) n FROM projects").get().n, 1);
+  now += 7 * 24 * 60 * 60 * 1000;
+  for (const { id } of [layeredLease, detailedLease]) {
+    const expired = service.getTask("owner", id);
+    assert.equal(expired.status, "EXPIRED");
+    assert.equal(expired.heroArtwork, undefined);
+    assert.match(expired.error, /候选头像已过期.*重新选择照片/);
+  }
+});
+
+test("the detailed avatar publishes actionable failures without rescheduling", async t => {
+  const root = mkdtempSync(join(tmpdir(), "burp-pixel-layer-errors-"));
+  const db = openDatabase(":memory:");
+  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  let now = Date.now();
+  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 100_000);
+  const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => now });
+  const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
+  const config = { ...expected.config, templateId: "pixel-world-v1" };
+  const photo = service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
+  const request = agentRequests(db, service);
+  const cases = {
+    PIXEL_PHOTO_INVALID: /照片格式或内容无效/,
+    PIXEL_PHOTO_UNCLEAR: /清晰单人照/,
+    PIXEL_TRAITS_INVALID: /特征识别结果无效/,
+    PIXEL_NO_SUPPORTED_TRAITS: /默认角色/,
+    PIXEL_CANDIDATE_EXPIRED: /候选头像已过期.*重新选择照片/,
+    PIXEL_PHOTO_EXPIRED: /源照片已过期.*重新选择照片/
+  };
+  for (const [errorCode, message] of Object.entries(cases)) {
+    const task = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: errorCode });
+    if (errorCode === "PIXEL_PHOTO_EXPIRED") now += 24 * 60 * 60 * 1000;
+    const lease = await (await request("lease", { workerId: "pixel", supportsPixelWorld: true, supportsPixelDetailedAvatar: true })).json();
+    assert.equal(lease.id, task.id);
+    if (errorCode === "PIXEL_PHOTO_EXPIRED") {
+      const headers = { "x-agent-lease": lease.leaseToken };
+      assert.equal((await request(`tasks/${task.id}/portrait`, undefined, headers)).status, 404);
+    }
+    assert.equal((await request(`tasks/${task.id}/fail`, { leaseToken: lease.leaseToken, errorCode, retryable: true })).status, 200);
+    const result = service.getTask("owner", task.id);
+    assert.equal(result.status, "FAILED");
+    assert.match(result.error, message);
+  }
+});
+
 test("generation leases leave explicit highlight states for capable workers", async () => {
   const root = mkdtempSync(join(tmpdir(), "burp-highlights-bridge-"));
   const db = openDatabase(join(root, "app.sqlite"));
@@ -173,7 +283,7 @@ test("generation leases leave explicit highlight states for capable workers", as
   }
 });
 
-test("Pixel World uses the existing leased recipe and asset endpoints", async (t) => {
+test("queued v7 Pixel World photo tasks retain the leased recipe and asset endpoints", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-assets-"));
   const db = openDatabase(":memory:");
   const now = Date.now();
@@ -183,32 +293,27 @@ test("Pixel World uses the existing leased recipe and asset endpoints", async (t
   const config = { ...expected.config, templateId: "pixel-world-v1" };
   const photo = service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
   const task = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "pixel-photo" });
-  const server = createPaymentHttpServer({ db, service: {}, generationService: service, portraitEnabled: true,
-    agentToken: token, secret: Buffer.alloc(32, 7) });
+  db.prepare("UPDATE generations SET workflow_version='python-agent-v7' WHERE id=?").run(task.id);
   t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
-  await new Promise((resolve, reject) => server.once("error", reject).listen(0, "127.0.0.1", resolve));
-  try {
-    const base = `http://127.0.0.1:${server.address().port}`;
-    const lease = await (await post(base, "/_internal/agent/lease", { workerId: "pixel", supportsPixelWorld: true })).json();
-    const path = `${base}/_internal/agent/tasks/${task.id}`;
-    const headers = { authorization: `Bearer ${token}`, "x-agent-lease": lease.leaseToken };
-    assert.equal((await fetch(`${path}/recipe`, { headers: { authorization: headers.authorization } })).status, 409);
-    const recipe = await (await fetch(`${path}/recipe`, { headers })).json();
-    assert.equal(recipe.id, "pixel-halfbody-v1");
-    assert.equal(recipe.version, "1.1.0");
-    assert.equal(recipe.referenceImages.length, 1);
-    assert.match(recipe.referenceImages[0].dataBase64, /^iVBOR/);
-    const output = await fetch(`${path}/output`, { method: "POST", headers: { ...headers, "content-type": "image/png" }, body: png });
-    assert.equal(output.status, 200);
-    const { assetId } = await output.json();
-    assert.equal((await post(base, `/_internal/agent/tasks/${task.id}/complete`, { leaseToken: lease.leaseToken, config })).status, 200);
-    assert.equal(service.getTask("owner", task.id).heroArtwork.assetUrl, `/api/hero-assets/${assetId}`);
-    assert.deepEqual(service.readArtworkAsset("owner", assetId).bytes, png);
-    assert.throws(() => service.readArtworkAsset("other", assetId), { status: 404 });
-    assert.equal(db.prepare("SELECT count(*) n FROM projects").get().n, 0);
-  } finally {
-    await new Promise(resolve => server.close(resolve));
-  }
+  const request = agentRequests(db, service);
+  const lease = await (await request("lease", { workerId: "pixel", supportsPixelWorld: true })).json();
+  assert.equal(lease.workflowVersion, "python-agent-v7");
+  const path = `tasks/${task.id}`;
+  const headers = { "x-agent-lease": lease.leaseToken };
+  assert.equal((await request(`${path}/recipe`)).status, 409);
+  const recipe = await (await request(`${path}/recipe`, undefined, headers)).json();
+  assert.equal(recipe.id, "pixel-halfbody-v1");
+  assert.equal(recipe.version, "1.1.0");
+  assert.equal(recipe.referenceImages.length, 1);
+  assert.match(recipe.referenceImages[0].dataBase64, /^iVBOR/);
+  const output = await request(`${path}/output`, png, { ...headers, "content-type": "image/png" });
+  assert.equal(output.status, 200);
+  const { assetId } = await output.json();
+  assert.equal((await request(`${path}/complete`, { leaseToken: lease.leaseToken, config })).status, 200);
+  assert.equal(service.getTask("owner", task.id).heroArtwork.assetUrl, `/api/hero-assets/${assetId}`);
+  assert.deepEqual(service.readArtworkAsset("owner", assetId).bytes, png);
+  assert.throws(() => service.readArtworkAsset("other", assetId), { status: 404 });
+  assert.equal(db.prepare("SELECT count(*) n FROM projects").get().n, 0);
 });
 
 test("internal Agent bridge streams only leased portrait and fences output and recipe", async () => {

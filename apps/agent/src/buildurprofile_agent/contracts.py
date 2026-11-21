@@ -1,7 +1,4 @@
-"""Version-one JSON contracts shared with the Node task API.
-
-Node validates before enqueueing; these models validate again at the trust boundary.
-"""
+"""JSON contracts for the Node task API and internal Agent boundaries."""
 
 from __future__ import annotations
 
@@ -18,6 +15,28 @@ from .skills.assessment import score_answers
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class PixelAvatarTraits(StrictModel):
+    subject: Literal["usable", "multiple_people", "no_person", "unclear"]
+    hair_style: Literal["short", "long", "twin_tails", "other", "unknown"]
+    hair_color: Literal["dark", "brown", "blond", "gray_white", "vivid", "unknown"]
+    glasses: Literal["none", "frames", "other", "unknown"]
+    headwear: Literal["none", "hair_clip", "headband", "hat", "other", "unknown"]
+    earwear: Literal["none", "earring", "headphones", "other", "unknown"]
+    neckwear: Literal["none", "choker", "necklace", "scarf", "other", "unknown"]
+
+
+class PixelAvatarTraitsV2(StrictModel):
+    subject: Literal["usable", "multiple_people", "no_person", "unclear"]
+    hair_length: Literal["short", "shoulder_length", "long", "unknown"]
+    hair_tie: Literal["loose", "single_ponytail", "twin_tails", "other", "unknown"]
+    bangs: Literal["none", "straight", "side_swept", "curtain", "unknown"]
+    hair_color: Literal["dark", "brown", "pink", "red", "purple", "blue", "blond", "gray_white", "vivid", "unknown"]
+    glasses: Literal["none", "frames", "other", "unknown"]
+    headwear: Literal["none", "hair_clip", "headband", "hat", "other", "unknown"]
+    earwear: Literal["none", "earring", "headphones", "other", "unknown"]
+    neckwear: Literal["none", "choker", "necklace", "scarf", "other", "unknown"]
 
 
 class Profile(StrictModel):

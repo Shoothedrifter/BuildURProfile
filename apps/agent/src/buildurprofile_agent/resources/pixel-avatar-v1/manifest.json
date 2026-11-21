@@ -1,0 +1,37 @@
+{
+  "files": {
+    "allow-back.png": "3483ed4c2c4cc3be4f433d9134522def70342c49d6ecc51f547942af98e50ea6",
+    "allow-erase.png": "cbe8e35f556a0e598d12f9d8af3fcdc21bf6ae8646f87b980952c7c7f82178fe",
+    "allow-front.png": "7d5745c9f8eb01ee48ad89355bd19f28932bedaf840610b239fce648d1514d03",
+    "allow-glasses.png": "8b02e028aeb2b5e7349d7f198f14a85b46a7886135332cf93514a9d9797072c1",
+    "allow-recolor.png": "dba3056dc6c36807885899573e5c5c6adc0f3f5442cc59150bc60a009b72ddc8",
+    "allow-restore.png": "232d4c3ced2da488e1a68b5a9b2b24a5d1d9d54cf0190aeca41bf9d539dee356",
+    "base.png": "04d577d4e87879669fe2284642a37b6186541e30bee84487507a92414537588c",
+    "glasses.png": "ec4238d0494cba3e84e325ee3d02ec7622abfb8360a0673eb53c9be6fe1905f3",
+    "hard-lock.png": "e0ececb2907d0002ad66e6992c7fc1691d22def1a6d58afc3ca9e6f3624f3864",
+    "long-back.png": "cb63bc636ecc9ae2fc3f92738d9b8641888e59316eaae6f3545ecc1d7bc45cbd",
+    "long-erase.png": "91b812846957350a295ad116380bbb17096b771861039015b8a672bf85434303",
+    "long-front.png": "b4003bb57e99787437c44b7b1e5e2874c81fbace92b012c7f3a5aa20696af2e0",
+    "long-light.png": "92540989a3fba8fbeaf7d9eb74310defeb589bef4540d5b3b1baa24521989da4",
+    "long-mid.png": "f97289877fbdb5464cc4c8095479696afcbd36ffae5dd8d658d6457c4bbafb84",
+    "long-restore.png": "ed47824035838313ae142c6ea90e5b313b81f26a9365d38bed428ba7b9600b74",
+    "long-shadow.png": "3ba92916b399d1518784b91464f577f57ee9105c143cd9dde5b77fee752d02f5",
+    "short-light.png": "f084f2ff183ca366fd813f8a6bf0e353f63a15fe42169414a6f7d85ff8bdb767",
+    "short-mid.png": "89b571160ebb5b1d0361da859097dc5aea9c96e932ef8947b2ed50ca9e0c126e",
+    "short-shadow.png": "8a235e43234ccd84afad804070e5fa993d14d3952261831675c34f748057bb91",
+    "twin-back.png": "f657e1ed22559711a927710250919c1530dc2871e65a566eea8c8c06aba5c586",
+    "twin-erase.png": "0cc7ee432edde65f48631618e4124fc8181aa80cdd93ef4f88fa92d6757a4fd9",
+    "twin-front.png": "f57e065697b88c446990f4ca54ef1d453a8b13e2b91ed1b6d40cd61aaf92daeb",
+    "twin-light.png": "e2e0d065f5670c4ce52e0e542f84bd8ecca9d58eb5d8aa7b71e58f5d363b4b6b",
+    "twin-mid.png": "82a774fb905a0063ab4e11f79481fe196b4bb41c8b234e8efd578b2f80f0727d",
+    "twin-restore.png": "cab45cd11bcf969e1fabe607261ad9f14c64f1a738dd6df6ef97cbef192e3dcf",
+    "twin-shadow.png": "9616d63a086f597dd132f1a70304192f69d655b971d14ac71b85e00239ebe4d2"
+  },
+  "sources": {
+    "glasses.svg": "757f8bbc5d8526815408298df125230ed7ee2f67a74063dbb62b1f3565f11fa6",
+    "long-hair.svg": "294f4b419a910ca8e4953ad7b4f2d64054ac4b637d23bc58f26e68c8ab098aad",
+    "pixel-world-base.svg": "21c0d92bc051a2d8f51372930d0823a01598b70e10ef6ba09b632663d2c10fc7",
+    "twin-tails.svg": "e4ce1d489bb88244c9d94f1b01875558175180f8f03c438a034ef32f555d0ac4"
+  },
+  "version": "2.0.0"
+}

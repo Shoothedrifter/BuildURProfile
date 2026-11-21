@@ -13,6 +13,7 @@ from fastapi import FastAPI, Response
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from .providers import create_image_provider
+from .providers.cloudflare_pixel_vision import CloudflarePixelVisionProvider, CloudflarePixelVisionProviderV2
 from .transport.node_api import NodeAgentClient
 from .worker import worker_loop, resume_worker_loop
 
@@ -34,6 +35,8 @@ async def lifespan(app: FastAPI):
         provider = create_image_provider(provider_name)
         pixel_provider = provider if provider_name == "cloudflare" else create_image_provider("cloudflare")
         worker = asyncio.create_task(worker_loop(client, provider, saver, pixel_provider=pixel_provider,
+            pixel_vision=CloudflarePixelVisionProvider(),
+            pixel_detailed_vision=CloudflarePixelVisionProviderV2(),
             worker_id=os.getenv("AGENT_WORKER_ID") or None))
         resume_worker = asyncio.create_task(resume_worker_loop(client, saver,
             worker_id=os.getenv("AGENT_RESUME_WORKER_ID") or None))
