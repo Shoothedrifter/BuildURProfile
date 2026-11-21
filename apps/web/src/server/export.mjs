@@ -4,9 +4,9 @@ import { resumeImageIds } from '../../../../packages/contracts/src/resume-v2.mjs
 import { assertDeliverableConfig } from '../../../../packages/contracts/src/validation.mjs';
 import { pixelFontFaceCss } from '../lib/pixelFontLabels.mjs';
 
-const defaultPortraitFiles = new Map([
-  ["cyber-creator-v1", "cyber-neutral-print-anime.webp"],
-  ["pixel-world-v1", "pixel-world-default.webp"]
+const defaultPortraitAssets = new Map([
+  ["cyber-creator-v1", { file: "cyber-neutral-print-anime.webp", mime: "image/webp" }],
+  ["pixel-world-v1", { file: "pixel-world-base.svg", mime: "image/svg+xml" }]
 ]);
 
 function repoRoot() {
@@ -57,9 +57,9 @@ export function buildStaticHtml(config, javascript, css, mediaReader, fontSubset
   }
   const safeConfig = JSON.stringify(config).replace(/</g, "\\u003c");
   const safeImages = JSON.stringify(resumeImages).replace(/</g, "\\u003c");
-  const defaultFile = defaultPortraitFiles.get(config.templateId);
-  const defaultPortrait = defaultFile && !config.heroArtwork
-    ? `data:image/webp;base64,${readFileSync(join(repoRoot(), "apps/web/public", defaultFile)).toString("base64")}`
+  const defaultAsset = defaultPortraitAssets.get(config.templateId);
+  const defaultPortrait = defaultAsset && !config.heroArtwork
+    ? `data:${defaultAsset.mime};base64,${readFileSync(join(repoRoot(), "apps/web/public", defaultAsset.file)).toString("base64")}`
     : "";
   const safeJs = javascript.replace(/<\/script/gi, "<\\/script");
   const title = escapeHtml(config.content?.profile?.name ? `${config.content.profile.name} — BuildURProfile Showcase` : "BuildURProfile Showcase");

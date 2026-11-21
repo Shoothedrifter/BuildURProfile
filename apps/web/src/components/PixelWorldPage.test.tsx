@@ -19,6 +19,11 @@ function config(sections: StructuredResumeV3["sections"]): DesignConfigV4 {
   return { ...mapped, content: { ...mapped.content, resume: { version: "resume-v3", sections: [basic, ...sections] } } };
 }
 
+it("uses the supplied base SVG when no private pixel avatar is applied", () => {
+  render(<ShowcasePage config={config([])} />);
+  expect(screen.getByRole("img", { name: "像素世界风默认角色" })).toHaveAttribute("src", "/pixel-world-base.svg");
+});
+
 it("shows one continuous story with ordered project rows, skill and experience chapters", () => {
   render(<ShowcasePage config={config([
     { kind: "projects", order: 5, items: [item("second", "第二个项目", 1), item("first", "无图项目", 0), item("empty", "", 2)] },

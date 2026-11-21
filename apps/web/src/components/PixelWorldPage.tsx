@@ -8,7 +8,7 @@ import { pixelFontChapterLabels, pixelFontFaceCss, pixelFontRequestHref } from "
 import { PixelProjectArchive, PixelProjectDialog, pixelProjectLinkId } from "./PixelWorldProjects";
 import { ResumeSupplement, type ResumeImageResolver } from "./ResumeDisplay";
 
-export const pixelDefaultPortrait = "/pixel-world-default.webp";
+export const pixelDefaultPortrait = "/pixel-world-base.svg";
 const chapterLabels: Record<PixelChapter, string> = pixelFontChapterLabels();
 type VisibleSection = ReturnType<typeof pixelWorldPresentation>["experience"][number];
 type Props = {

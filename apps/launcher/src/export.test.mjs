@@ -87,8 +87,10 @@ test("Pixel World offline export opens project files in the continuous showcase 
     await new Promise(resolve => setTimeout(resolve, 100));
     const page = dom.window.document.querySelector('[data-testid="pixel-world-page"]');
     assert.ok(page);
-    const art = readFileSync("apps/web/public/pixel-world-default.webp").toString("base64");
-    assert.equal(page.querySelector(".pixel-portrait").getAttribute("src"), `data:image/webp;base64,${art}`);
+    const portrait = page.querySelector(".pixel-portrait").getAttribute("src");
+    assert.match(portrait, /^data:image\/svg\+xml;base64,/);
+    const art = readFileSync("apps/web/public/pixel-world-base.svg");
+    assert.ok(Buffer.from(portrait.split(",")[1], "base64").equals(art), "the export embeds the original base SVG");
     const projectLink = page.querySelector('nav a[href="#works"]');
     assert.ok(projectLink);
     assert.equal(page.querySelector("h1").textContent, config.content.profile.name);

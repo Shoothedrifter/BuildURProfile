@@ -46,6 +46,11 @@ it("keeps the hero stage at an integer multiple of the 512px portrait source", (
   expect(stage).toMatch(/width:\s*min\(100%,\s*32rem\)/);
 });
 
+it("bounds the desktop hero stage track independently of the SVG's intrinsic size", () => {
+  const hero = cssSource.match(/\.pixel-hero\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(hero).toMatch(/\/\s*minmax\(0,\s*1fr\)\s+min\(48%,\s*32rem\)/);
+});
+
 // 像素画布纪律（对标 jld2nd.dev）：纯实心黑画布 + 真实方块装饰。
 // 任何 gradient（CRT 扫描线、repeating 线网格、mask 渐隐）都会把「方块像素」
 // 退化成「纹理」，这是横线状背景的根因，禁止再次引入。
