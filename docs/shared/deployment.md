@@ -68,6 +68,13 @@ docker compose -p buildurprofile-production -f compose.agent.yml ps
 
 Web 监听宿主机 `127.0.0.1:8787`，Agent 不发布端口。由服务器上的 Nginx 负责 HTTPS 和反向代理至 `http://127.0.0.1:8787`，并在转发前拒绝 `/_internal/agent/` 和 `/api/_internal/agent/` 及其子路径；支付宝通知路径 `/api/payment/notify` 必须允许 POST 且不重定向。应用数据卷和 checkpoint 卷均需备份；不要使用 `down -v` 删除生产卷。确认 `/healthz` 和 `/readyz` 正常，以及公网内部接口不可访问。支付宝回调和真实付款仍须在域名及生产凭据就绪后按[支付上线验收](../api/payment.md)逐项验证。
 
+### GitHub Pages 授权与验收
+
+1. 在 GitHub Developer settings 注册 OAuth App。Homepage URL 填 BuildURProfile 公网地址，Authorization callback URL 填同一 HTTPS origin 加 `/api/github-pages/callback`。本机联调可注册独立的测试 OAuth App，并填写实际访问的 loopback 地址，例如 `http://127.0.0.1:5173/api/github-pages/callback`。 [GitHub OAuth App 注册](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app)
+2. 在 Compose Web 的 `.env.api` 或本机根目录 `.env` 配置 `GITHUB_PAGES_ORIGIN`、`GITHUB_PAGES_CLIENT_ID` 和 `GITHUB_PAGES_CLIENT_SECRET`，然后重启 Web。Origin 只填协议和主机端口。三项完整时作品页显示部署入口。Client Secret 只交给 Web 服务端。Web 需要访问 `github.com`、`api.github.com` 和 GitHub Pages 默认站点。
+3. Nginx 将 `/api/github-pages/callback` 原样代理到 Web，沿用现有转发头。在该路径关闭访问日志（`access_log off;`），并将 `proxy_read_timeout` 设为 `150s`，供回调顺序完成 GitHub 写入。避免其他日志系统记录回调查询串，其中含一次性授权参数。
+4. 用个人 GitHub Free 测试账号与合成作品从已解锁项目发起部署。核对 GitHub 授权页、同账号公开仓库、默认分支的 `index.html` 与 `.nojekyll`、Pages 构建及最终 HTTPS 网址。打开网址检查内嵌图片、像素模板字体和项目详情导航，并用另外的 BuildURProfile 会话确认无法读取原会话的部署记录。
+
 ## 独立服务与公网部署
 
 完整运行需要两个服务：Next.js 先执行 `npm run build`，再以进程环境启动 `npm start`（监听 `SERVER_PORT`，默认 8787）；Python 安装锁定依赖后，以其虚拟环境执行 `python -m buildurprofile_agent.server`。两者注入相同服务令牌，Python 的 `AGENT_API_URL` 指向可访问的 Next.js 私有地址。

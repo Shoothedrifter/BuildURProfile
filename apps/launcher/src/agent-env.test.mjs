@@ -62,15 +62,18 @@ test('applyAgentEnvFile 新增供应商变量无需改启动脚本即可透传',
   assert.equal(env.RESUME_TEXT_FALLBACK_CHAIN, 'zai,deepseek,qwen');
 });
 
-test('applyAgentEnvFile 剔除 ALIPAY_ 与 PAYMENT_ 前缀变量', () => {
+test('applyAgentEnvFile 剔除支付与 GitHub Pages 配置', () => {
   const file = readAgentEnvFile(writeEnvFile([
     'PAYMENT_ENV=sandbox',
     'ALIPAY_APP_ID=2088',
+    'GITHUB_PAGES_ORIGIN=https://example.test',
     'ZAI_API_KEY=secret-value'
   ].join('\n')));
-  const env = applyAgentEnvFile({}, file);
+  const env = applyAgentEnvFile({ GITHUB_PAGES_CLIENT_SECRET: 'web-only' }, file);
   assert.equal(env.PAYMENT_ENV, undefined);
   assert.equal(env.ALIPAY_APP_ID, undefined);
+  assert.equal(env.GITHUB_PAGES_ORIGIN, undefined);
+  assert.equal(env.GITHUB_PAGES_CLIENT_SECRET, undefined);
   assert.equal(env.ZAI_API_KEY, 'secret-value');
 });
 

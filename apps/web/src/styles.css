@@ -822,7 +822,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   border-radius: var(--proof-radius);
   background: var(--proof-accent-soft);
 }
-.proof-result-next > div { display: grid; gap: 5px; }
+.proof-result-next > div:first-child { display: grid; gap: 5px; }
 .proof-result-next p { margin: 0; color: var(--proof-muted); font: 700 11px/1.5 ui-monospace, monospace; letter-spacing: .1em; }
 .proof-result-next strong { font-size: 17px; line-height: 1.5; }
 .proof-editor-column { min-width: 0; }
@@ -940,6 +940,27 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-warning { color: #7a4b00 !important; font-weight: 700; }
 .proof-share-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .proof-share-actions a { color: var(--proof-ink); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.proof-github-dialog {
+  width: min(540px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: clamp(20px, 5vw, 32px);
+  overflow: auto;
+  border: 1px solid var(--proof-line);
+  border-radius: 18px;
+  background: #fff;
+  color: var(--proof-ink);
+}
+.proof-github-dialog::backdrop { background: rgb(0 0 0 / .55); }
+.proof-github-dialog h2 { margin: 0 0 12px; font-size: clamp(20px, 4vw, 26px); }
+.proof-github-dialog p { margin: 0 0 12px; line-height: 1.55; }
+.proof-github-dialog details { margin-top: 16px; }
+.proof-github-dialog summary { cursor: pointer; }
+.proof-github-state { display: grid; gap: 12px; min-width: 0; margin-top: 12px; }
+.proof-github-state p { margin: 0; overflow-wrap: anywhere; }
+.proof-github-consent { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
+.proof-github-history { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.proof-github-history button { max-width: 100%; overflow-wrap: anywhere; }
 .proof-saved-shares ul { margin: 0; padding: 0; list-style: none; }
 .proof-saved-shares li { padding: 12px 0; display: flex; align-items: center; gap: 15px; border-top: 1px solid #d8c9c0; font-size: 12px; }
 .proof-saved-shares li > div { display: grid; gap: 3px; margin-right: auto; }

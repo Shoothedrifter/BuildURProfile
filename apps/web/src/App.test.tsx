@@ -9,7 +9,7 @@ import { ShowcasePage } from "./ShowcasePage";
 import rawConfig from "./demo/config.json";
 import resumeDraftFixture from "../../../packages/contracts/fixtures/resume-draft.v1.json";
 import { extractPdfText } from "./lib/pdf";
-import { paymentApi } from "./lib/paymentApi";
+import { githubPagesApi, paymentApi } from "./lib/paymentApi";
 import { generationApi } from "./lib/generationApi";
 import { resumeApi } from "./lib/resumeApi";
 import { preparePortrait } from "./lib/portrait";
@@ -25,6 +25,7 @@ vi.mock("./lib/generationApi", () => ({ generationApi: { generatePortfolio: vi.f
 vi.mock("./lib/resumeApi", () => ({ resumeApi: { read: vi.fn() } }));
 vi.mock("./lib/portrait", () => ({ preparePortrait: vi.fn().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=") }));
 vi.mock("./lib/paymentApi", () => ({
+  githubPagesApi: { list: vi.fn().mockResolvedValue([]), status: vi.fn(), start: vi.fn() },
   paymentApi: {
     offer: vi.fn().mockResolvedValue({ configured: true, mode: "sandbox", priceFen: 199, priceYuan: "1.99", service: "正式托管分享与静态网站导出", shareDays: 7 }),
     projects: vi.fn().mockResolvedValue([]),
@@ -131,6 +132,45 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("showcase builder", () => {
+  it("restores the owning project and shows the public address after GitHub returns", async () => {
+    const siteUrl = "https://test-owner.github.io/portfolio/";
+    const id = "deployment-1";
+    window.history.replaceState(null, "", `/?github_deployment=${id}#work`);
+    vi.mocked(githubPagesApi.status).mockResolvedValueOnce({ id, projectId: "project-1", repo: "portfolio", revision: 1,
+      stage: "published", error: null, repoUrl: "https://github.com/test-owner/portfolio", siteUrl });
+    vi.mocked(paymentApi.project).mockResolvedValueOnce({ id: "project-1", config: rawConfig as DesignConfig,
+      revision: 1, paid: true, pendingAction: null, pendingAmountFen: null });
+    try {
+      render(<App />);
+      const dialog = within(await screen.findByRole("dialog", { name: "部署到 GitHub Pages" }));
+      expect(dialog.getByLabelText("公开网址")).toHaveValue(siteUrl);
+      expect(dialog.getByRole("link", { name: "打开网站" })).toHaveAttribute("href", siteUrl);
+      expect(generationApi.resumeGeneration).not.toHaveBeenCalled();
+      fireEvent.click(dialog.getByRole("button", { name: "关闭" }));
+      expect(window.location.search).toBe("");
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("continues GitHub deployment after payment without publishing a hosted share", async () => {
+    window.history.replaceState(null, "", "/payment/return?project_id=project-1");
+    sessionStorage.setItem("github-pages-repo:project-1", "my-portfolio");
+    vi.mocked(paymentApi.reconcile).mockResolvedValueOnce({ id: "project-1", config: rawConfig as DesignConfig,
+      revision: 1, paid: true, pendingAction: "github-pages", pendingAmountFen: null });
+    try {
+      render(<App />);
+      const dialog = within(await screen.findByRole("dialog", { name: "部署到 GitHub Pages" }));
+      expect(dialog.getByLabelText("新仓库名称")).toHaveValue("my-portfolio");
+      expect(dialog.getByRole("checkbox")).not.toBeChecked();
+      expect(dialog.getByText(/已解锁发布资格/)).toBeVisible();
+      expect(paymentApi.publish).not.toHaveBeenCalled();
+      expect(githubPagesApi.start).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
   it("discloses photo processing before recognition and applies the private candidate only after selection", async () => {
     vi.mocked(generationApi.generatePixelAvatar).mockResolvedValueOnce(pixelArtwork);
     try {

@@ -4,8 +4,7 @@ import { applyAgentEnvFile, readAgentEnvFile } from "../apps/launcher/src/agent-
 
 if (existsSync(".env")) process.loadEnvFile(".env");
 const env = { ...process.env, PYTHONUTF8: "1" };
-for (const key of Object.keys(env)) if (key.startsWith("ALIPAY_") || key.startsWith("PAYMENT_")) delete env[key];
-// .env.agent 全量透传（剔除支付前缀），与 apps/launcher/src/dev.mjs 共用同一逻辑；
+// .env.agent 透传（剔除 Web 专用配置），与 apps/launcher/src/dev.mjs 共用同一逻辑；
 // 新增供应商变量无需再改启动脚本。
 applyAgentEnvFile(env, readAgentEnvFile());
 const defaultVenv = existsSync("apps/agent/.venv/bin/python")

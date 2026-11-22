@@ -1,7 +1,7 @@
 import type { DesignConfig } from "../../../../packages/contracts/src/config";
 
-export type OwnedProject = { id: string; config: DesignConfig; revision: number; paid: boolean; pendingAction: "share" | "export" | null; pendingAmountFen: number | null };
-export type Offer = { configured: boolean; mode: "sandbox" | "production" | null; configurationError?: string | null; priceFen: number | null; priceYuan: string | null; service: string; shareDays: number };
+export type OwnedProject = { id: string; config: DesignConfig; revision: number; paid: boolean; pendingAction: "share" | "export" | "github-pages" | null; pendingAmountFen: number | null };
+export type Offer = { configured: boolean; mode: "sandbox" | "production" | null; configurationError?: string | null; priceFen: number | null; priceYuan: string | null; service: string; shareDays: number; githubPagesEnabled?: boolean };
 export type PublishedShare = { token: string; url: string; expiresAt: number };
 
 let csrfPromise: Promise<string> | null = null;
@@ -36,7 +36,7 @@ export const paymentApi = {
   createProject: (config: DesignConfig) => request<OwnedProject>("/api/projects", "POST", { config }),
   updateProject: (id: string, config: DesignConfig) => request<OwnedProject>(`/api/projects/${encodeURIComponent(id)}`, "PUT", { config }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}`, "DELETE"),
-  checkout: (id: string, action: "share" | "export") => request<{ alreadyPaid: boolean; paymentHtml?: string; amountYuan?: string }>(
+  checkout: (id: string, action: "share" | "export" | "github-pages") => request<{ alreadyPaid: boolean; paymentHtml?: string; amountYuan?: string }>(
     `/api/projects/${encodeURIComponent(id)}/checkout`, "POST", { action }),
   reconcile: (id: string) => request<OwnedProject>(`/api/projects/${encodeURIComponent(id)}/reconcile`, "POST"),
   publish: (id: string) => request<PublishedShare>(`/api/projects/${encodeURIComponent(id)}/publish`, "POST"),
@@ -44,6 +44,20 @@ export const paymentApi = {
   revoke: (id: string, token: string) => request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}/shares/${encodeURIComponent(token)}`, "DELETE"),
   export: (id: string) => request<{ url: string; expiresAt: number }>(`/api/projects/${encodeURIComponent(id)}/export`, "POST"),
   readShare: (token: string) => request<{ config: DesignConfig; expiresAt: number }>(`/api/shares/${encodeURIComponent(token)}`)
+};
+
+export type GitHubDeployment = {
+  id: string; projectId: string; repo: string; revision: number;
+  stage: "authorizing" | "uploading" | "building" | "waiting" | "failed" | "published";
+  error: string | null; siteUrl: string | null; repoUrl: string | null;
+};
+
+export const githubPagesApi = {
+  list: (projectId: string) => request<GitHubDeployment[]>(`/api/projects/${encodeURIComponent(projectId)}/github-pages`),
+  status: (id: string) => request<GitHubDeployment>(`/api/github-pages/${encodeURIComponent(id)}`),
+  start: (projectId: string, input: { revision: number; repo: string; confirmed: boolean; deploymentId?: string }) =>
+    request<{ deployment: GitHubDeployment; authorizationUrl: string | null }>(
+      `/api/projects/${encodeURIComponent(projectId)}/github-pages`, "POST", input)
 };
 
 /** Submit only the official SDK generated form, never arbitrary script from an API response. */

@@ -9,12 +9,12 @@ export function readAgentEnvFile(path = '.env.agent') {
 }
 
 // 把 .env.agent 的全部变量合并进 Agent 进程环境：
-// 剔除 ALIPAY_/PAYMENT_ 前缀（Agent 不接触支付数据），文件值优先于进程环境。
+// 剔除 Web 专用的支付和发布配置，文件值优先于进程环境。
 // 有意不做白名单——新增供应商（如 fallback 池）只需写进 .env.agent 即可透传。
 export function applyAgentEnvFile(env, file) {
-  for (const [key, value] of Object.entries(file)) {
-    if (key.startsWith('ALIPAY_') || key.startsWith('PAYMENT_')) continue;
-    env[key] = value;
+  Object.assign(env, file);
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('ALIPAY_') || key.startsWith('PAYMENT_') || key.startsWith('GITHUB_PAGES_')) delete env[key];
   }
   return env;
 }

@@ -24,10 +24,7 @@ const agentEnv = {
   AGENT_SERVICE_TOKEN: token,
   AGENT_API_URL: `http://${host}:${webPort}`
 };
-for (const key of Object.keys(agentEnv)) {
-  if (key.startsWith("ALIPAY_") || key.startsWith("PAYMENT_")) delete agentEnv[key];
-}
-// .env.agent 全量透传给 Agent 进程（剔除支付前缀），与 scripts/run-python-agent.mjs 共用同一逻辑；
+// .env.agent 透传给 Agent 进程（剔除 Web 专用配置），与 scripts/run-python-agent.mjs 共用同一逻辑；
 // 新增供应商变量无需再改启动脚本。
 const agentFile = readAgentEnvFile();
 applyAgentEnvFile(agentEnv, agentFile);

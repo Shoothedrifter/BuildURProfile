@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
 import { JSDOM, VirtualConsole } from "jsdom";
 import { buildStaticHtml } from "../../web/src/server/export.mjs";
 import { createPixelFontService } from "../../web/src/server/pixel-font.mjs";
@@ -82,6 +83,16 @@ test("Pixel World offline export opens project files in the continuous showcase 
       }
     });
   }
+  async function waitForProjectDialog(document) {
+    const deadline = Date.now() + 2_000;
+    let detail = document.querySelector("dialog[open]");
+    while (!detail && Date.now() < deadline) {
+      await delay(20);
+      detail = document.querySelector("dialog[open]");
+    }
+    assert.equal(detail?.querySelector("h2")?.textContent, "合成项目");
+    return detail;
+  }
   const dom = openExport();
   try {
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -104,20 +115,17 @@ test("Pixel World offline export opens project files in the continuous showcase 
     assert.ok(openProject);
     const scrollCount = scrollTargets.length;
     openProject.click();
-    await new Promise(resolve => setTimeout(resolve, 30));
+    const detail = await waitForProjectDialog(page);
     assert.equal(scrollTargets.length, scrollCount, "opening a project leaves the archive at its current position");
     assert.equal(dom.window.location.hash, "#case=project-image");
-    const detail = page.querySelector("dialog[open]");
-    assert.equal(detail?.querySelector("h2")?.textContent, "合成项目");
     const imageCount = config.content.resume.sections.flatMap(s => s.items).flatMap(i => i.supplement.images).length;
     assert.ok(imageCount > 0);
     assert.equal(detail.querySelectorAll('img[src^="data:image/png;base64,"]').length, imageCount);
     assert.ok([...page.querySelectorAll("img")].every(img => img.getAttribute("src").startsWith("data:")));
     const direct = openExport("#case=project-image");
     try {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      assert.equal(direct.window.document.querySelector("dialog[open] h2")?.textContent, "合成项目");
-      direct.window.document.querySelector("dialog button").click();
+      const directDetail = await waitForProjectDialog(direct.window.document);
+      directDetail.querySelector("button").click();
       await new Promise(resolve => setTimeout(resolve, 30));
       assert.equal(direct.window.location.hash, "#works");
       assert.equal(direct.window.document.querySelector("dialog[open]"), null);

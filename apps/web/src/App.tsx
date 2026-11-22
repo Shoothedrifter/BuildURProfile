@@ -6,17 +6,18 @@ import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../
 import type { ResumeDraftV2 } from "../../../packages/contracts/src/resume-draft";
 import { projectConfirmedResumeV3 } from "../../../packages/contracts/src/resume-draft";
 import type { GenerationStatus } from "./lib/generationApi";
-import type { Offer, OwnedProject } from "./lib/paymentApi";
+import type { GitHubDeployment, Offer, OwnedProject } from "./lib/paymentApi";
 import type { DraftField, ResumeDraft } from "./lib/resume";
 import type { DeliveryAction, DraftGroup, ReclassifyTarget } from "./components/BuilderExperience";
 import type { WorkflowPhase } from "./components/BuilderChrome";
 import { ShowcasePage } from "./ShowcasePage";
 import { BuilderExperience } from "./components/BuilderExperience";
+import { GitHubPagesDialog } from "./components/GitHubPagesDialog";
 import { isAssessmentComplete } from "./lib/assessment";
 import { inlineConfigImages } from "./lib/export";
 import { extractPdfText } from "./lib/pdf";
 import { parseResumePages, toResumeContent, validateResumeDraft } from "./lib/resume";
-import { paymentApi, submitAlipayForm } from "./lib/paymentApi";
+import { githubPagesApi, paymentApi, submitAlipayForm } from "./lib/paymentApi";
 import { toPublishedConfig } from "./lib/publication";
 import { generationApi } from "./lib/generationApi";
 import { preparePortrait } from "./lib/portrait";
@@ -83,6 +84,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   const [shareSnapshot, setShareSnapshot] = useState("");
   const [resultError, setResultError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [githubDialog, setGitHubDialog] = useState<{ paymentReturn: boolean; deployment: GitHubDeployment | null } | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [photoName, setPhotoName] = useState("");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
@@ -91,7 +93,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   const photoDataRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (window.location.pathname === "/payment/return" || window.location.pathname.startsWith("/style/")) return;
+    if (window.location.pathname === "/payment/return" || window.location.pathname.startsWith("/style/") ||
+      new URLSearchParams(window.location.search).has("github_deployment")) return;
     let active = true;
     const version = generationVersion.current;
     void generationApi.resumeGeneration((status) => {
@@ -174,9 +177,15 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       setProjectId(id);
       setProjectPaid(project.paid);
       setGenerated(project.config);
+      void paymentApi.projects().then(setProjects).catch(() => {});
+      if (project.pendingAction === "github-pages") {
+        setPhase("result");
+        setGitHubDialog({ paymentReturn: true, deployment: null });
+        if (queryError) setResultError(queryError);
+        return;
+      }
       setPaymentIntent(project.pendingAction);
       setPhase("delivery");
-      void paymentApi.projects().then(setProjects).catch(() => {});
       if (queryError) {
         setResultError(`${queryError}。作品草稿已保留，请重试原操作。`);
         return;
@@ -198,6 +207,30 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
         setResultError(cause instanceof Error ? cause.message : "交付失败，请重试原操作。");
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("github_deployment");
+    if (!id) return;
+    let active = true;
+    void (async () => {
+      try {
+        const deployment = await githubPagesApi.status(id);
+        const project = await paymentApi.project(deployment.projectId);
+        if (!active) return;
+        if (!isRenderableConfig(project.config)) throw new Error("无法读取部署对应的作品。");
+        setProjectId(project.id);
+        setProjectPaid(project.paid);
+        setGenerated(project.config);
+        setPhase("result");
+        setGitHubDialog({ paymentReturn: false, deployment });
+      } catch (cause) {
+        if (!active) return;
+        setPhase("upload");
+        setError(cause instanceof Error ? cause.message : "无法恢复 GitHub Pages 部署。");
+      }
+    })();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -747,6 +780,16 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     onRunAvatarGeneration={() => { if (generated) void runAvatarGeneration(generated, true); }}
     onEditGenerated={editGenerated}
     onRequestDelivery={(action) => void requestDelivery(action)}
+    onGitHubPages={offer?.githubPagesEnabled ? () => setGitHubDialog({ paymentReturn: false, deployment: null }) : undefined}
+    githubPagesDialog={githubDialog && generated && <GitHubPagesDialog
+      projectId={projectId} paid={projectPaid} offer={offer} pixel={"templateId" in generated && generated.templateId === "pixel-world-v1"}
+      paymentReturn={githubDialog.paymentReturn} initialDeployment={githubDialog.deployment}
+      saveProject={saveProject} onPaid={() => setProjectPaid(true)} onClose={() => {
+        if (new URLSearchParams(window.location.search).has("github_deployment")) {
+          window.history.replaceState(null, "", "/#work");
+        }
+        setGitHubDialog(null);
+      }} />}
     onConfirmPublish={() => void requestDelivery("share", true)}
     onStartPayment={() => void startPayment()}
     onCheckEntitlement={() => void checkEntitlement()}

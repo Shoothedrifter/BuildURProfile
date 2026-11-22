@@ -19,6 +19,19 @@
 
 创建下载令牌后，`GET /api/downloads/{token}` 返回单文件 HTML；请求须来自项目所属会话，无需支付。导出脚本在开发、测试和构建前由 `scripts/build-export.mjs` 从共享展示组件生成。
 
+### GitHub Pages 部署
+
+同一项目的付费分享资格也可用于部署 GitHub Pages。服务端用已确认版本生成与导出相同的单文件 HTML，在用户授权的个人账户下创建公开项目仓库，写入 `index.html` 和 `.nojekyll`，再启用默认分支根目录的 Pages 发布。首次部署只接收新仓库名，HTML 上限为 25 MiB。像素世界使用可公开交付的默认角色。
+
+| 请求 | 用途 |
+| --- | --- |
+| `POST /api/projects/{id}/github-pages` | 凭 CSRF 提交 `{repo, revision, confirmed, deploymentId?}`，返回部署记录和 OAuth 授权地址；重试时传原记录 ID |
+| `GET /api/github-pages/callback` | 验证会话和一次性 OAuth state、以 PKCE 换取令牌并提交作品，然后返回作品页 |
+| `GET /api/projects/{id}/github-pages` | 查询当前项目的部署记录 |
+| `GET /api/github-pages/{deploymentId}` | 查询部署进度，匹配本次提交且默认 Pages 网址已提供相同 HTML 后返回网址 |
+
+仓库和站点由用户在 GitHub 上管理。若账号的用户站点配置了自定义域名，并被项目站点继承，可从 GitHub 仓库的 Pages 设置查看结果。服务端只探测该项目的默认 `github.io` 地址。OAuth 令牌只在提交期间使用，数据库保存部署阶段、仓库及提交标识，授权失败可基于原记录继续。详见[部署配置与验收](../shared/deployment.md#github-pages-授权与验收)。
+
 `database.mjs`、`generations.mjs` 是存储模块的导出入口。实际数据库迁移、任务队列、确认内容清洗及资产文件管理位于 `packages/storage/src/`。
 
 ### 2. `apps/launcher/`（启动、测试与部署入口）

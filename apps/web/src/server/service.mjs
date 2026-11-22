@@ -80,7 +80,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     });
   }
   async function checkout(sessionId, projectId, action) {
-    if (action !== "share") throw new ServiceError(400, "仅分享发布需要结账，导出免费。");
+    if (action !== "share" && action !== "github-pages") throw new ServiceError(400, "仅发布需要结账，导出免费。");
     assertDeliverableConfig(JSON.parse(ownedProject(db, sessionId, projectId).config_json));
     if (db.prepare("SELECT 1 FROM entitlements WHERE project_id=? AND status='ACTIVE'").get(projectId)) {
       db.prepare("UPDATE projects SET pending_action=? WHERE id=?").run(action, projectId);

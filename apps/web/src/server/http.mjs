@@ -12,6 +12,7 @@ import { createPixelFontService } from "./pixel-font.mjs";
 import { pixelFontGlyphs } from "../lib/pixelFontLabels.mjs";
 import { handleGenerationRoutes } from "./routes/generations.mjs";
 import { handleInternalAgentRoutes, validateAgentToken } from "./routes/internal-agent.mjs";
+import { createGitHubPagesService } from "./github-pages.mjs";
 
 function resolveRepoRoot() {
   const cwd = process.cwd();
@@ -83,8 +84,17 @@ function parseRoute(path) {
 
 export function createRequestHandler({ db, service, generationService = null, resumeRepository = null, portraitEnabled = true, agentToken = null,
   agentStyleLoader, paymentConfig, priceFen, configurationError = null,
-  secret = loadSessionSecret(), htmlBuilder = buildStaticHtml, pixelFont = createPixelFontService() }) {
+  secret = loadSessionSecret(), htmlBuilder = buildStaticHtml, pixelFont = createPixelFontService(),
+  githubConfig = null, githubFetch, githubNow, registerCleanup }) {
   const configuredAgentToken = validateAgentToken(agentToken);
+  async function renderHtml(sessionId, config) {
+    const fontSubset = config?.templateId === "pixel-world-v1"
+      ? await pixelFont.readSubset(pixelFontGlyphs(config.content?.profile?.name ?? ""))
+      : null;
+    return Buffer.from(htmlBuilder(config, undefined, undefined, id => service.readProjectMedia(sessionId, id), fontSubset));
+  }
+  const githubPages = createGitHubPagesService({ db, service, config: githubConfig, renderHtml, fetcher: githubFetch, now: githubNow });
+  if (githubPages) registerCleanup?.(githubPages.cleanup);
   return async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost"), parts = parseRoute(url.pathname);
@@ -134,7 +144,7 @@ export function createRequestHandler({ db, service, generationService = null, re
           configurationError, priceFen: priceFen ?? null,
           priceYuan: priceFen ? (priceFen / 100).toFixed(2) : null,
           service: "一次付款解锁当前项目的发布与分享，静态网站导出免费",
-          shareDays: 7 }); return;
+          shareDays: 7, githubPagesEnabled: Boolean(githubPages) }); return;
       }
       // 像素字体子集：公开只读，分享页与预览共用，无会话数据。上限与组件端 GLYPH_LIMIT 一致。
       if (req.method === "GET" && url.pathname === "/api/pixel-font") {
@@ -149,6 +159,15 @@ export function createRequestHandler({ db, service, generationService = null, re
       if (parts[0] === "api") {
         const sessionId = requireSession(req, db, secret);
         if (!["GET", "HEAD"].includes(req.method)) requireCsrf(req, secret, sessionId);
+        if (githubPages && parts[1] === "github-pages" && parts.length === 3 && req.method === "GET") {
+          if (parts[2] === "callback") {
+            res.setHeader("referrer-policy", "no-referrer");
+            const location = await githubPages.callback(sessionId, url.searchParams);
+            res.writeHead(303, { location, "cache-control": "no-store" });
+            res.end(); return;
+          }
+          sendJson(res, 200, await githubPages.status(sessionId, parts[2])); return;
+        }
         if (resumeRepository && await handleResumeRoutes({ req, res, parts, sessionId, repository: resumeRepository, sendJson, bodyJson })) return;
         if (generationService && await handleGenerationRoutes({ req, res, url, parts, sessionId,
           service: generationService, portraitEnabled, bodyJson, sendJson })) return;
@@ -164,7 +183,13 @@ export function createRequestHandler({ db, service, generationService = null, re
             sendJson(res, 200, service.updateProject(sessionId, id, (await bodyJson(req)).config)); return;
           }
           if (parts[3] === "checkout" && req.method === "POST") {
-            sendJson(res, 200, await service.checkout(sessionId, id, (await bodyJson(req)).action)); return;
+            const { action } = await bodyJson(req);
+            if (action === "github-pages" && !githubPages) throw new ServiceError(503, "GitHub Pages 部署尚未配置。");
+            sendJson(res, 200, await service.checkout(sessionId, id, action)); return;
+          }
+          if (githubPages && parts[3] === "github-pages" && parts.length === 4) {
+            if (req.method === "GET") { sendJson(res, 200, githubPages.list(sessionId, id)); return; }
+            if (req.method === "POST") { sendJson(res, 200, githubPages.start(sessionId, id, await bodyJson(req, 4096))); return; }
           }
           if (parts[3] === "reconcile" && req.method === "POST") {
             sendJson(res, 200, await service.reconcile(sessionId, id)); return;
@@ -191,12 +216,8 @@ export function createRequestHandler({ db, service, generationService = null, re
           const download = service.getDownload(sessionId, parts[2]);
           const format = url.searchParams.get("format") ?? "html";
           if (format !== "html") throw new ServiceError(400, "导出格式无效。");
-          // 像素世界导出需要内嵌标签层字体子集（姓名 + 固定文案字形）。
-          const fontSubset = download.config?.templateId === "pixel-world-v1"
-            ? await pixelFont.readSubset(pixelFontGlyphs(download.config.content?.profile?.name ?? ""))
-            : null;
           let file;
-          try { file = Buffer.from(htmlBuilder(download.config, undefined, undefined, id => service.readProjectMedia(sessionId, id), fontSubset)); }
+          try { file = await renderHtml(sessionId, download.config); }
           catch (error) {
             try { service.markDeliveryFailure(download.projectId, "export"); } catch { /* Keep packaging error. */ }
             throw error;

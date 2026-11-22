@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ChangeEvent, DragEvent } from "react";
+import type { ChangeEvent, DragEvent, ReactNode } from "react";
 import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
 import type { DraftField, ResumeDraft } from "../lib/resume";
@@ -222,6 +222,8 @@ export type BuilderExperienceProps = {
   onRunAvatarGeneration: () => void;
   onEditGenerated: (update: (current: DesignConfig) => DesignConfig) => void;
   onRequestDelivery: (action: DeliveryAction) => void;
+  onGitHubPages?: () => void;
+  githubPagesDialog?: ReactNode;
   onConfirmPublish: () => void;
   onStartPayment: () => void;
   onCheckEntitlement: () => void;
@@ -495,8 +497,11 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     {phase === "result" && generated && <section className="proof-step-page">
       <StepHeader number={5} title="05 网站预览与轻量编辑" description="草稿尚未公开。左侧预览完整网站，右侧调整内容；满意后再确认分享。" />
       <div className="proof-result-next">
-        <div><p>STEP 5 / DELIVERY</p><strong>作品已生成。下一步选择分享或导出。</strong></div>
-        <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>下一步：前往分享与付费 →</ProofButton>
+        <div><p>STEP 5 / DELIVERY</p><strong>作品已生成。{props.onGitHubPages ? "下一步选择分享、部署或导出。" : "下一步选择分享或导出。"}</strong></div>
+        <div className="proof-publish-actions">
+          {props.onGitHubPages && <ProofButton disabled={exporting} onClick={props.onGitHubPages}>部署到 GitHub Pages</ProofButton>}
+          <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>下一步：前往分享与付费 →</ProofButton>
+        </div>
       </div>
       {"templateId" in generated && generated.templateId === "cyber-creator-v1" && generated.heroArtwork && !generated.heroArtwork.cutoutAssetUrl &&
         <p className="proof-note" role="status">透明去背景未完成，当前首屏以带背景海报展示。请联系管理员检查图像服务，再重新生成。</p>}
@@ -565,6 +570,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <ProofButton onClick={() => go("result")}>返回预览，继续编辑</ProofButton>
           {deliveryUnlocked && <div className="proof-unlock-actions">
             <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>重新发布分享链接</ProofButton>
+            {props.onGitHubPages && <ProofButton disabled={exporting} onClick={props.onGitHubPages}>部署到 GitHub Pages</ProofButton>}
             <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>导出文件</ProofButton>
           </div>}
         </ProofCard>
@@ -628,5 +634,6 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     {error && phase !== "upload" && phase !== "confirm" && phase !== "quiz" && phase !== "result" && <p className="proof-inline-error" role="alert">{error}</p>}
     <ProjectsDialog open={projectsOpen} projects={projects} onClose={() => setProjectsOpen(false)}
       onSelect={props.onResumeProject} onDelete={props.onDeleteProject} />
+    {props.githubPagesDialog}
   </BuilderChrome>;
 }

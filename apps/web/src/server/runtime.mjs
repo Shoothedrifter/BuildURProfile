@@ -7,6 +7,7 @@ import { createAlipayGateway } from "./gateway.mjs";
 import { createPaymentService } from "./service.mjs";
 import { createRequestHandler, dispatchWebRequest } from "./http.mjs";
 import { createGenerationService } from "./generations.mjs";
+import { githubPagesConfig } from "./github-pages.mjs";
 
 const GLOBAL_RUNTIME_KEY = "__buildurprofile_next_runtime__";
 
@@ -43,15 +44,17 @@ export function getAppRuntime() {
   const assetRoot = process.env.AVATAR_ASSET_ROOT || join(repoRoot, "data/avatar-assets");
   const generationService = createGenerationService({ db, assetRoot, allowPortraits: avatarDemoEnabled });
   const resumeRepository = createResumeRepository({db, root: process.env.RESUME_FILE_ROOT || join(repoRoot, "data/resume-files")});
+  const cleanups = [resumeRepository.cleanup, generationService.cleanupResumeMedia, generationService.purgeExpired];
   const cleanupTimer = setInterval(() => {
-    for (const cleanup of [resumeRepository.cleanup, generationService.cleanupResumeMedia, generationService.purgeExpired]) {
+    for (const cleanup of cleanups) {
       try { cleanup(); } catch { /* Retry on the next sweep. */ }
     }
   }, 60_000);
   cleanupTimer.unref();
   const handler = createRequestHandler({
     db, service, generationService, resumeRepository, portraitEnabled: avatarDemoEnabled,
-    agentToken: process.env.AGENT_SERVICE_TOKEN, paymentConfig: config, priceFen, configurationError
+    agentToken: process.env.AGENT_SERVICE_TOKEN, paymentConfig: config, priceFen, configurationError,
+    githubConfig: githubPagesConfig(), registerCleanup: (cleanup) => cleanups.push(cleanup)
   });
 
   const runtime = { db, service, generationService, handler, paymentConfig: config, priceFen, configurationError };

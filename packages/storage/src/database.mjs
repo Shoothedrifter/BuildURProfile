@@ -210,6 +210,20 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
   applyMigration(db, 13, () => {
     db.exec("ALTER TABLE generations ADD COLUMN cutout_asset_id TEXT REFERENCES avatar_assets(id)");
   });
+  applyMigration(db, 14, () => {
+    db.exec(`CREATE TABLE github_deployments (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+      revision INTEGER NOT NULL, repo TEXT NOT NULL COLLATE NOCASE,
+      stage TEXT NOT NULL, error TEXT, updated_at INTEGER NOT NULL,
+      oauth_state_hash TEXT UNIQUE, oauth_verifier TEXT, oauth_expires_at INTEGER,
+      write_until INTEGER NOT NULL DEFAULT 0,
+      github_user_id INTEGER, github_login TEXT, github_repo_id INTEGER, branch TEXT,
+      html_hash TEXT, commit_sha TEXT, site_url TEXT, build_started_at INTEGER,
+      next_check_at INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(project_id, revision, repo)
+    );
+    CREATE INDEX github_deployments_project ON github_deployments(project_id, updated_at);`);
+  });
   return db;
 }
 
