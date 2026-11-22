@@ -26,7 +26,8 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     const expired = deleted || row.status === "SUCCEEDED" && row.output_asset_id && !assets.outputExists(row.output_asset_id);
     const cancelling = row.status === "RUNNING" && row.cancel_requested_at != null;
     const expiredMessage = isPixelCandidateWorkflow(row.workflow_version) ? PIXEL_CANDIDATE_EXPIRED_MESSAGE : "成图已过期，请重新上传照片生成。";
-    return { id: row.id, ...(row.project_id ? {projectId:row.project_id} : {}), status: expired ? "EXPIRED" : cancelling ? "CANCELLING" : row.status, styleId: row.style_id,
+    const resumeId = row.resume_request_json && JSON.parse(row.resume_request_json).resumeId;
+    return { id: row.id, ...(row.project_id ? {projectId:row.project_id} : {}), ...(resumeId ? {resumeId} : {}), status: expired ? "EXPIRED" : cancelling ? "CANCELLING" : row.status, styleId: row.style_id,
       error: deleted ? "作品已删除，请重新生成。" : expired ? expiredMessage : row.error,
       ...(row.status === "SUCCEEDED" && !expired && row.config_json ? { config: JSON.parse(row.config_json) } : {}),
       ...(row.status === "SUCCEEDED" && row.output_asset_id && !expired ? { heroArtwork: { assetUrl: `/api/hero-assets/${row.output_asset_id}`, styleId: row.style_id,
@@ -219,7 +220,9 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(safeConfig,time,id);
       if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version) && !row.portrait_asset_id){
         const projectId=randomUUID();
-        db.prepare('INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at) VALUES(?,?,?,?,?)').run(projectId,row.owner_session_id,safeConfig,time,time);
+        db.prepare(`INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at,resume_id)
+          VALUES(?,?,?,?,?,(SELECT id FROM resumes WHERE id=json_extract(?, '$.resumeId') AND owner_session_id=?))`)
+          .run(projectId,row.owner_session_id,safeConfig,time,time,row.resume_request_json,row.owner_session_id);
         media.attachProject(row.owner_session_id,projectId,JSON.parse(safeConfig));
         db.prepare('UPDATE generations SET project_id=? WHERE id=?').run(projectId,id);
       }

@@ -78,6 +78,17 @@ function fakeGitHub() {
       return remote.build ? Response.json(remote.build) : missing();
     }
     if (path === repoPath + "/pages/builds" && method === "POST") return Response.json({ status: "queued" });
+    if (path === repoPath + "/deployments") {
+      assert.equal(headers.authorization, undefined);
+      assert.equal(url.searchParams.get("environment"), "github-pages");
+      assert.equal(url.searchParams.get("per_page"), "1");
+      return Response.json(remote.deployment ? [remote.deployment] : []);
+    }
+    if (path === repoPath + "/deployments/50/statuses") {
+      assert.equal(headers.authorization, undefined);
+      assert.equal(url.searchParams.get("per_page"), "1");
+      return Response.json(remote.deploymentStatus ? [remote.deploymentStatus] : []);
+    }
     assert.fail(`Unexpected GitHub request: ${method} ${path}`);
   };
   return remote;
@@ -174,6 +185,30 @@ test("paid project publishes only after the expected GH build and HTML are publi
   assert.equal(db.prepare("SELECT count(*) AS count FROM shares").get().count, 0);
   assert.equal(db.prepare("SELECT count(*) AS count FROM orders").get().count, 1);
   assert.equal(db.prepare("SELECT status FROM orders WHERE out_trade_no=?").get(order.outTradeNo).status, "PAID");
+});
+
+test("a waiting project recovers from a Pages build 404 using the current GitHub deployment", async t => {
+  const { remote, owner, prepare, pay, status, advance } = await fixture(t);
+  await pay();
+  const task = await prepare();
+  await owner(task.callbackPath + "&code=synthetic-code");
+  advance(15 * 60_000);
+  remote.deployment = { id: 50, sha: "wrong-commit", environment: "github-pages" };
+  remote.deploymentStatus = { state: "success", environment_url: siteUrl };
+  assert.equal((await status(task.id)).stage, "waiting");
+  assert.ok(!remote.requests.some(call => call.path.endsWith("/statuses")));
+  advance(30_000);
+  remote.deployment.sha = commitSha;
+  remote.deploymentStatus.state = "in_progress";
+  assert.equal((await status(task.id)).stage, "waiting");
+  advance(30_000);
+  remote.deploymentStatus = { state: "success", environment_url: "https://test-owner.github.io/other/" };
+  assert.equal((await status(task.id)).stage, "waiting");
+  advance(30_000);
+  remote.deploymentStatus.environment_url = siteUrl;
+  const published = await status(task.id);
+  assert.equal(published.stage, "published");
+  assert.equal(published.siteUrl, siteUrl);
 });
 
 test("authorization stops on denial, expiry and edits without contacting GitHub", async t => {

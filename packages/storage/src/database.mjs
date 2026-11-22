@@ -224,6 +224,14 @@ export function openDatabase(path = "data/buildurprofile.sqlite") {
     );
     CREATE INDEX github_deployments_project ON github_deployments(project_id, updated_at);`);
   });
+  applyMigration(db, 15, () => {
+    db.exec(`ALTER TABLE projects ADD COLUMN resume_id TEXT REFERENCES resumes(id) ON DELETE SET NULL;
+      UPDATE projects SET resume_id=(
+        SELECT r.id FROM generations g JOIN resumes r
+          ON r.id=json_extract(g.resume_request_json, '$.resumeId') AND r.owner_session_id=projects.owner_session_id
+        WHERE g.project_id=projects.id AND g.owner_session_id=projects.owner_session_id
+      ) WHERE deleted_at IS NULL;`);
+  });
   return db;
 }
 

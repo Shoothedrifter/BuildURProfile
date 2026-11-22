@@ -72,6 +72,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId | null>(null);
   const [generated, setGenerated] = useState<DesignConfig | null>(null);
+  const [resultResumeId, setResultResumeId] = useState<string | null>(null);
   const [isTouch, setIsTouch] = useState(false);
   const [share, setShare] = useState<{ id: string; url: string; expiresAt: number } | null>(null);
   const [savedShares, setSavedShares] = useState<Array<{ id: string; url: string; expiresAt: number }>>([]);
@@ -109,6 +110,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       }
       if (result.projectId) { setProjectId(result.projectId); setProjectPaid(result.projectPaid ?? false); }
       setGenerated({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
+      setResultResumeId(result.resumeId ?? null);
       setProgress("");
       setPhase("result");
     }).catch((cause) => {
@@ -177,6 +179,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       setProjectId(id);
       setProjectPaid(project.paid);
       setGenerated(project.config);
+      setResultResumeId(project.resumeId ?? null);
       void paymentApi.projects().then(setProjects).catch(() => {});
       if (project.pendingAction === "github-pages") {
         setPhase("result");
@@ -222,6 +225,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
         setProjectId(project.id);
         setProjectPaid(project.paid);
         setGenerated(project.config);
+        setResultResumeId(project.resumeId ?? null);
         setPhase("result");
         setGitHubDialog({ paymentReturn: false, deployment });
       } catch (cause) {
@@ -237,16 +241,17 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     const match = /^\/style\/([A-Za-z0-9_-]+)$/.exec(window.location.pathname);
     if (!match) return;
     let active = true;
+    const version = generationVersion.current;
     setProgress("正在读取已确认的简历草稿…");
     void resumeApi.read(match[1]).then(({ draft: nextDraft }) => {
       const content = projectConfirmedResumeV3(nextDraft);
-      if (!active) return;
+      if (!active || version !== generationVersion.current) return;
       setAgentDraft(nextDraft);
       setConfirmedContent(content);
       setProgress("");
       setPhase("quiz");
     }).catch((cause) => {
-      if (!active) return;
+      if (!active || version !== generationVersion.current) return;
       setProgress("");
       setError(cause instanceof Error ? cause.message : "读取简历草稿失败，请返回编辑页。");
     });
@@ -283,6 +288,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     setConfirmedContent(null);
     setSelectedTemplate(null);
     setGenerated(null);
+    setResultResumeId(null);
   };
 
   const parseSelectedFile = async () => {
@@ -475,6 +481,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       if (version !== generationVersion.current || (sourcePhoto && sourcePhoto !== photoDataRef.current)) return;
       if (!isRenderableConfig(result.config)) throw new Error("生成任务返回的作品配置不完整，请重试。");
       if (result.projectId) { setProjectId(result.projectId); setProjectPaid(result.projectPaid ?? false); }
+      setResultResumeId(result.projectId ? result.resumeId ?? null : result.resumeId ?? agentDraft?.resumeId ?? null);
       void paymentApi.projects().then(setProjects).catch(()=>{});
       showResult({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
     } catch (cause) {
@@ -499,9 +506,10 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     const current = projectId ? await paymentApi.project(projectId) : null;
     const project = current
       ? JSON.stringify(current.config) === JSON.stringify(published) ? current : await paymentApi.updateProject(projectId!, published)
-      : await paymentApi.createProject(published);
+      : resultResumeId ? await paymentApi.createProject(published, resultResumeId) : await paymentApi.createProject(published);
     setProjectId(project.id);
     setProjectPaid(project.paid);
+    setResultResumeId(project.resumeId ?? null);
     setProjects(await paymentApi.projects());
     return project;
   };
@@ -629,13 +637,20 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       return;
     }
     generationVersion.current++;
+    pdfVersion.current++;
     void generationApi.cancelSavedGeneration();
+    if (project.id !== projectId) {
+      setDraft(null);
+      setAgentDraft(null);
+      setConfirmedContent(null);
+    }
     setProgress("");
     setError("");
     setResultError("");
     setProjectId(project.id);
     setProjectPaid(project.paid);
     setGenerated(project.config);
+    setResultResumeId(project.resumeId ?? null);
     setPaymentIntent(null);
     setShare(null);
     setShareSnapshot("");
@@ -655,12 +670,14 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     setSelectedFile(null);
     setFileName("");
     setDraft(null);
+    setAgentDraft(null);
     setAnswers({});
     setConfirmedContent(null);
     setSelectedTemplate(null);
     setPhotoDataUrl(null);
     setPhotoName("");
     setGenerated(null);
+    setResultResumeId(null);
     setProjectId(null);
     setProjectPaid(false);
     setShare(null);
@@ -745,6 +762,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     hasConfirmedResume={Boolean(agentDraft)}
     confirmedContent={confirmedContent}
     styleResumeId={styleResumeId}
+    resultResumeId={resultResumeId}
     role={role}
     selectedTemplate={selectedTemplate}
     generated={generated}

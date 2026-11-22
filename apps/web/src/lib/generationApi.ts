@@ -4,7 +4,7 @@ import { PIXEL_AVATAR_STYLE_ID } from "../../../../packages/skills/src/avatar-ca
 
 export type HeroArtwork = NonNullable<DesignConfig["heroArtwork"]>;
 export type GenerationBrief = { role: JobRole; answers: Record<string, number>; content: Omit<ResumeContent, "sourceRefs"> };
-export type GenerationResult = { projectId?: string; projectPaid?: boolean; config: DesignConfig; heroArtwork?: HeroArtwork };
+export type GenerationResult = { projectId?: string; projectPaid?: boolean; resumeId?: string; config: DesignConfig; heroArtwork?: HeroArtwork };
 export type GenerationStatus = "QUEUED" | "RUNNING" | "CANCELLING";
 // Retain the old key so a task started before this migration can still be restored.
 const savedTaskKey = "burp-avatar-task";
@@ -40,7 +40,7 @@ async function retainTaskOrCancel(id: string, epoch: number): Promise<void> {
   sessionStorage.setItem(savedTaskKey, id);
 }
 
-type GenerationTask = { projectId?: string; status: string; error?: string; heroArtwork?: HeroArtwork; config?: DesignConfig };
+type GenerationTask = { projectId?: string; resumeId?: string; status: string; error?: string; heroArtwork?: HeroArtwork; config?: DesignConfig };
 async function waitForTask(id: string, epoch: number, onStatus?: (status: GenerationStatus) => void, signal?: AbortSignal): Promise<GenerationResult> {
   const assertCurrent = () => signal ? signal.throwIfAborted() : requireCurrent(epoch);
   // Local image generation may legitimately take longer than five minutes on Apple Silicon.
@@ -52,12 +52,12 @@ async function waitForTask(id: string, epoch: number, onStatus?: (status: Genera
     if (current.status === "SUCCEEDED") {
       if (!current.config) throw new Error("生成任务缺少作品配置，请重新生成。");
       if (current.projectId) {
-        const project = await request<{ id: string; config: DesignConfig; paid: boolean }>(`/api/projects/${encodeURIComponent(current.projectId)}`);
+        const project = await request<{ id: string; resumeId?: string; config: DesignConfig; paid: boolean }>(`/api/projects/${encodeURIComponent(current.projectId)}`);
         assertCurrent();
         if (!signal && sessionStorage.getItem(savedTaskKey) === id) sessionStorage.removeItem(savedTaskKey);
-        return { config: project.config, projectId: project.id, projectPaid: project.paid };
+        return { config: project.config, projectId: project.id, projectPaid: project.paid, ...(project.resumeId ? { resumeId: project.resumeId } : {}) };
       }
-      return { config: current.config, ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
+      return { config: current.config, ...(current.resumeId ? { resumeId: current.resumeId } : {}), ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
     }
     if (current.status === "FAILED" || current.status === "EXPIRED" || current.status === "CANCELLED") {
       if (!signal && sessionStorage.getItem(savedTaskKey) === id) sessionStorage.removeItem(savedTaskKey);

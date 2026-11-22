@@ -20,10 +20,17 @@ function ownedProject(db, sessionId, projectId) {
   if (!project) notFound();
   return project;
 }
-function publicProject(project, db) {
+function editableResume(db, owner, resumeId, time) {
+  return db.prepare(`SELECT r.id FROM resumes r JOIN resume_files f ON f.id=r.file_id
+    WHERE r.id=? AND r.owner_session_id=? AND f.owner_session_id=? AND r.status='SUCCEEDED' AND f.expires_at>?`)
+    .get(resumeId, owner, owner, time)?.id;
+}
+function publicProject(project, db, time) {
   const entitlement = db.prepare("SELECT status FROM entitlements WHERE project_id=?").get(project.id);
   const pending = db.prepare("SELECT amount_fen FROM orders WHERE project_id=? AND status='PENDING'").get(project.id);
+  const resumeId = project.resume_id && editableResume(db, project.owner_session_id, project.resume_id, time);
   return { id: project.id, config: JSON.parse(project.config_json), revision: project.revision,
+    ...(resumeId ? { resumeId } : {}),
     paid: entitlement?.status === "ACTIVE", pendingAction: project.pending_action,
     pendingAmountFen: pending?.amount_fen ?? null };
 }
@@ -37,12 +44,16 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
         error=CASE WHEN deliveries.status='DELIVERED' THEN NULL ELSE 'DELIVERY_FAILED' END`)
       .run(projectId, kind);
   }
-  function getProject(sessionId, projectId) { return publicProject(ownedProject(db, sessionId, projectId), db); }
-  function createProject(sessionId, config) {
+  function getProject(sessionId, projectId) { return publicProject(ownedProject(db, sessionId, projectId), db, now()); }
+  function createProject(sessionId, config, resumeId) {
     return transaction(db,()=>{
     const id = randomUUID(), time = now(), json = cleanConfig(config);
-    db.prepare("INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at) VALUES(?,?,?,?,?)")
-      .run(id, sessionId, json, time, time);
+    if (resumeId !== undefined && (typeof resumeId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(resumeId))) {
+      throw new ServiceError(400, "简历标识无效。");
+    }
+    const source = resumeId ? editableResume(db, sessionId, resumeId, time) : undefined;
+    db.prepare("INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at,resume_id) VALUES(?,?,?,?,?,?)")
+      .run(id, sessionId, json, time, time, source ?? null);
     media.attachProject(sessionId,id,JSON.parse(json));
     return getProject(sessionId, id);
     });
@@ -60,8 +71,9 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     });
   }
   function listProjects(sessionId) {
+    const time = now();
     return db.prepare("SELECT * FROM projects WHERE owner_session_id=? AND deleted_at IS NULL ORDER BY updated_at DESC").all(sessionId)
-      .map((project) => publicProject(project, db));
+      .map((project) => publicProject(project, db, time));
   }
   function deleteProject(sessionId, projectId) {
     return transaction(db, () => {

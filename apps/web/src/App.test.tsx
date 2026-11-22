@@ -319,7 +319,7 @@ describe("showcase builder", () => {
             items: expect.arrayContaining([expect.objectContaining({ itemId: project.itemId,
               supplement: expect.objectContaining({ images: [{ imageId: "image_synthetic", caption: "修改后的图片说明" }] }) })]) })])
         }) })
-      })));
+      }), nextDraft.resumeId));
     } finally {
       window.history.replaceState(null, "", "/");
     }
@@ -394,6 +394,34 @@ describe("showcase builder", () => {
     await waitFor(() => expect(paymentApi.deleteProject).toHaveBeenCalledWith("saved-project"));
     expect(await screen.findByText(/还没有保存的作品/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).toBeInTheDocument();
+  });
+
+  it("returns to the restored project's resume instead of the resume in the current style URL", async () => {
+    window.history.replaceState(null, "", "/style/another-resume");
+    vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft: resumeDraftFixture as never,
+      revision: 1, expiresAt: "2026-12-09T00:00:00Z" });
+    vi.mocked(paymentApi.projects).mockResolvedValueOnce([{ id: "saved-project", resumeId: "saved-resume",
+      config: rawConfig as DesignConfig, revision: 1, paid: false, pendingAction: null, pendingAmountFen: null }]);
+    try {
+      render(<App initialPhase="quiz" styleResumeId="another-resume" />);
+      fireEvent.click(await screen.findByRole("button", { name: "我的项目，共 1 个" }));
+      fireEvent.click(screen.getByRole("button", { name: /继续编辑/ }));
+      expect(screen.getByRole("link", { name: "返回编辑详细内容" })).toHaveAttribute("href", "/editor/saved-resume");
+      expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("keeps a restored project without a resume on the editable preview", async () => {
+    vi.mocked(paymentApi.projects).mockResolvedValueOnce([{ id: "legacy-project", config: rawConfig as DesignConfig,
+      revision: 1, paid: false, pendingAction: null, pendingAmountFen: null }]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "我的项目，共 1 个" }));
+    fireEvent.click(screen.getByRole("button", { name: /继续编辑/ }));
+    expect(screen.queryByText("返回编辑详细内容")).not.toBeInTheDocument();
+    expect(screen.getByText(/简历草稿不可用/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
   });
 
   it("keeps a project visible when the server refuses deletion", async () => {

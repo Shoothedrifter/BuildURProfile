@@ -280,6 +280,21 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
       .all(projectId).map(present);
   }
 
+  async function confirmedDeploymentUrl(path, record) {
+    const deployments = await github(`${path}/deployments?environment=github-pages&per_page=1`, { allowMissing: true });
+    const deployment = deployments?.[0];
+    if (!record.commit_sha || deployment?.sha !== record.commit_sha || deployment.environment !== "github-pages" ||
+      !Number.isSafeInteger(deployment.id)) return null;
+    const statuses = await github(`${path}/deployments/${deployment.id}/statuses?per_page=1`, { allowMissing: true });
+    const latest = statuses?.[0];
+    return latest?.state === "success" ? safeSiteUrl(latest.environment_url, record) : null;
+  }
+
+  function markPublished(record, site) {
+    db.prepare(`UPDATE github_deployments SET stage='published',site_url=?,error=NULL,updated_at=?
+      WHERE id=? AND stage='building' AND build_started_at=?`).run(site, now(), record.id, record.build_started_at);
+  }
+
   async function status(sessionId, id) {
     const record = read.get(id);
     if (!record) throw new DeployError(404, "部署记录不存在。");
@@ -293,8 +308,9 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
       if (build?.commit === record.commit_sha && ["errored", "failed"].includes(build.status)) {
         throw new DeployError(422, "GitHub Pages 构建失败，请查看仓库的 Actions 运行记录。");
       }
+      let pages;
       if (build?.commit === record.commit_sha && build.status === "built") {
-        const pages = await github(`${path}/pages`, { allowMissing: true });
+        pages = await github(`${path}/pages`, { allowMissing: true });
         const site = safeSiteUrl(pages?.html_url, record);
         if (pages?.html_url && !site) throw new DeployError(422, "GitHub 已构建。此站点使用非默认 Pages 地址，请在仓库中核实发布结果。");
         if (site) {
@@ -311,13 +327,17 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
               }
             }
             if (length <= MAX_HTML && digest.digest("hex") === record.html_hash) {
-              db.prepare(`UPDATE github_deployments SET stage='published',site_url=?,error=NULL,updated_at=?
-                WHERE id=? AND stage='building' AND build_started_at=?`).run(site, now(), id, record.build_started_at);
+              markPublished(record, site);
             }
           } else {
             await response.body?.cancel();
           }
         }
+      }
+      // Public Pages metadata can return 404 even for a successful deployment.
+      if (!build || pages === null) {
+        const site = await confirmedDeploymentUrl(path, record);
+        if (site) markPublished(record, site);
       }
     } catch (error) {
       if (error instanceof DeployError && error.status === 429) {

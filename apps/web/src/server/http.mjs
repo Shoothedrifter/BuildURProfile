@@ -173,7 +173,8 @@ export function createRequestHandler({ db, service, generationService = null, re
           service: generationService, portraitEnabled, bodyJson, sendJson })) return;
         if (req.method === "GET" && url.pathname === "/api/projects") { sendJson(res, 200, service.listProjects(sessionId)); return; }
         if (req.method === "POST" && url.pathname === "/api/projects") {
-          sendJson(res, 201, service.createProject(sessionId, (await bodyJson(req)).config)); return;
+          const input = await bodyJson(req);
+          sendJson(res, 201, service.createProject(sessionId, input.config, input.resumeId)); return;
         }
         if (parts[1] === "projects" && parts[2]) {
           const id = parts[2];

@@ -125,18 +125,23 @@ test('successful v3 task creates exactly one unpaid project and retains media be
  const config={...base,content:JSON.parse(leased.brief_json).content};
  assert.equal(s.service.complete(task.id,{leaseToken:leased.lease_token,config}),true);
  const result=s.service.getTask('owner',task.id);assert.ok(result.projectId);
+ assert.equal(result.resumeId,s.draft.resumeId);
  assert.equal(s.service.enqueueResume('owner',s.input).projectId,result.projectId);
  assert.equal(s.db.prepare('SELECT count(*) n FROM projects').get().n,1);
  assert.equal(s.db.prepare('SELECT count(*) n FROM entitlements').get().n,0);
+ const {createPaymentService}=await import('../../web/src/server/service.mjs');
+ const payments=createPaymentService(s.db,{gateway:null,paymentConfig:null,now:()=>Date.parse(source.uploadedAt)});
+ assert.equal(payments.listProjects('owner')[0].resumeId,s.draft.resumeId);
+ assert.equal(payments.createProject('owner',base,s.draft.resumeId).resumeId,s.draft.resumeId);
+ assert.equal(payments.createProject('other',base,s.draft.resumeId).resumeId,undefined);
  s.db.prepare('DELETE FROM resume_files WHERE id=?').run(s.draft.fileId);s.advance();s.service.cleanupResumeMedia();
+ assert.equal(payments.getProject('owner',result.projectId).resumeId,undefined);
  assert.deepEqual(s.service.readShowcaseMedia('owner',id).bytes,png);
  const {buildStaticZip}=await import('../../web/src/server/export.mjs');
  const zip=buildStaticZip(result.config,key=>s.service.readShowcaseMedia('owner',key));
  const entries=[];let at=0;while(zip.readUInt32LE(at)===0x04034b50){const size=zip.readUInt32LE(at+18),n=zip.readUInt16LE(at+26),extra=zip.readUInt16LE(at+28);entries.push({name:zip.subarray(at+30,at+30+n).toString(),body:zip.subarray(at+30+n+extra,at+30+n+extra+size)});at+=30+n+extra+size;}
  assert.equal(entries.length,2);assert.deepEqual(entries[1].body,png);
  assert.match(entries[0].body.toString(),/正文补充/);assert.match(entries[0].body.toString(),/图片说明/);assert.doesNotMatch(entries[0].body.toString(),/\/api\/resumes|sourceBlockIds/);
- const {createPaymentService}=await import('../../web/src/server/service.mjs');
- const payments=createPaymentService(s.db,{gateway:null,paymentConfig:null});
  payments.deleteProject('owner',result.projectId);
  assert.throws(()=>s.service.readShowcaseMedia('owner',id));
 });

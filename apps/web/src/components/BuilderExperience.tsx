@@ -187,6 +187,7 @@ export type BuilderExperienceProps = {
   hasConfirmedResume: boolean;
   confirmedContent: ResumeContent | null;
   styleResumeId: string | null;
+  resultResumeId: string | null;
   role: JobRole;
   selectedTemplate: TemplateId | null;
   generated: DesignConfig | null;
@@ -275,12 +276,14 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const hasVisibleError = Boolean(error);
   const deliveryUnlocked = projectPaid || Boolean(projects.find((project) => project.id === projectId)?.paid);
   const styleResumeId = props.styleResumeId;
+  const editorResumeId = phase === "result" || phase === "delivery" ? props.resultResumeId : styleResumeId;
+  const editorHref = editorResumeId ? `/editor/${encodeURIComponent(editorResumeId)}` : null;
   const [draftProjectTitle = "", ...draftProjectDetails] = draft?.projects[0]?.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) ?? [];
   const previewProjectTitle = draftProjectTitle || props.confirmedContent?.projects[0]?.title || "";
   const previewProjectDescription = draftProjectDetails.join(" ") || props.confirmedContent?.projects[0]?.description || "";
   const stepTargets: Partial<Record<number, WorkflowStepTarget>> = {
     1: styleResumeId ? { href: "/upload" } : { onClick: () => go("upload") },
-    ...(styleResumeId ? { 2: { href: `/editor/${encodeURIComponent(styleResumeId)}` } }
+    ...(editorHref ? { 2: { href: editorHref } }
       : draft ? { 2: { onClick: () => go("confirm") } } : {}),
     ...((draft || props.hasConfirmedResume) ? { 3: { onClick: () => go("quiz") } } : {}),
     ...(generated ? { 4: { onClick: () => go("result") }, 5: { onClick: () => go("delivery") } } : {})
@@ -471,11 +474,8 @@ export function BuilderExperience(props: BuilderExperienceProps) {
         </ProofCard>
       </div>
       <div className="proof-actions proof-style-actions">
-        <ProofButton onClick={() => {
-          const match = /^\/style\/([A-Za-z0-9_-]+)$/.exec(window.location.pathname);
-          if (match) window.location.assign(`/editor/${match[1]}`);
-          else go("confirm");
-        }}>← 返回资料</ProofButton>
+        {editorHref ? <a className="proof-button proof-button--secondary" href={editorHref}>← 返回资料</a>
+          : <ProofButton onClick={() => go("confirm")}>← 返回资料</ProofButton>}
         <label className="proof-role-select"><span>展示方向</span><select id="job-role" value={role} disabled={generatingAvatar} onChange={(event) => props.onRoleChange(event.target.value as JobRole)}>
           {roles.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
@@ -533,11 +533,9 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <div className="proof-editor-actions">
             <h2>调整你的网站</h2>
             <p>下方可编辑展示内容与交互强度。修改会立即出现在左侧预览。</p>
-            <ProofButton onClick={() => {
-              const match = /^\/style\/([A-Za-z0-9_-]+)$/.exec(window.location.pathname);
-              if (match) window.location.assign(`/editor/${match[1]}`);
-              else go("confirm");
-            }}>返回编辑详细内容</ProofButton>
+            {editorHref ? <a className="proof-button proof-button--secondary" href={editorHref}>返回编辑详细内容</a>
+              : draft ? <ProofButton onClick={() => go("confirm")}>返回编辑详细内容</ProofButton>
+              : <p className="proof-note">此项目的简历草稿不可用，仍可在下方编辑网站内容。</p>}
             <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>发布并获取链接 →</ProofButton>
           </div>
           <EditorPanel config={generated} onChange={props.onEditGenerated} isTouch={isTouch} />

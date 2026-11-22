@@ -1,6 +1,6 @@
 import type { DesignConfig } from "../../../../packages/contracts/src/config";
 
-export type OwnedProject = { id: string; config: DesignConfig; revision: number; paid: boolean; pendingAction: "share" | "export" | "github-pages" | null; pendingAmountFen: number | null };
+export type OwnedProject = { id: string; resumeId?: string; config: DesignConfig; revision: number; paid: boolean; pendingAction: "share" | "export" | "github-pages" | null; pendingAmountFen: number | null };
 export type Offer = { configured: boolean; mode: "sandbox" | "production" | null; configurationError?: string | null; priceFen: number | null; priceYuan: string | null; service: string; shareDays: number; githubPagesEnabled?: boolean };
 export type PublishedShare = { token: string; url: string; expiresAt: number };
 
@@ -33,7 +33,7 @@ export const paymentApi = {
   offer: () => request<Offer>("/api/offer"),
   projects: () => request<OwnedProject[]>("/api/projects"),
   project: (id: string) => request<OwnedProject>(`/api/projects/${encodeURIComponent(id)}`),
-  createProject: (config: DesignConfig) => request<OwnedProject>("/api/projects", "POST", { config }),
+  createProject: (config: DesignConfig, resumeId?: string) => request<OwnedProject>("/api/projects", "POST", { config, resumeId }),
   updateProject: (id: string, config: DesignConfig) => request<OwnedProject>(`/api/projects/${encodeURIComponent(id)}`, "PUT", { config }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/api/projects/${encodeURIComponent(id)}`, "DELETE"),
   checkout: (id: string, action: "share" | "export" | "github-pages") => request<{ alreadyPaid: boolean; paymentHtml?: string; amountYuan?: string }>(
