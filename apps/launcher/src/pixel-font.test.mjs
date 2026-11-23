@@ -1,7 +1,7 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { openDatabase } from "../../web/src/server/database.mjs";
+import { openTestDatabase as openDatabase } from "./postgres-test-db.mjs";
 import { createPaymentService } from "../../web/src/server/service.mjs";
 import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
 
@@ -9,12 +9,12 @@ const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json",
 let db, service;
 const merchant = { mode: "sandbox", priceFen: 199, appId: "sandbox-app", sellerId: "seller-1", sellerEmail: null, publicBaseUrl: "http://127.0.0.1:5173" };
 
-beforeEach(() => {
-  db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions(id,created_at,expires_at) VALUES('owner',0,9999999999999)").run();
+beforeEach(async () => {
+  db = await openDatabase();
+  await db.prepare("INSERT INTO sessions(id,created_at,expires_at) VALUES('owner',0,9999999999999)").run();
   service = createPaymentService(db, { gateway: null, paymentConfig: merchant });
 });
-afterEach(() => db.close());
+afterEach(async () => await db.close());
 
 async function withServer(run) {
   const server = createPaymentHttpServer({ db, service, paymentConfig: merchant, priceFen: 199, secret: Buffer.alloc(32, 9) });

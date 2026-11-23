@@ -9,7 +9,11 @@ import subprocess
 
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg import AsyncConnection, sql
+from uuid import uuid4
+from contextlib import asynccontextmanager
+from buildurprofile_agent.server import checkpoint_pool
 from PIL import Image
 
 from buildurprofile_agent.skills.registry import default_registry
@@ -19,6 +23,19 @@ from buildurprofile_agent.worker import process_task, process_resume_task
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+@asynccontextmanager
+async def postgres_checkpoints():
+    dsn = os.environ["TEST_DATABASE_URL"]
+    schema = "bup_test_checkpoint_" + uuid4().hex
+    try:
+        async with checkpoint_pool(dsn, schema) as pool:
+            yield AsyncPostgresSaver(pool)
+    finally:
+        async with await AsyncConnection.connect(dsn, autocommit=True) as connection:
+            await connection.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
+
 
 
 @pytest.mark.asyncio
@@ -82,8 +99,7 @@ async def test_real_node_bridge_pixel_avatar_stays_private(tmp_path):
                 task = await client.lease("pixel_worker", supports_pixel_layered_hair_avatar=True)
                 assert task and task.id == queued["id"] and task.workflow_version == "python-agent-v10"
                 provider = CloudflarePixelVisionProviderV3(account_id="a" * 32, api_token="test-token", http=cf)
-                async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "avatar-checkpoints.sqlite")) as saver:
-                    await saver.setup()
+                async with postgres_checkpoints() as saver:
                     await process_task(task, client, object(), default_registry(), saver, "pixel_worker",
                                        pixel_layered_hair_vision=provider)
                     assert len(requests) == 1

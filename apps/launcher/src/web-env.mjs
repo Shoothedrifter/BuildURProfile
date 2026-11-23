@@ -3,6 +3,7 @@
 // 若操作者通过 shell 导出或根目录 .env 注入进程环境，会在 dev.mjs
 // 展开 process.env 时进入 webEnv；这里统一剔除，避免密钥泄漏进 web 进程。
 const WEB_EXCLUDED_KEYS = [
+  'AGENT_CHECKPOINT_DATABASE_URL',
   'OPENAI_API_KEY',
   'OPENAI_IMAGE_MODEL',
   'RESUME_TEXT_MODEL',
@@ -17,5 +18,6 @@ const WEB_EXCLUDED_KEYS = [
 export function sanitizeWebEnv(env) {
   const next = { ...env };
   for (const key of WEB_EXCLUDED_KEYS) delete next[key];
+  for (const key of Object.keys(next)) if (key.startsWith("POSTGRES_")) delete next[key];
   return next;
 }

@@ -1,3 +1,4 @@
+import { resumeImageIds } from '../../../../packages/contracts/src/resume-v2.mjs';
 import { handleInternalResumeAgentRoutes } from './routes/internal-resume-agent.mjs';
 import { Readable } from "node:stream";
 import { handleResumeRoutes } from "./routes/resumes.mjs";
@@ -57,15 +58,15 @@ async function bodyJson(req, limit) {
   const raw = await readBody(req, limit);
   try { return JSON.parse(raw); } catch { throw new ServiceError(400, "请求 JSON 无效。"); }
 }
-function sessionFromCookie(req, db, secret) {
+async function sessionFromCookie(req, db, secret) {
   const raw = req.headers.cookie?.split(";").map((entry) => entry.trim()).find((entry) => entry.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
   const [id, sig] = raw?.split(".") ?? [];
   if (!id || !sig || !safeEqual(signature(secret, id), sig)) return null;
-  const row = db.prepare("SELECT id FROM sessions WHERE id=? AND expires_at>?").get(id, Date.now());
+  const row = await db.prepare("SELECT id FROM sessions WHERE id=? AND expires_at>?").get(id, Date.now());
   return row?.id ?? null;
 }
-function requireSession(req, db, secret) {
-  const id = sessionFromCookie(req, db, secret);
+async function requireSession(req, db, secret) {
+  const id = await sessionFromCookie(req, db, secret);
   if (!id) throw new ServiceError(401, "请先建立匿名会话。");
   return id;
 }
@@ -85,13 +86,15 @@ function parseRoute(path) {
 export function createRequestHandler({ db, service, generationService = null, resumeRepository = null, portraitEnabled = true, agentToken = null,
   agentStyleLoader, paymentConfig, priceFen, configurationError = null,
   secret = loadSessionSecret(), htmlBuilder = buildStaticHtml, pixelFont = createPixelFontService(),
-  githubConfig = null, githubFetch, githubNow, registerCleanup }) {
+  githubConfig = null, githubFetch, githubNow, registerCleanup, queueNotifications }) {
   const configuredAgentToken = validateAgentToken(agentToken);
   async function renderHtml(sessionId, config) {
     const fontSubset = config?.templateId === "pixel-world-v1"
       ? await pixelFont.readSubset(pixelFontGlyphs(config.content?.profile?.name ?? ""))
       : null;
-    return Buffer.from(htmlBuilder(config, undefined, undefined, id => service.readProjectMedia(sessionId, id), fontSubset));
+    const media = new Map();
+    for (const id of resumeImageIds(config)) media.set(id, await service.readProjectMedia(sessionId, id));
+    return Buffer.from(htmlBuilder(config, undefined, undefined, id => media.get(id), fontSubset));
   }
   const githubPages = createGitHubPagesService({ db, service, config: githubConfig, renderHtml, fetcher: githubFetch, now: githubNow });
   if (githubPages) registerCleanup?.(githubPages.cleanup);
@@ -99,20 +102,20 @@ export function createRequestHandler({ db, service, generationService = null, re
     try {
       const url = new URL(req.url, "http://localhost"), parts = parseRoute(url.pathname);
       if (req.method === "GET" && url.pathname === "/healthz") {
-        db.prepare("SELECT 1").get();
+        await db.prepare("SELECT 1").get();
         sendJson(res, 200, { ok: true, component: "api" }); return;
       }
       if (req.method === "GET" && url.pathname === "/readyz") {
-        db.prepare("SELECT 1").get();
-        const agentReady = generationService?.workerHealthy?.() ?? false;
+        await db.prepare("SELECT 1").get();
+        const agentReady = await generationService?.workerHealthy?.() ?? false;
         sendJson(res, agentReady ? 200 : 503, { ok: agentReady, component: "api", agentReady }); return;
       }
       if (parts[0] === "_internal" && parts[1] === "agent") {
         if (!configuredAgentToken) throw new ServiceError(404, "接口不存在。");
-        if (resumeRepository && await handleInternalResumeAgentRoutes({req,res,parts,repository:resumeRepository,agentToken:configuredAgentToken,bodyJson,sendJson})) return;
+        if (resumeRepository && await handleInternalResumeAgentRoutes({req,res,parts,repository:resumeRepository,agentToken:configuredAgentToken,queueNotifications,bodyJson,sendJson})) return;
         if (!generationService) throw new ServiceError(404, "接口不存在。");
         if (await handleInternalAgentRoutes({ req, res, parts, service: generationService,
-          agentToken: configuredAgentToken, portraitEnabled, bodyJson, sendJson, styleLoader: agentStyleLoader })) return;
+          agentToken: configuredAgentToken, queueNotifications, portraitEnabled, bodyJson, sendJson, styleLoader: agentStyleLoader })) return;
         throw new ServiceError(404, "接口不存在。");
       }
       if (req.method === "POST" && url.pathname === "/api/payment/notify") {
@@ -123,17 +126,17 @@ export function createRequestHandler({ db, service, generationService = null, re
         return;
       }
       if (req.method === "GET" && parts[0] === "api" && parts[1] === "shares" && parts[3] === "media" && parts.length === 5) {
-        const asset=service.readShareMedia(parts[2],parts[4]);
+        const asset=await service.readShareMedia(parts[2],parts[4]);
         res.writeHead(200,{"content-type":asset.mime,"content-length":asset.bytes.length,"cache-control":"no-store","x-content-type-options":"nosniff"});res.end(asset.bytes);return;
       }
       if (req.method === "GET" && parts[0] === "api" && parts[1] === "shares" && parts.length === 3) {
-        sendJson(res, 200, service.readShare(parts[2])); return;
+        sendJson(res, 200, await service.readShare(parts[2])); return;
       }
       if (req.method === "GET" && url.pathname === "/api/session") {
-        let id = sessionFromCookie(req, db, secret);
+        let id = await sessionFromCookie(req, db, secret);
         if (!id) {
           id = randomBytes(32).toString("base64url");
-          db.prepare("INSERT INTO sessions(id,created_at,expires_at) VALUES(?,?,?)").run(id, Date.now(), Date.now() + SESSION_TTL);
+          await db.prepare("INSERT INTO sessions(id,created_at,expires_at) VALUES(?,?,?)").run(id, Date.now(), Date.now() + SESSION_TTL);
           const secure = req.socket?.encrypted || req.headers["x-forwarded-proto"] === "https";
           res.setHeader("set-cookie", `${COOKIE}=${id}.${signature(secret, id)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}${secure ? "; Secure" : ""}`);
         }
@@ -157,7 +160,7 @@ export function createRequestHandler({ db, service, generationService = null, re
         return;
       }
       if (parts[0] === "api") {
-        const sessionId = requireSession(req, db, secret);
+        const sessionId = await requireSession(req, db, secret);
         if (!["GET", "HEAD"].includes(req.method)) requireCsrf(req, secret, sessionId);
         if (githubPages && parts[1] === "github-pages" && parts.length === 3 && req.method === "GET") {
           if (parts[2] === "callback") {
@@ -171,17 +174,17 @@ export function createRequestHandler({ db, service, generationService = null, re
         if (resumeRepository && await handleResumeRoutes({ req, res, parts, sessionId, repository: resumeRepository, sendJson, bodyJson })) return;
         if (generationService && await handleGenerationRoutes({ req, res, url, parts, sessionId,
           service: generationService, portraitEnabled, bodyJson, sendJson })) return;
-        if (req.method === "GET" && url.pathname === "/api/projects") { sendJson(res, 200, service.listProjects(sessionId)); return; }
+        if (req.method === "GET" && url.pathname === "/api/projects") { sendJson(res, 200, await service.listProjects(sessionId)); return; }
         if (req.method === "POST" && url.pathname === "/api/projects") {
           const input = await bodyJson(req);
-          sendJson(res, 201, service.createProject(sessionId, input.config, input.resumeId)); return;
+          sendJson(res, 201, await service.createProject(sessionId, input.config, input.resumeId)); return;
         }
         if (parts[1] === "projects" && parts[2]) {
           const id = parts[2];
-          if (parts.length === 3 && req.method === "GET") { sendJson(res, 200, service.getProject(sessionId, id)); return; }
-          if (parts.length === 3 && req.method === "DELETE") { sendJson(res, 200, service.deleteProject(sessionId, id)); return; }
+          if (parts.length === 3 && req.method === "GET") { sendJson(res, 200, await service.getProject(sessionId, id)); return; }
+          if (parts.length === 3 && req.method === "DELETE") { sendJson(res, 200, await service.deleteProject(sessionId, id)); return; }
           if (parts.length === 3 && req.method === "PUT") {
-            sendJson(res, 200, service.updateProject(sessionId, id, (await bodyJson(req)).config)); return;
+            sendJson(res, 200, await service.updateProject(sessionId, id, (await bodyJson(req)).config)); return;
           }
           if (parts[3] === "checkout" && req.method === "POST") {
             const { action } = await bodyJson(req);
@@ -189,44 +192,44 @@ export function createRequestHandler({ db, service, generationService = null, re
             sendJson(res, 200, await service.checkout(sessionId, id, action)); return;
           }
           if (githubPages && parts[3] === "github-pages" && parts.length === 4) {
-            if (req.method === "GET") { sendJson(res, 200, githubPages.list(sessionId, id)); return; }
-            if (req.method === "POST") { sendJson(res, 200, githubPages.start(sessionId, id, await bodyJson(req, 4096))); return; }
+            if (req.method === "GET") { sendJson(res, 200, await githubPages.list(sessionId, id)); return; }
+            if (req.method === "POST") { sendJson(res, 200, await githubPages.start(sessionId, id, await bodyJson(req, 4096))); return; }
           }
           if (parts[3] === "reconcile" && req.method === "POST") {
             sendJson(res, 200, await service.reconcile(sessionId, id)); return;
           }
           if (parts[3] === "publish" && req.method === "POST") {
-            const share = service.publish(sessionId, id);
+            const share = await service.publish(sessionId, id);
             sendJson(res, 200, { ...share, url: `${paymentConfig?.publicBaseUrl ?? ""}/#share=${share.token}` }); return;
           }
           if (parts[3] === "shares" && parts.length === 4 && req.method === "GET") {
-            sendJson(res, 200, service.listShares(sessionId, id)); return;
+            sendJson(res, 200, await service.listShares(sessionId, id)); return;
           }
           if (parts[3] === "shares" && parts[4] && req.method === "DELETE") {
-            service.revokeShare(sessionId, id, parts[4]); sendJson(res, 200, { ok: true }); return;
+            await service.revokeShare(sessionId, id, parts[4]); sendJson(res, 200, { ok: true }); return;
           }
           if (parts[3] === "export" && req.method === "POST") {
-            const download = service.issueDownload(sessionId, id);
+            const download = await service.issueDownload(sessionId, id);
             sendJson(res, 200, { ...download, url: `/api/downloads/${download.token}` }); return;
           }
           if (parts[3] === "orders" && req.method === "GET") {
-            sendJson(res, 200, service.orderHistory(sessionId, id)); return;
+            sendJson(res, 200, await service.orderHistory(sessionId, id)); return;
           }
         }
         if (parts[1] === "downloads" && parts[2] && req.method === "GET") {
-          const download = service.getDownload(sessionId, parts[2]);
+          const download = await service.getDownload(sessionId, parts[2]);
           const format = url.searchParams.get("format") ?? "html";
           if (format !== "html") throw new ServiceError(400, "导出格式无效。");
           let file;
           try { file = await renderHtml(sessionId, download.config); }
           catch (error) {
-            try { service.markDeliveryFailure(download.projectId, "export"); } catch { /* Keep packaging error. */ }
+            try { await service.markDeliveryFailure(download.projectId, "export"); } catch { /* Keep packaging error. */ }
             throw error;
           }
           res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-disposition": "attachment; filename=buildurprofile-site.html",
             "content-length": file.length, "cache-control": "no-store", "x-content-type-options": "nosniff" });
-          res.end(file, () => {
-            try { service.markDownload(download.projectId, parts[2]); }
+          res.end(file, async () => {
+            try { await service.markDownload(download.projectId, parts[2]); }
             catch { /* The paid owner can retry if delivery status could not be saved. */ }
           }); return;
         }
@@ -265,6 +268,7 @@ export async function dispatchWebRequest(request, handler) {
   }
   const req = Object.assign(isResumeUpload ? (request.body ? Readable.fromWeb(request.body) : Readable.from([])) : {}, {
     method: request.method,
+    signal: request.signal,
     url: url.pathname + url.search,
     headers,
     socket: { encrypted: url.protocol === "https:" },
@@ -297,7 +301,7 @@ export async function dispatchWebRequest(request, handler) {
   };
   await handler(req, res);
   if (endCallback) {
-    try { endCallback(); } catch { /* Ignore post-response callback errors */ }
+    try { await endCallback(); } catch { /* Ignore post-response callback errors */ }
   }
   return new Response(statusCode === 204 || request.method === "HEAD" ? null : responseBody, {
     status: statusCode,
@@ -307,5 +311,10 @@ export async function dispatchWebRequest(request, handler) {
 
 export function createPaymentHttpServer(options) {
   const handler = createRequestHandler(options);
-  return createServer(handler);
+  return createServer((req, res) => {
+    const controller = new AbortController();
+    req.signal = controller.signal;
+    res.once("close", () => controller.abort());
+    void handler(req, res);
+  });
 }

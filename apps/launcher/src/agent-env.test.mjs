@@ -65,12 +65,18 @@ test('applyAgentEnvFile 新增供应商变量无需改启动脚本即可透传',
 test('applyAgentEnvFile 剔除支付与 GitHub Pages 配置', () => {
   const file = readAgentEnvFile(writeEnvFile([
     'PAYMENT_ENV=sandbox',
+    'DATABASE_URL=web-only',
+    'AGENT_CHECKPOINT_DATABASE_URL=agent-only',
+    'POSTGRES_ADMIN_PASSWORD=compose-only',
     'ALIPAY_APP_ID=2088',
     'GITHUB_PAGES_ORIGIN=https://example.test',
     'ZAI_API_KEY=secret-value'
   ].join('\n')));
   const env = applyAgentEnvFile({ GITHUB_PAGES_CLIENT_SECRET: 'web-only' }, file);
   assert.equal(env.PAYMENT_ENV, undefined);
+  assert.equal(env.DATABASE_URL, undefined);
+  assert.equal(env.AGENT_CHECKPOINT_DATABASE_URL, "agent-only");
+  assert.equal(env.POSTGRES_ADMIN_PASSWORD, undefined);
   assert.equal(env.ALIPAY_APP_ID, undefined);
   assert.equal(env.GITHUB_PAGES_ORIGIN, undefined);
   assert.equal(env.GITHUB_PAGES_CLIENT_SECRET, undefined);

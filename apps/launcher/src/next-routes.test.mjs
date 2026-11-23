@@ -1,3 +1,4 @@
+import { testDatabaseUrl, testSchema } from "./postgres-test-db.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,14 +12,17 @@ const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json",
 
 test("Next.js App Router route handlers and expired private artwork cleanup", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "burp-next-routes-"));
-  const prevDb = process.env.DATABASE_PATH;
+  const prevDb = process.env.DATABASE_URL;
+  const prevSchema = process.env.DATABASE_SCHEMA;
+  const schema = testSchema();
   const prevToken = process.env.AGENT_SERVICE_TOKEN;
   const prevAvatarRoot = process.env.AVATAR_ASSET_ROOT;
   const prevResumeRoot = process.env.RESUME_FILE_ROOT;
   const prevAvatarEnabled = process.env.AVATAR_DEMO_ENABLED;
   const prevRuntime = globalThis.__buildurprofile_next_runtime__;
   delete globalThis.__buildurprofile_next_runtime__;
-  process.env.DATABASE_PATH = join(dir, "next.sqlite");
+  process.env.DATABASE_URL = testDatabaseUrl();
+  process.env.DATABASE_SCHEMA = schema;
   process.env.AGENT_SERVICE_TOKEN = "t".repeat(64);
   process.env.AVATAR_ASSET_ROOT = join(dir, "avatars");
   process.env.RESUME_FILE_ROOT = join(dir, "resumes");
@@ -72,21 +76,26 @@ test("Next.js App Router route handlers and expired private artwork cleanup", as
     assert.equal(createRes.status, 201);
     const created = await createRes.json();
     assert.equal(created.config.content.profile.name, config.content.profile.name);
-    const runtime = globalThis.__buildurprofile_next_runtime__;
-    const owner = runtime.db.prepare("SELECT owner_session_id FROM projects WHERE id=?").get(created.id).owner_session_id;
+    const runtime = await globalThis.__buildurprofile_next_runtime__;
+    const owner = (await runtime.db.prepare("SELECT owner_session_id FROM projects WHERE id=?").get(created.id)).owner_session_id;
     const insert = runtime.db.prepare("INSERT INTO avatar_assets VALUES(?,?,?,?,?,?,?)");
     for (const [id, kind, expires] of [["expired", "portrait", 0], ["current", "hero", Date.now() + 600_000]]) {
       const path = join(dir, "avatars", id);
       writeFileSync(path, "synthetic bytes");
-      insert.run(id, owner, kind, "image/png", path, 0, expires);
+      await insert.run(id, owner, kind, "image/png", path, 0, expires);
     }
-    clean();
+    await clean();
     assert.equal(existsSync(join(dir, "avatars", "expired")), false);
     assert.equal(existsSync(join(dir, "avatars", "current")), true);
   } finally {
-    globalThis.__buildurprofile_next_runtime__?.db?.close?.();
+    const runtime = await globalThis.__buildurprofile_next_runtime__;
+    if (runtime) {
+      await runtime.db.exec(`DROP SCHEMA "${schema}" CASCADE`);
+      await runtime.close();
+    }
     globalThis.__buildurprofile_next_runtime__ = prevRuntime;
-    if (prevDb === undefined) delete process.env.DATABASE_PATH; else process.env.DATABASE_PATH = prevDb;
+    if (prevDb === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = prevDb;
+    if (prevSchema === undefined) delete process.env.DATABASE_SCHEMA; else process.env.DATABASE_SCHEMA = prevSchema;
     if (prevToken === undefined) delete process.env.AGENT_SERVICE_TOKEN; else process.env.AGENT_SERVICE_TOKEN = prevToken;
     if (prevAvatarRoot === undefined) delete process.env.AVATAR_ASSET_ROOT; else process.env.AVATAR_ASSET_ROOT = prevAvatarRoot;
     if (prevResumeRoot === undefined) delete process.env.RESUME_FILE_ROOT; else process.env.RESUME_FILE_ROOT = prevResumeRoot;

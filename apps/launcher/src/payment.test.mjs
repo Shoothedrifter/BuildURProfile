@@ -4,7 +4,8 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateKeyPairSync } from "node:crypto";
-import { bindPaymentEnvironment, openDatabase } from "../../web/src/server/database.mjs";
+import { bindPaymentEnvironment } from "../../web/src/server/database.mjs";
+import { openTestDatabase as openDatabase } from "./postgres-test-db.mjs";
 import { createPaymentService } from "../../web/src/server/service.mjs";
 import { createGenerationService } from "../../web/src/server/generations.mjs";
 import { buildStaticHtml } from "../../web/src/server/export.mjs";
@@ -17,7 +18,7 @@ let db, gateway, service, time;
 const merchant = { mode: "sandbox", priceFen: 199, appId: "sandbox-app", sellerId: "seller-1", sellerEmail: null, publicBaseUrl: "http://127.0.0.1:5173" };
 const paidNotice = (order, overrides = {}) => ({ out_trade_no: order.outTradeNo, total_amount: "1.99", app_id: "sandbox-app",
   seller_id: "seller-1", trade_status: "TRADE_SUCCESS", trade_no: "2026sandbox1", ...overrides });
-const setupProject = () => service.createProject("owner", config).id;
+const setupProject = async () => (await service.createProject("owner", config)).id;
 const pixelConfig = () => {
   const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
   const base = expected.config;
@@ -25,208 +26,207 @@ const pixelConfig = () => {
   return { ...base, templateId: "pixel-world-v1" };
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   time = 100_000;
-  db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions(id,created_at,expires_at) VALUES('owner',0,9999999999999),('other',0,9999999999999)").run();
+  db = await openDatabase();
+  await db.prepare("INSERT INTO sessions(id,created_at,expires_at) VALUES('owner',0,9999999999999),('other',0,9999999999999)").run();
   gateway = { verifyNotify: () => true, pagePay: async () => "<form>official SDK form</form>", query: async () => null };
   service = createPaymentService(db, { gateway, paymentConfig: merchant, now: () => time });
 });
-afterEach(() => db.close());
+afterEach(async () => await db.close());
 
 test("concurrent checkout reuses one pending order and a server price snapshot", async () => {
-  const id = setupProject();
+  const id = await setupProject();
   const [a, b] = await Promise.all([service.checkout("owner", id, "share"), service.checkout("owner", id, "share")]);
   assert.equal(a.outTradeNo, b.outTradeNo);
   assert.equal(a.amountYuan, "1.99");
-  assert.equal(db.prepare("SELECT count(*) AS count FROM orders").get().count, 1);
-  assert.equal(db.prepare("SELECT amount_fen FROM orders").get().amount_fen, 199);
+  assert.equal((await db.prepare("SELECT count(*) AS count FROM orders").get()).count, 1);
+  assert.equal((await db.prepare("SELECT amount_fen FROM orders").get()).amount_fen, 199);
 });
 
 test("a v10 Pixel World candidate cannot be persisted or delivered", async t => {
   const assetRoot = mkdtempSync(join(tmpdir(), "burp-pixel-delivery-"));
   t.after(() => rmSync(assetRoot, { recursive: true, force: true }));
   const base = pixelConfig();
-  const { id, revision } = service.createProject("owner", base);
+  const { id, revision } = await service.createProject("owner", base);
   const generation = createGenerationService({ db, assetRoot, minPixels: 1, now: () => time });
   const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=";
-  const photo = generation.savePortrait("owner", `data:image/png;base64,${image}`);
-  const task = generation.enqueue("owner", { config: base, portraitAssetId: photo.id, idempotencyKey: "delivery-preview" });
-  const lease = generation.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
+  const photo = await generation.savePortrait("owner", `data:image/png;base64,${image}`);
+  const task = await generation.enqueue("owner", { config: base, portraitAssetId: photo.id, idempotencyKey: "delivery-preview" });
+  const lease = await generation.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
   assert.equal(lease?.workflow_version, "python-agent-v10");
-  const assetId = generation.storeOutput(task.id, { bytes: Buffer.from(image, "base64"), mime: "image/png" }, lease.lease_token);
-  assert.equal(generation.complete(task.id, { config: base, leaseToken: lease.lease_token }), true);
-  const { heroArtwork, config: unchanged } = generation.getTask("owner", task.id);
+  const assetId = await generation.storeOutput(task.id, { bytes: Buffer.from(image, "base64"), mime: "image/png" }, lease.lease_token);
+  assert.equal(await generation.complete(task.id, { config: base, leaseToken: lease.lease_token }), true);
+  const { heroArtwork, config: unchanged } = await generation.getTask("owner", task.id);
   assert.equal(heroArtwork.assetUrl, `/api/hero-assets/${assetId}`);
   const withPortrait = { ...unchanged, heroArtwork };
-  assert.throws(() => service.createProject("owner", withPortrait), { status: 400 });
-  assert.throws(() => service.updateProject("owner", id, withPortrait), { status: 400 });
-  assert.throws(() => service.updateProject("owner", id, { ...unchanged,
+  await assert.rejects(async () => await service.createProject("owner", withPortrait), { status: 400 });
+  await assert.rejects(async () => await service.updateProject("owner", id, withPortrait), { status: 400 });
+  await assert.rejects(async () => await service.updateProject("owner", id, { ...unchanged,
     heroArtwork: { ...heroArtwork, assetUrl: `data:image/png;base64,${image}`, styleId: "forged-style" } }), { status: 400 });
-  assert.throws(() => service.createProject("owner", { ...withPortrait, templateId: "cyber-creator-v1",
+  await assert.rejects(async () => await service.createProject("owner", { ...withPortrait, templateId: "cyber-creator-v1",
     heroArtwork: { ...heroArtwork, assetUrl: `data:image/png;base64,${image}` } }), { status: 400 });
-  assert.equal(service.getProject("owner", id).revision, revision);
+  assert.equal((await service.getProject("owner", id)).revision, revision);
   await service.notify(paidNotice(await service.checkout("owner", id, "share")));
-  const share = service.publish("owner", id);
-  const download = service.issueDownload("owner", id);
-  assert.deepEqual(service.readShare(share.token).config, unchanged);
-  const html = buildStaticHtml(service.getDownload("owner", download.token).config, "", "");
+  const share = await service.publish("owner", id);
+  const download = await service.issueDownload("owner", id);
+  assert.deepEqual((await service.readShare(share.token)).config, unchanged);
+  const html = buildStaticHtml((await service.getDownload("owner", download.token)).config, "", "");
   const art = readFileSync("apps/web/public/pixel-world-base.svg").toString("base64");
   assert.ok(html.includes(`data:image/svg+xml;base64,${art}`));
   assert.ok(!html.includes(assetId));
-  db.prepare("UPDATE projects SET config_json=? WHERE id=?").run(JSON.stringify(withPortrait), id);
-  assert.throws(() => service.publish("owner", id), { status: 400 });
-  assert.throws(() => service.issueDownload("owner", id), { status: 400 });
-  assert.throws(() => service.getDownload("owner", download.token), { status: 400 });
-  db.prepare("UPDATE shares SET config_json=? WHERE token=?").run(JSON.stringify(withPortrait), share.token);
-  assert.throws(() => service.readShare(share.token), { status: 400 });
+  await db.prepare("UPDATE projects SET config_json=? WHERE id=?").run(JSON.stringify(withPortrait), id);
+  await assert.rejects(async () => await service.publish("owner", id), { status: 400 });
+  await assert.rejects(async () => await service.issueDownload("owner", id), { status: 400 });
+  await assert.rejects(async () => await service.getDownload("owner", download.token), { status: 400 });
+  await db.prepare("UPDATE shares SET config_json=? WHERE token=?").run(JSON.stringify(withPortrait), share.token);
+  await assert.rejects(async () => await service.readShare(share.token), { status: 400 });
 });
 
 test("Pixel World default art is exportable for free and sharing requires entitlement", async () => {
   const base = pixelConfig();
-  const { id } = service.createProject("owner", base);
-  const download = service.issueDownload("owner", id);
-  assert.equal(service.getDownload("owner", download.token).config.templateId, "pixel-world-v1");
-  assert.throws(() => service.getDownload("other", download.token), { status: 404 });
-  assert.throws(() => service.publish("owner", id), { status: 402 });
-  assert.equal(service.getProject("owner", id).paid, false);
+  const { id } = await service.createProject("owner", base);
+  const download = await service.issueDownload("owner", id);
+  assert.equal((await service.getDownload("owner", download.token)).config.templateId, "pixel-world-v1");
+  await assert.rejects(async () => await service.getDownload("other", download.token), { status: 404 });
+  await assert.rejects(async () => await service.publish("owner", id), { status: 402 });
+  assert.equal((await service.getProject("owner", id)).paid, false);
   await service.notify(paidNotice(await service.checkout("owner", id, "share")));
-  const share = service.publish("owner", id);
-  assert.deepEqual(service.readShare(share.token).config.content.resume, base.content.resume);
+  const share = await service.publish("owner", id);
+  assert.deepEqual((await service.readShare(share.token)).config.content.resume, base.content.resume);
 });
 
 test("free export does not create an order or alter an existing legacy export order", async () => {
-  const id = setupProject();
+  const id = await setupProject();
   const order = await service.checkout("owner", id, "share");
-  db.prepare("UPDATE projects SET pending_action='export' WHERE id=?").run(id);
-  const download = service.issueDownload("owner", id);
-  assert.equal(service.getDownload("owner", download.token).projectId, id);
-  assert.throws(() => service.getDownload("other", download.token), /无权访问/);
-  assert.throws(() => service.publish("owner", id), /请先完成/);
+  await db.prepare("UPDATE projects SET pending_action='export' WHERE id=?").run(id);
+  const download = await service.issueDownload("owner", id);
+  assert.equal((await service.getDownload("owner", download.token)).projectId, id);
+  await assert.rejects(async () => await service.getDownload("other", download.token), /无权访问/);
+  await assert.rejects(async () => await service.publish("owner", id), /请先完成/);
   await assert.rejects(service.checkout("owner", id, "export"), /导出免费/);
-  assert.equal(db.prepare("SELECT status FROM orders WHERE out_trade_no=?").get(order.outTradeNo).status, "PENDING");
-  assert.equal(db.prepare("SELECT count(*) AS count FROM orders").get().count, 1);
-  assert.equal(service.getProject("owner", id).pendingAction, "export");
+  assert.equal((await db.prepare("SELECT status FROM orders WHERE out_trade_no=?").get(order.outTradeNo)).status, "PENDING");
+  assert.equal((await db.prepare("SELECT count(*) AS count FROM orders").get()).count, 1);
+  assert.equal((await service.getProject("owner", id)).pendingAction, "export");
 });
 
 test("new configured price is 2.99 while existing pending order keeps its amount", async () => {
-  const id = setupProject();
+  const id = await setupProject();
   const previous = await service.checkout("owner", id, "share");
   const updated = createPaymentService(db, { gateway, paymentConfig: { ...merchant, priceFen: 299 }, now: () => time });
   assert.equal((await updated.checkout("owner", id, "share")).amountYuan, "1.99");
-  assert.equal((await updated.checkout("owner", setupProject(), "share")).amountYuan, "2.99");
-  assert.equal(db.prepare("SELECT amount_fen FROM orders WHERE out_trade_no=?").get(previous.outTradeNo).amount_fen, 199);
+  assert.equal((await updated.checkout("owner", await setupProject(), "share")).amountYuan, "2.99");
+  assert.equal((await db.prepare("SELECT amount_fen FROM orders WHERE out_trade_no=?").get(previous.outTradeNo)).amount_fen, 199);
 });
 
-test("only the owner can delete a project and its content leaves the project list", () => {
-  const id = setupProject();
-  assert.throws(() => service.deleteProject("other", id), /不存在|无权/);
-  assert.deepEqual(service.deleteProject("owner", id), { ok: true });
-  assert.deepEqual(service.listProjects("owner"), []);
-  assert.throws(() => service.getProject("owner", id), /不存在|无权/);
-  assert.throws(() => service.deleteProject("owner", id), /不存在|无权/);
-  const saved = db.prepare("SELECT config_json,deleted_at FROM projects WHERE id=?").get(id);
+test("only the owner can delete a project and its content leaves the project list", async () => {
+  const id = await setupProject();
+  await assert.rejects(async () => await service.deleteProject("other", id), /不存在|无权/);
+  assert.deepEqual(await service.deleteProject("owner", id), { ok: true });
+  assert.deepEqual(await service.listProjects("owner"), []);
+  await assert.rejects(async () => await service.getProject("owner", id), /不存在|无权/);
+  await assert.rejects(async () => await service.deleteProject("owner", id), /不存在|无权/);
+  const saved = await db.prepare("SELECT config_json,deleted_at FROM projects WHERE id=?").get(id);
   assert.equal(saved.config_json, "{}");
   assert.equal(saved.deleted_at, time);
 });
 
 test("deleting a paid project revokes delivery links but preserves verified payment facts", async () => {
-  const id = setupProject();
+  const id = await setupProject();
   const order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order));
-  const share = service.publish("owner", id);
-  const download = service.issueDownload("owner", id);
-  assert.deepEqual(service.deleteProject("owner", id), { ok: true });
-  assert.throws(() => service.readShare(share.token), /失效/);
-  assert.throws(() => service.getDownload("owner", download.token), /不存在|无权/);
-  assert.equal(db.prepare("SELECT config_json,revoked_at FROM shares WHERE token=?").get(share.token).config_json, "{}");
-  assert.equal(db.prepare("SELECT status FROM orders WHERE project_id=?").get(id).status, "PAID");
-  assert.equal(db.prepare("SELECT status FROM entitlements WHERE project_id=?").get(id).status, "ACTIVE");
+  const share = await service.publish("owner", id);
+  const download = await service.issueDownload("owner", id);
+  assert.deepEqual(await service.deleteProject("owner", id), { ok: true });
+  await assert.rejects(async () => await service.readShare(share.token), /失效/);
+  await assert.rejects(async () => await service.getDownload("owner", download.token), /不存在|无权/);
+  assert.equal((await db.prepare("SELECT config_json,revoked_at FROM shares WHERE token=?").get(share.token)).config_json, "{}");
+  assert.equal((await db.prepare("SELECT status FROM orders WHERE project_id=?").get(id)).status, "PAID");
+  assert.equal((await db.prepare("SELECT status FROM entitlements WHERE project_id=?").get(id)).status, "ACTIVE");
 });
 
 test("a project with an unsettled payment order cannot be deleted", async () => {
-  const id = setupProject();
+  const id = await setupProject();
   await service.checkout("owner", id, "share");
-  assert.throws(() => service.deleteProject("owner", id), /订单|支付/);
-  assert.equal(service.listProjects("owner").length, 1);
+  await assert.rejects(async () => await service.deleteProject("owner", id), /订单|支付/);
+  assert.equal((await service.listProjects("owner")).length, 1);
 });
 
 test("a pending order from another payment environment cannot be reused", async () => {
-  const id = setupProject();
+  const id = await setupProject();
   const order = await service.checkout("owner", id, "share");
-  db.prepare("UPDATE orders SET payment_env='production' WHERE out_trade_no=?").run(order.outTradeNo);
+  await db.prepare("UPDATE orders SET payment_env='production' WHERE out_trade_no=?").run(order.outTradeNo);
   await assert.rejects(service.checkout("owner", id, "share"), /另一支付环境/);
 });
 
 test("bad signature, wrong amount, wrong merchant, and unknown order cannot grant access", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   gateway.verifyNotify = () => false;
   await assert.rejects(service.notify(paidNotice(order)), /验签失败/);
   gateway.verifyNotify = () => true;
   await assert.rejects(service.notify(paidNotice(order, { total_amount: "0.01" })), /金额不一致/);
   await assert.rejects(service.notify(paidNotice(order, { app_id: "other" })), /商户身份不一致/);
   await assert.rejects(service.notify(paidNotice(order, { out_trade_no: "missing" })), /订单不存在/);
-  assert.throws(() => service.publish("owner", id), /请先完成/);
-  assert.ok(service.issueDownload("owner", id).token);
+  await assert.rejects(async () => await service.publish("owner", id), /请先完成/);
+  assert.ok((await service.issueDownload("owner", id)).token);
 });
 
 test("verified success is idempotent and unlocks sharing", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
-  await service.notify(paidNotice(order));
-  await service.notify(paidNotice(order));
-  assert.equal(db.prepare("SELECT count(*) AS count FROM entitlements").get().count, 1);
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
+  await Promise.all([service.notify(paidNotice(order)), service.notify(paidNotice(order))]);
+  assert.equal((await db.prepare("SELECT count(*) AS count FROM entitlements").get()).count, 1);
   const second = await service.checkout("owner", id, "share");
   assert.equal(second.alreadyPaid, true);
-  assert.ok(service.publish("owner", id).token);
-  assert.ok(service.issueDownload("owner", id).token);
+  assert.ok((await service.publish("owner", id)).token);
+  assert.ok((await service.issueDownload("owner", id)).token);
 });
 
 test("verified notification accepts either configured seller identifier, never a mismatched one", async () => {
   const settings = { ...merchant, sellerEmail: "seller@example.test" };
   service = createPaymentService(db, { gateway, paymentConfig: settings, now: () => time });
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   await assert.rejects(service.notify(paidNotice(order, { seller_id: "wrong", seller_email: "wrong@example.test" })),
     /商户身份不一致/);
   await service.notify(paidNotice(order, { seller_email: undefined }));
-  assert.equal(service.getProject("owner", id).paid, true);
+  assert.equal((await service.getProject("owner", id)).paid, true);
 });
 
 test("refund-related notifications cannot grant a new payment entitlement", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   for (const field of ["out_biz_no", "gmt_refund", "refund_fee"]) {
     await service.notify(paidNotice(order, { [field]: "refund-event" }));
-    assert.equal(service.getProject("owner", id).paid, false);
+    assert.equal((await service.getProject("owner", id)).paid, false);
   }
   await service.notify(paidNotice(order));
-  assert.equal(service.getProject("owner", id).paid, true);
+  assert.equal((await service.getProject("owner", id)).paid, true);
 });
 
 test("query recovery grants only signed paid status, never a return redirect or unknown status", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   gateway.query = async () => ({ code: "10000", out_trade_no: order.outTradeNo, total_amount: "1.99", trade_status: "WAIT_BUYER_PAY" });
   assert.equal((await service.reconcile("owner", id)).paid, false);
   gateway.query = async () => ({ code: "10000", out_trade_no: order.outTradeNo, total_amount: "1.99", trade_status: "TRADE_SUCCESS", trade_no: "query-1" });
   assert.equal((await service.reconcile("owner", id)).paid, true);
   assert.equal((await service.reconcile("owner", id)).paid, true);
-  assert.equal(db.prepare("SELECT count(*) AS count FROM entitlements").get().count, 1);
+  assert.equal((await db.prepare("SELECT count(*) AS count FROM entitlements").get()).count, 1);
 });
 
 test("query with wrong amount does not grant access", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   gateway.query = async () => ({ code: "10000", out_trade_no: order.outTradeNo, total_amount: "0.01", trade_status: "TRADE_SUCCESS" });
   await assert.rejects(service.reconcile("owner", id), /金额不一致/);
-  assert.equal(service.getProject("owner", id).paid, false);
+  assert.equal((await service.getProject("owner", id)).paid, false);
 });
 
 test("paid TRADE_CLOSED does not revoke an entitlement without refund verification", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order));
   await service.notify(paidNotice(order, { trade_status: "TRADE_CLOSED" }));
-  assert.equal(service.getProject("owner", id).paid, true);
+  assert.equal((await service.getProject("owner", id)).paid, true);
 });
 
 test("an out-of-order closed notice remains queryable for later verified payment recovery", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order, { trade_status: "TRADE_CLOSED" }));
   gateway.query = async () => ({ code: "10000", out_trade_no: order.outTradeNo, total_amount: "1.99",
     trade_status: "TRADE_SUCCESS", trade_no: "late-paid" });
@@ -234,7 +234,7 @@ test("an out-of-order closed notice remains queryable for later verified payment
 });
 
 test("query recovery checks an older closed order even after a newer pending checkout", async () => {
-  const id = setupProject(), older = await service.checkout("owner", id, "share");
+  const id = await setupProject(), older = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(older, { trade_status: "TRADE_CLOSED" }));
   time += 1;
   const newer = await service.checkout("owner", id, "share");
@@ -243,54 +243,54 @@ test("query recovery checks an older closed order even after a newer pending che
     trade_status: outTradeNo === older.outTradeNo ? "TRADE_SUCCESS" : "WAIT_BUYER_PAY",
     ...(outTradeNo === older.outTradeNo ? { trade_no: "older-paid" } : {}) });
   assert.equal((await service.reconcile("owner", id)).paid, true);
-  assert.equal(db.prepare("SELECT granted_by_order FROM entitlements WHERE project_id=?").get(id).granted_by_order,
+  assert.equal((await db.prepare("SELECT granted_by_order FROM entitlements WHERE project_id=?").get(id)).granted_by_order,
     older.outTradeNo);
 });
 
 test("shares expire, can be revoked, and republishing replaces old links without another charge", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order));
-  const first = service.publish("owner", id);
-  assert.equal(service.publish("owner", id).token, first.token);
+  const first = await service.publish("owner", id);
+  assert.equal((await service.publish("owner", id)).token, first.token);
   time += 7 * 24 * 60 * 60 * 1000;
-  assert.throws(() => service.readShare(first.token), /已失效/);
-  const second = service.publish("owner", id);
+  await assert.rejects(async () => await service.readShare(first.token), /已失效/);
+  const second = await service.publish("owner", id);
   assert.notEqual(second.token, first.token);
-  service.revokeShare("owner", id, second.token);
-  assert.throws(() => service.readShare(second.token), /已失效/);
+  await service.revokeShare("owner", id, second.token);
+  await assert.rejects(async () => await service.readShare(second.token), /已失效/);
 });
 
 test("owner and download session are enforced; another project is separately charged", async () => {
-  const id = setupProject(), otherId = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), otherId = await setupProject(), order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order));
-  assert.throws(() => service.publish("other", id), /无权访问/);
-  const download = service.issueDownload("owner", id);
-  assert.throws(() => service.getDownload("other", download.token), /无权访问/);
-  assert.equal(service.getDownload("owner", download.token).projectId, id);
-  assert.throws(() => service.publish("owner", otherId), /请先完成/);
+  await assert.rejects(async () => await service.publish("other", id), /无权访问/);
+  const download = await service.issueDownload("owner", id);
+  await assert.rejects(async () => await service.getDownload("other", download.token), /无权访问/);
+  assert.equal((await service.getDownload("owner", download.token)).projectId, id);
+  await assert.rejects(async () => await service.publish("owner", otherId), /请先完成/);
 });
 
-test("server stores only publication fields, excluding raw PDF and client payment claims", () => {
-  const id = service.createProject("owner", {
+test("server stores only publication fields, excluding raw PDF and client payment claims", async () => {
+  const id = (await service.createProject("owner", {
     ...config, isPaid: true, originalPdf: "private binary", content: { ...config.content,
       sourceRefs: { name: { page: 1, excerpt: "PRIVATE PDF EXCERPT" } } }
-  }).id;
-  const stored = db.prepare("SELECT config_json FROM projects WHERE id=?").get(id).config_json;
+  })).id;
+  const stored = (await db.prepare("SELECT config_json FROM projects WHERE id=?").get(id)).config_json;
   assert.ok(!stored.includes("PRIVATE PDF EXCERPT"));
   assert.ok(!stored.includes("originalPdf"));
   assert.ok(!stored.includes("isPaid"));
-  assert.equal(service.getProject("owner", id).paid, false);
+  assert.equal((await service.getProject("owner", id)).paid, false);
 });
 
-test("long confirmed project text is preserved in the stored publication", () => {
+test("long confirmed project text is preserved in the stored publication", async () => {
   const description = "项目职责与成果。".repeat(15_000);
-  const id = service.createProject("owner", { ...config, content: { ...config.content,
-    projects: [{ ...config.content.projects[0], description }] } }).id;
-  assert.equal(service.getProject("owner", id).config.content.projects[0].description, description);
+  const id = (await service.createProject("owner", { ...config, content: { ...config.content,
+    projects: [{ ...config.content.projects[0], description }] } })).id;
+  assert.equal((await service.getProject("owner", id)).config.content.projects[0].description, description);
 });
 
 test("free endpoints reject direct delivery; notification response is plain fail on invalid signature", async () => {
-  const id = setupProject();
+  const id = await setupProject();
   const server = createPaymentHttpServer({ db, service, paymentConfig: merchant, priceFen: 199, secret: Buffer.alloc(32, 1) });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -397,34 +397,32 @@ test("official SDK signs a sandbox page form with the Skill's PKCS#1 key format"
 
 test("a paid entitlement survives database close and reopen", async () => {
   const directory = mkdtempSync(join(tmpdir(), "burp-payment-"));
-  const path = join(directory, "payment.sqlite");
   try {
-    const firstDb = openDatabase(path);
-    firstDb.prepare("INSERT INTO sessions(id,created_at,expires_at) VALUES('owner',0,9999999999999)").run();
+    const firstDb = await openDatabase({ cleanup: false });
+    await firstDb.prepare("INSERT INTO sessions(id,created_at,expires_at) VALUES('owner',0,9999999999999)").run();
     const firstService = createPaymentService(firstDb, { gateway, paymentConfig: merchant, now: () => time });
-    const id = firstService.createProject("owner", config).id;
+    const id = (await firstService.createProject("owner", config)).id;
     const order = await firstService.checkout("owner", id, "share");
     await firstService.notify(paidNotice(order));
-    firstDb.close();
-    const reopened = openDatabase(path);
+    await firstDb.close();
+    const reopened = await openDatabase({ schema: firstDb.schema });
     try {
       const restored = createPaymentService(reopened, { gateway, paymentConfig: merchant, now: () => time });
-      assert.equal(restored.getProject("owner", id).paid, true);
+      assert.equal((await restored.getProject("owner", id)).paid, true);
       assert.equal((await restored.checkout("owner", id, "share")).alreadyPaid, true);
-    } finally { reopened.close(); }
+    } finally { await reopened.close(); }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("a database with sandbox payment history cannot be reopened for production payments", async () => {
   const directory = mkdtempSync(join(tmpdir(), "burp-environment-"));
-  const path = join(directory, "shared.sqlite");
   try {
-    const first = openDatabase(path);
-    bindPaymentEnvironment(first, "sandbox");
-    first.close();
-    const second = openDatabase(path);
-    try { assert.throws(() => bindPaymentEnvironment(second, "production"), /sandbox.*production/); }
-    finally { second.close(); }
+    const first = await openDatabase({ cleanup: false });
+    await bindPaymentEnvironment(first, "sandbox");
+    await first.close();
+    const second = await openDatabase({ schema: first.schema });
+    try { await assert.rejects(async () => await bindPaymentEnvironment(second, "production"), /sandbox.*production/); }
+    finally { await second.close(); }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -470,7 +468,7 @@ test("HTTP flow protects publication and download, then delivers both after veri
     assert.match(response.headers.get("content-disposition"), /buildurprofile-site\.html/);
     assert.match(await response.text(), /BuildURProfile Showcase/);
     assert.equal((await fetch(`${base}${download.url}?format=zip`, { headers: { cookie } })).status, 400);
-    assert.equal(db.prepare("SELECT count(*) AS count FROM deliveries WHERE project_id=? AND status='DELIVERED'").get(project.id).count, 2);
+    assert.equal((await db.prepare("SELECT count(*) AS count FROM deliveries WHERE project_id=? AND status='DELIVERED'").get(project.id)).count, 2);
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
 
@@ -500,10 +498,10 @@ test("HTTP project deletion requires CSRF and the owning session", async () => {
 });
 
 test("a packaging failure leaves the paid entitlement and a retry can deliver", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order));
-  const download = service.issueDownload("owner", id);
-  assert.equal(db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='export'").get(id).status, "PENDING");
+  const download = await service.issueDownload("owner", id);
+  assert.equal((await db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='export'").get(id)).status, "PENDING");
   let fail = true;
   const server = createPaymentHttpServer({ db, service, paymentConfig: merchant, priceFen: 199,
     secret: Buffer.alloc(32, 3), htmlBuilder: () => { if (fail) throw new Error("packaging failure"); return "<html>retry</html>"; } });
@@ -514,28 +512,28 @@ test("a packaging failure leaves the paid entitlement and a retry can deliver", 
     const cookie = session.headers.get("set-cookie").split(";")[0];
     // This HTTP session is not the project owner; create one tied to its signed cookie for this route check.
     const signedId = cookie.split("=")[1].split(".")[0];
-    db.prepare("UPDATE projects SET owner_session_id=? WHERE id=?").run(signedId, id);
+    await db.prepare("UPDATE projects SET owner_session_id=? WHERE id=?").run(signedId, id);
     const first = await fetch(`${base}/api/downloads/${download.token}`, { headers: { cookie } });
     assert.equal(first.status, 500);
-    assert.equal(service.getProject(signedId, id).paid, true);
-    assert.equal(db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='export'").get(id).status, "FAILED");
+    assert.equal((await service.getProject(signedId, id)).paid, true);
+    assert.equal((await db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='export'").get(id)).status, "FAILED");
     fail = false;
     const second = await fetch(`${base}/api/downloads/${download.token}`, { headers: { cookie } });
     assert.equal(second.status, 200);
     await second.arrayBuffer();
-    assert.equal(db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='export'").get(id).status, "DELIVERED");
+    assert.equal((await db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='export'").get(id)).status, "DELIVERED");
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
 
 test("a publication failure records failed delivery without losing payment or leaking a share", async () => {
-  const id = setupProject(), order = await service.checkout("owner", id, "share");
+  const id = await setupProject(), order = await service.checkout("owner", id, "share");
   await service.notify(paidNotice(order));
-  db.exec("CREATE TRIGGER reject_share BEFORE INSERT ON shares BEGIN SELECT RAISE(FAIL, 'share storage unavailable'); END");
-  assert.throws(() => service.publish("owner", id), /share storage unavailable/);
-  assert.equal(service.getProject("owner", id).paid, true);
-  assert.equal(db.prepare("SELECT count(*) AS count FROM shares WHERE project_id=?").get(id).count, 0);
-  assert.equal(db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='share'").get(id).status, "FAILED");
-  db.exec("DROP TRIGGER reject_share");
-  assert.ok(service.publish("owner", id).token);
-  assert.equal(db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='share'").get(id).status, "DELIVERED");
+  await db.exec("CREATE FUNCTION reject_share() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'share storage unavailable'; END; $$; CREATE TRIGGER reject_share BEFORE INSERT ON shares FOR EACH ROW EXECUTE FUNCTION reject_share()");
+  await assert.rejects(async () => await service.publish("owner", id), /share storage unavailable/);
+  assert.equal((await service.getProject("owner", id)).paid, true);
+  assert.equal((await db.prepare("SELECT count(*) AS count FROM shares WHERE project_id=?").get(id)).count, 0);
+  assert.equal((await db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='share'").get(id)).status, "FAILED");
+  await db.exec("DROP TRIGGER reject_share ON shares");
+  assert.ok((await service.publish("owner", id)).token);
+  assert.equal((await db.prepare("SELECT status FROM deliveries WHERE project_id=? AND kind='share'").get(id)).status, "DELIVERED");
 });

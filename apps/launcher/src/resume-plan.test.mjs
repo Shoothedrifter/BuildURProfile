@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDatabase } from '../../../packages/storage/src/database.mjs';
+import { openTestDatabase as openDatabase } from "./postgres-test-db.mjs";
 import { createResumeRepository } from '../../../packages/storage/src/resumes/repository.mjs';
 import { createRequestHandler, dispatchWebRequest } from '../../web/src/server/http.mjs';
 import { planFromPages } from '../../web/src/server/resume-plan.mjs';
@@ -29,8 +29,8 @@ test('private plan starts basic anchor with a name merged with a URL in PDF text
 
 test('private plan endpoint requires service token and active lease', async t => {
   const root = mkdtempSync(join(tmpdir(), 'resume-plan-test-'));
-  const db = openDatabase(':memory:');
-  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  const db = await openDatabase();
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
   const repository = createResumeRepository({ db, root });
   const token = 'p'.repeat(64);
   const handler = createRequestHandler({ db, service: {}, resumeRepository: repository,
@@ -49,7 +49,7 @@ test('private plan endpoint requires service token and active lease', async t =>
     headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' }
   }), handler);
   assert.equal(queued.status, 202);
-  const task = repository.queue.lease('worker');
+  const task = await repository.queue.lease('worker');
   const endpoint = `http://test/_internal/agent/resume-tasks/${task.id}/plan`;
   const request = (auth, lease) => dispatchWebRequest(new Request(endpoint, {
     headers: { authorization: `Bearer ${auth}`, 'x-agent-lease': lease }
@@ -62,7 +62,7 @@ test('private plan endpoint requires service token and active lease', async t =>
   const plan = await response.json();
   assert.equal(plan.version, 'resume-parse-plan-v1');
   assert.deepEqual(plan.anchors.map(({ kind, text }) => [kind, text]), [['basicInfo', 'Synthetic fixture']]);
-  repository.queue.cancel(db.prepare('SELECT owner_session_id FROM resume_files WHERE id=?').get(fileId).owner_session_id,
+  await repository.queue.cancel((await db.prepare('SELECT owner_session_id FROM resume_files WHERE id=?').get(fileId)).owner_session_id,
     task.resumeId);
   assert.equal((await request(token, task.leaseToken)).status, 409);
 });

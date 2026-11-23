@@ -8,7 +8,7 @@ export async function handleGenerationRoutes({ req, res, url, parts, sessionId, 
     sendJson(res, 200, { styles: portraitEnabled ? listAvatarStyles() : [] }); return true;
   }
   if (req.method === "POST" && url.pathname === "/api/portraits") {
-    sendJson(res, 201, service.savePortrait(sessionId, (await bodyJson(req, 14 * 1024 * 1024)).dataUrl)); return true;
+    sendJson(res, 201, await service.savePortrait(sessionId, (await bodyJson(req, 14 * 1024 * 1024)).dataUrl)); return true;
   }
   if (req.method === "POST" && url.pathname === "/api/generations") {
     // Legacy portrait regeneration may contain already embedded editor images.
@@ -19,20 +19,20 @@ export async function handleGenerationRoutes({ req, res, url, parts, sessionId, 
     }
     if (input.portraitAssetId && !portraitEnabled) throw new ServiceError(403, "当前环境未启用肖像生成。");
     if (!input.resumeId && ["resume-v2","resume-v3"].includes(input.brief?.content?.resume?.version)) throw new ServiceError(400,"请使用已保存草稿生成作品。");
-    sendJson(res, 201, input.resumeId ? service.enqueueResume(sessionId, input) : service.enqueue(sessionId, input)); return true;
+    sendJson(res, 201, input.resumeId ? await service.enqueueResume(sessionId, input) : await service.enqueue(sessionId, input)); return true;
   }
   if (req.method === "GET" && parts[1] === "generations" && parts.length === 3) {
-    sendJson(res, 200, service.getTask(sessionId, parts[2])); return true;
+    sendJson(res, 200, await service.getTask(sessionId, parts[2])); return true;
   }
   if (req.method === "POST" && parts[1] === "generations" && parts[3] === "cancel" && parts.length === 4) {
-    sendJson(res, 200, service.cancel(sessionId, parts[2])); return true;
+    sendJson(res, 200, await service.cancel(sessionId, parts[2])); return true;
   }
   if (req.method === "GET" && parts[1] === "showcase-media" && parts.length === 3) {
-    const asset=service.readShowcaseMedia(sessionId,parts[2]);
+    const asset=await service.readShowcaseMedia(sessionId,parts[2]);
     res.writeHead(200,{"content-type":asset.mime,"content-length":asset.bytes.length,"cache-control":"no-store","x-content-type-options":"nosniff"}); res.end(asset.bytes); return true;
   }
   if (req.method === "GET" && parts[1] === "hero-assets" && parts.length === 3) {
-    const asset = service.readArtworkAsset(sessionId, parts[2]);
+    const asset = await service.readArtworkAsset(sessionId, parts[2]);
     res.writeHead(200, { "content-type": asset.mime, "content-length": asset.bytes.length,
       "cache-control": "private, no-store", "x-content-type-options": "nosniff" });
     res.end(asset.bytes); return true;

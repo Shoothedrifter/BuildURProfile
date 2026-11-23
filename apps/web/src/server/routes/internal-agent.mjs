@@ -1,3 +1,4 @@
+import { leaseWaitMs } from "../queue-notifications.mjs";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
@@ -49,11 +50,11 @@ function requireAgentToken(req, token) {
   if (!supplied || !fixedTimeEqual(supplied, token)) throw new ServiceError(403, "内部服务认证失败。");
 }
 
-function requireLease(service, id, leaseToken) {
+async function requireLease(service, id, leaseToken) {
   if (typeof leaseToken !== "string" || !/^[0-9a-f-]{36}$/i.test(leaseToken)) {
     throw new ServiceError(409, "任务租约无效。");
   }
-  const row = service.getLeasedTask(id, leaseToken);
+  const row = await service.getLeasedTask(id, leaseToken);
   if (!row) throw new ServiceError(409, "任务租约已过期或不存在。");
   return row;
 }
@@ -88,7 +89,7 @@ export function validateAgentToken(token) {
 }
 
 /** The Node service remains the sole owner of task, session, asset and payment storage. */
-export async function handleInternalAgentRoutes({ req, res, parts, service, agentToken, portraitEnabled,
+export async function handleInternalAgentRoutes({ req, res, parts, service, agentToken, portraitEnabled, queueNotifications,
   bodyJson, sendJson, styleLoader = id => id === PIXEL_AVATAR_STYLE_ID ? loadPixelAvatarRecipe(id) : loadStyleRecipe(id) }) {
   requireAgentToken(req, agentToken);
   if (req.method === "POST" && parts.length === 3 && parts[2] === "lease") {
@@ -103,15 +104,17 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
       supportsPixelDetailedAvatar: input.supportsPixelDetailedAvatar === true,
       supportsPixelLayeredHairAvatar: input.supportsPixelLayeredHairAvatar === true
     };
-    let task = service.leaseNext(capabilities);
-    for (let skipped = 0; task && !SUPPORTED_GENERATION_WORKFLOWS.has(task.workflow_version) && skipped < 20; skipped++) {
-      service.fail(task.id, "生成规则已更新，请重新提交作品。", { leaseToken: task.lease_token, retryable: false });
-      task = service.leaseNext(capabilities);
-    }
-    if (task && !SUPPORTED_GENERATION_WORKFLOWS.has(task.workflow_version)) {
-      service.fail(task.id, "生成规则已更新，请重新提交作品。", { leaseToken: task.lease_token, retryable: false });
-      task = null;
-    }
+    const take = async () => {
+      for (let skipped = 0; skipped <= 20; skipped++) {
+        const candidate = await service.leaseNext(capabilities);
+        if (!candidate || SUPPORTED_GENERATION_WORKFLOWS.has(candidate.workflow_version)) return candidate;
+        await service.fail(candidate.id, "生成规则已更新，请重新提交作品。", { leaseToken: candidate.lease_token, retryable: false });
+      }
+      return null;
+    };
+    const task = queueNotifications
+      ? await queueNotifications.claim("generations", leaseWaitMs(input.waitMs), req.signal, take)
+      : await take();
     if (!task) { res.writeHead(204, { "cache-control": "no-store" }); res.end(); return true; }
     sendJson(res, 200, { id: task.id, leaseToken: task.lease_token,
       workflowVersion: task.workflow_version, brief: task.brief_json ? JSON.parse(task.brief_json) : null,
@@ -124,7 +127,7 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
     if (typeof input?.workerId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(input.workerId)) {
       throw new ServiceError(400, "worker ID 无效。");
     }
-    service.touchWorker(input.workerId);
+    await service.touchWorker(input.workerId);
     sendJson(res, 200, { ok: true }); return true;
   }
   if (parts[2] !== "tasks" || parts.length !== 5) return false;
@@ -132,29 +135,29 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ServiceError(404, "任务不存在。");
   if (req.method === "POST" && action === "heartbeat") {
     const input = await bodyJson(req, 4096);
-    const row = requireLease(service, id, input?.leaseToken);
-    const ok = service.heartbeat(id, input.leaseToken);
-    sendJson(res, 200, { ok, cancelRequested: Boolean(row.cancel_requested_at) || service.isCancelRequested(id, input.leaseToken) });
+    const row = await requireLease(service, id, input?.leaseToken);
+    const ok = await service.heartbeat(id, input.leaseToken);
+    sendJson(res, 200, { ok, cancelRequested: Boolean(row.cancel_requested_at) || await service.isCancelRequested(id, input.leaseToken) });
     return true;
   }
   if (req.method === "POST" && action === "ack-cancel") {
     const input = await bodyJson(req, 4096);
-    requireLease(service, id, input?.leaseToken);
-    const ok = service.acknowledgeCancel(id, input.leaseToken);
+    await requireLease(service, id, input?.leaseToken);
+    const ok = await service.acknowledgeCancel(id, input.leaseToken);
     sendJson(res, ok ? 200 : 409, { ok }); return true;
   }
   if (req.method === "GET" && action === "portrait") {
-    const row = requireLease(service, id, req.headers["x-agent-lease"]);
-    if (!portraitEnabled || !row.portrait_asset_id || service.isCancelRequested(id, req.headers["x-agent-lease"])) {
+    const row = await requireLease(service, id, req.headers["x-agent-lease"]);
+    if (!portraitEnabled || !row.portrait_asset_id || await service.isCancelRequested(id, req.headers["x-agent-lease"])) {
       throw new ServiceError(409, "当前任务没有可读取的肖像。");
     }
-    const asset = service.readAssetForWorker(row.portrait_asset_id);
+    const asset = await service.readAssetForWorker(row.portrait_asset_id);
     sendBytes(res, asset.bytes, asset.mime); return true;
   }
   if (req.method === "GET" && action === "recipe") {
-    const row = requireLease(service, id, req.headers["x-agent-lease"]);
+    const row = await requireLease(service, id, req.headers["x-agent-lease"]);
     if (!portraitEnabled || !row.style_id || isPixelCandidateWorkflow(row.workflow_version) ||
-      service.isCancelRequested(id, req.headers["x-agent-lease"])) {
+      await service.isCancelRequested(id, req.headers["x-agent-lease"])) {
       throw new ServiceError(409, "当前任务没有可用的肖像风格。");
     }
     const recipe = styleLoader(row.style_id);
@@ -168,51 +171,51 @@ export async function handleInternalAgentRoutes({ req, res, parts, service, agen
   }
   if (req.method === "GET" && action === "output") {
     const leaseToken = req.headers["x-agent-lease"];
-    const row = requireLease(service, id, leaseToken);
-    if (service.isCancelRequested(id, leaseToken)) throw new ServiceError(409, "任务已取消。");
+    const row = await requireLease(service, id, leaseToken);
+    if (await service.isCancelRequested(id, leaseToken)) throw new ServiceError(409, "任务已取消。");
     sendJson(res, 200, { assetId: row.output_asset_id ?? null,
-      exists: Boolean(row.output_asset_id && service.outputExists(row.output_asset_id)) });
+      exists: Boolean(row.output_asset_id && await service.outputExists(row.output_asset_id)) });
     return true;
   }
   if (req.method === "POST" && action === "output") {
     const leaseToken = req.headers["x-agent-lease"];
-    requireLease(service, id, leaseToken);
-    if (!portraitEnabled || service.isCancelRequested(id, leaseToken)) throw new ServiceError(409, "任务已取消或肖像功能未启用。");
+    await requireLease(service, id, leaseToken);
+    if (!portraitEnabled || await service.isCancelRequested(id, leaseToken)) throw new ServiceError(409, "任务已取消或肖像功能未启用。");
     const contentType = req.headers["content-type"];
     if (!["image/png", "image/jpeg", "image/webp"].includes(contentType)) {
       throw new ServiceError(415, "成图格式无效。");
     }
     const bytes = await readBinary(req);
-    const assetId = service.storeOutput(id, { bytes, mime: contentType }, leaseToken);
+    const assetId = await service.storeOutput(id, { bytes, mime: contentType }, leaseToken);
     sendJson(res, 200, { assetId }); return true;
   }
   if (req.method === "POST" && action === "cutout") {
     const leaseToken = req.headers["x-agent-lease"];
-    requireLease(service, id, leaseToken);
-    if (!portraitEnabled || service.isCancelRequested(id, leaseToken)) throw new ServiceError(409, "任务已取消或肖像功能未启用。");
+    await requireLease(service, id, leaseToken);
+    if (!portraitEnabled || await service.isCancelRequested(id, leaseToken)) throw new ServiceError(409, "任务已取消或肖像功能未启用。");
     const contentType = req.headers["content-type"];
     if (!["image/png", "image/webp"].includes(contentType)) throw new ServiceError(415, "透明肖像格式无效。");
     const bytes = await readBinary(req);
-    sendJson(res, 200, { assetId: service.storeCutout(id, { bytes, mime: contentType }, leaseToken) }); return true;
+    sendJson(res, 200, { assetId: await service.storeCutout(id, { bytes, mime: contentType }, leaseToken) }); return true;
   }
   if (req.method === "POST" && action === "complete") {
     const input = await bodyJson(req, 9 * 1024 * 1024);
-    const row = requireLease(service, id, input?.leaseToken);
+    const row = await requireLease(service, id, input?.leaseToken);
     if (row.brief_json && !input.config) throw new ServiceError(400, "图未返回作品配置。");
-    if (service.isCancelRequested(id, input.leaseToken)) throw new ServiceError(409, "任务已取消。");
-    if (row.portrait_asset_id && (!row.output_asset_id || !service.outputExists(row.output_asset_id))) {
+    if (await service.isCancelRequested(id, input.leaseToken)) throw new ServiceError(409, "任务已取消。");
+    if (row.portrait_asset_id && (!row.output_asset_id || !await service.outputExists(row.output_asset_id))) {
       throw new ServiceError(409, "肖像成图尚未通过资产校验。");
     }
-    const ok = service.complete(id, { config: input.config, leaseToken: input.leaseToken });
+    const ok = await service.complete(id, { config: input.config, leaseToken: input.leaseToken });
     sendJson(res, ok ? 200 : 409, { ok }); return true;
   }
   if (req.method === "POST" && action === "fail") {
     const input = await bodyJson(req, 4096);
-    requireLease(service, id, input?.leaseToken);
+    await requireLease(service, id, input?.leaseToken);
     const code = typeof input.errorCode === "string" && Object.hasOwn(ERROR_MESSAGES, input.errorCode)
       ? input.errorCode : "UNKNOWN";
     const retryable = input.retryable === true && RETRYABLE_CODES.has(code);
-    const ok = service.fail(id, ERROR_MESSAGES[code], { leaseToken: input.leaseToken, retryable });
+    const ok = await service.fail(id, ERROR_MESSAGES[code], { leaseToken: input.leaseToken, retryable });
     sendJson(res, ok ? 200 : 409, { ok }); return true;
   }
   return false;

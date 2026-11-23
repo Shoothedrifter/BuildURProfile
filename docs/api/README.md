@@ -32,7 +32,7 @@
 
 仓库和站点由用户在 GitHub 上管理。若账号的用户站点配置了自定义域名，并被项目站点继承，可从 GitHub 仓库的 Pages 设置查看结果。服务端只探测该项目的默认 `github.io` 地址。OAuth 令牌只在提交期间使用，数据库保存部署阶段、仓库及提交标识，授权失败可基于原记录继续。详见[部署配置与验收](../shared/deployment.md#github-pages-授权与验收)。
 
-`database.mjs`、`generations.mjs` 是存储模块的导出入口。实际数据库迁移、任务队列、确认内容清洗及资产文件管理位于 `packages/storage/src/`。
+`database.mjs`、`generations.mjs` 是存储模块的导出入口。实际 PostgreSQL 迁移、任务队列、确认内容清洗及资产文件管理位于 `packages/storage/src/`。
 
 ### 2. `apps/launcher/`（启动、测试与部署入口）
 

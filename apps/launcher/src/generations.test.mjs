@@ -1,10 +1,11 @@
+import { openDatabase as openLegacyDatabase } from "../../../packages/storage/src/legacy-sqlite.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { openDatabase } from "../../web/src/server/database.mjs";
+import { openTestDatabase as openDatabase } from "./postgres-test-db.mjs";
 import { cleanGenerationBrief, createGenerationService } from "../../web/src/server/generations.mjs";
 import { createAssetStore } from "../../../packages/storage/src/generation/assets.mjs";
 import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
@@ -48,106 +49,106 @@ test("existing generation table upgrades through recorded schema migrations", ()
       UNIQUE(owner_session_id,idempotency_key)
     )`);
     legacy.close();
-    const upgraded = openDatabase(path);
+    const upgraded = openLegacyDatabase(path);
     assert.deepEqual(upgraded.prepare("SELECT version FROM schema_migrations ORDER BY version").all().map((row) => row.version), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
     assert.ok(upgraded.prepare("PRAGMA table_info(projects)").all().some((column) => column.name === "deleted_at"));
     for (const name of ["brief_json", "workflow_version", "lease_token", "attempt_count", "next_attempt_at", "cancel_requested_at", "cutout_asset_id"]) {
       assert.ok(upgraded.prepare("PRAGMA table_info(generations)").all().some((column) => column.name === name));
     }
     upgraded.close();
-    const reopened = openDatabase(path);
+    const reopened = openLegacyDatabase(path);
     assert.equal(reopened.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get().count, 15);
     reopened.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("worker heartbeat reports agent readiness without exposing task contents", () => {
-  const db = openDatabase(":memory:");
+test("worker heartbeat reports agent readiness without exposing task contents", async () => {
+  const db = await openDatabase();
   let time = Date.now();
   const root = mkdtempSync(join(tmpdir(), "burp-worker-health-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, now: () => time });
-    assert.equal(service.workerHealthy(), false);
-    service.touchWorker("worker_a");
-    assert.equal(service.workerHealthy(), true);
+    assert.equal(await service.workerHealthy(), false);
+    await service.touchWorker("worker_a");
+    assert.equal(await service.workerHealthy(), true);
     time += 45_001;
-    assert.equal(service.workerHealthy(), false);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal(await service.workerHealthy(), false);
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("generation keeps original and optional cutout as separate private assets", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99_999);
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("other", 1, Date.now() + 99_999);
+test("generation keeps original and optional cutout as separate private assets", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99_999);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("other", 1, Date.now() + 99_999);
   const root = mkdtempSync(join(tmpdir(), "burp-cutout-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
-    const portrait = service.savePortrait("owner", png).id;
+    const portrait = (await service.savePortrait("owner", png)).id;
     const config = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v1.json", "utf8")).expected.config;
-    const task = service.enqueue("owner", { portraitAssetId: portrait, styleId: "lofi-print-anime", config, idempotencyKey: "dual-artwork" });
-    const leased = service.leaseNext();
+    const task = await service.enqueue("owner", { portraitAssetId: portrait, styleId: "lofi-print-anime", config, idempotencyKey: "dual-artwork" });
+    const leased = await service.leaseNext();
     const bytes = Buffer.from(png.split(",")[1], "base64");
-    const originalId = service.storeOutput(task.id, { bytes, mime: "image/png" }, leased.lease_token);
-    const cutoutId = service.storeCutout(task.id, { bytes, mime: "image/png" }, leased.lease_token);
+    const originalId = await service.storeOutput(task.id, { bytes, mime: "image/png" }, leased.lease_token);
+    const cutoutId = await service.storeCutout(task.id, { bytes, mime: "image/png" }, leased.lease_token);
     assert.notEqual(originalId, cutoutId);
-    assert.equal(service.complete(task.id, { leaseToken: leased.lease_token }), true);
-    const artwork = service.getTask("owner", task.id).heroArtwork;
+    assert.equal(await service.complete(task.id, { leaseToken: leased.lease_token }), true);
+    const artwork = (await service.getTask("owner", task.id)).heroArtwork;
     assert.equal(artwork.assetUrl, `/api/hero-assets/${originalId}`);
     assert.equal(artwork.cutoutAssetUrl, `/api/hero-assets/${cutoutId}`);
-    assert.equal(service.readArtworkAsset("owner", cutoutId).mime, "image/png");
-    assert.throws(() => service.readArtworkAsset("other", cutoutId), /无权访问/);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal((await service.readArtworkAsset("owner", cutoutId)).mime, "image/png");
+    await assert.rejects(async () => await service.readArtworkAsset("other", cutoutId), /无权访问/);
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("generation accepts a minimal confirmed brief and rejects PDF provenance or extra answers", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+test("generation accepts a minimal confirmed brief and rejects PDF provenance or extra answers", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-brief-"));
   try {
     const service = createGenerationService({ db, assetRoot: root });
-    const task = service.enqueue("owner", { brief, idempotencyKey: "brief" });
+    const task = await service.enqueue("owner", { brief, idempotencyKey: "brief" });
     assert.equal(task.status, "QUEUED");
-    const row = db.prepare("SELECT brief_json FROM generations WHERE id=?").get(task.id);
+    const row = await db.prepare("SELECT brief_json FROM generations WHERE id=?").get(task.id);
     assert.equal(JSON.parse(row.brief_json).content.profile.name, "张三");
-    assert.throws(() => service.enqueue("owner", { brief: { ...brief,
+    await assert.rejects(async () => await service.enqueue("owner", { brief: { ...brief,
       content: { ...brief.content, sourceRefs: { name: { page: 1, excerpt: "private" } } } }, idempotencyKey: "source" }), /原文|来源|字段/);
-    assert.throws(() => service.enqueue("owner", { brief: { ...brief, answers: { ...brief.answers, pdfText: 0 } }, idempotencyKey: "extra" }), /答案|字段/);
-    assert.throws(() => service.enqueue("owner", { brief: { ...brief, rawPdf: "private" }, idempotencyKey: "raw" }), /字段/);
-    assert.throws(() => service.enqueue("owner", { brief: { ...brief, content: { ...brief.content, profile: {
+    await assert.rejects(async () => await service.enqueue("owner", { brief: { ...brief, answers: { ...brief.answers, pdfText: 0 } }, idempotencyKey: "extra" }), /答案|字段/);
+    await assert.rejects(async () => await service.enqueue("owner", { brief: { ...brief, rawPdf: "private" }, idempotencyKey: "raw" }), /字段/);
+    await assert.rejects(async () => await service.enqueue("owner", { brief: { ...brief, content: { ...brief.content, profile: {
       ...brief.content.profile, summary: "a".repeat(300000) } } }, idempotencyKey: "size" }), /过大|超过/);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
-test("a saved template config keeps the v5 workflow for later portrait regeneration", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+test("a saved template config keeps the v5 workflow for later portrait regeneration", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-template-regenerate-"));
   try {
     const service = createGenerationService({ db, assetRoot: root });
     const config = readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8");
     const saved = JSON.parse(config).expected.config;
-    const task = service.enqueue("owner", { config: { ...saved, templateId: "cyber-creator-v1" }, idempotencyKey: "template-regeneration" });
-    assert.equal(db.prepare("SELECT workflow_version FROM generations WHERE id=?").get(task.id).workflow_version, "python-agent-v6");
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    const task = await service.enqueue("owner", { config: { ...saved, templateId: "cyber-creator-v1" }, idempotencyKey: "template-regeneration" });
+    assert.equal((await db.prepare("SELECT workflow_version FROM generations WHERE id=?").get(task.id)).workflow_version, "python-agent-v6");
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("generation brief keeps project sourceText with the same shape as cleanConfig", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+test("generation brief keeps project sourceText with the same shape as cleanConfig", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-brief-source-text-"));
   try {
     const service = createGenerationService({ db, assetRoot: root });
     const card = { id: "project_source", index: "01", title: "合成项目", category: "", year: "2024",
       description: "合成描述", tags: [], visual: "mint", sourceText: "一段合成原文" };
-    const task = service.enqueue("owner", { brief: { ...brief, content: { ...brief.content,
+    const task = await service.enqueue("owner", { brief: { ...brief, content: { ...brief.content,
       projects: [card, { ...card, id: "project_blank", sourceText: "   " }] } }, idempotencyKey: "source-text" });
-    const stored = JSON.parse(db.prepare("SELECT brief_json FROM generations WHERE id=?").get(task.id).brief_json);
+    const stored = JSON.parse((await db.prepare("SELECT brief_json FROM generations WHERE id=?").get(task.id)).brief_json);
     // 非空原文保留；空白串丢弃（与 cleanConfig 的条件展开一致，保证 complete 的内容一致性校验可过）
     assert.equal(stored.content.projects[0].sourceText, "一段合成原文");
     assert.equal("sourceText" in stored.content.projects[1], false);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("structured resume survives queue and publication without accepting PDF evidence", () => {
+test("structured resume survives queue and publication without accepting PDF evidence", async () => {
   const resume = {
     version: "resume-v1",
     basicInfo: [{ key: "name", label: "姓名", value: "张三" }], jobIntent: [], selfEvaluation: [],
@@ -155,359 +156,359 @@ test("structured resume survives queue and publication without accepting PDF evi
     awards: [{ title: "创新奖", details: "2023 创新奖", facts: [] }],
     campusExperience: [], skills: [], other: []
   };
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-resume-contract-"));
   try {
     const service = createGenerationService({ db, assetRoot: root });
-    const task = service.enqueue("owner", { brief: { ...brief, content: { ...brief.content, resume } }, idempotencyKey: "structured" });
-    const row = db.prepare("SELECT brief_json FROM generations WHERE id=?").get(task.id);
+    const task = await service.enqueue("owner", { brief: { ...brief, content: { ...brief.content, resume } }, idempotencyKey: "structured" });
+    const row = await db.prepare("SELECT brief_json FROM generations WHERE id=?").get(task.id);
     assert.deepEqual(JSON.parse(row.brief_json).content.resume.awards, resume.awards);
-    assert.throws(() => service.enqueue("owner", { brief: { ...brief, content: { ...brief.content,
+    await assert.rejects(async () => await service.enqueue("owner", { brief: { ...brief, content: { ...brief.content,
       resume: { ...resume, awards: [{ ...resume.awards[0], source: "PDF text" }] } } }, idempotencyKey: "bad-source" }), /字段|来源|原文/);
     const config = JSON.parse(readFileSync("apps/web/src/demo/config.json", "utf8"));
     assert.deepEqual(JSON.parse(cleanConfig({ ...config, content: { ...config.content, resume } })).content.resume.awards, resume.awards);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("production policy requires confirmed brief and denies portrait generation", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+test("production policy requires confirmed brief and denies portrait generation", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-generation-policy-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1,
       allowPortraits: false, requireBrief: true });
-    assert.throws(() => service.savePortrait("owner", png), /未启用肖像/);
-    assert.throws(() => service.enqueue("owner", { idempotencyKey: "missing" }), /确认简历/);
-    assert.throws(() => service.enqueue("owner", { brief, portraitAssetId: "avatar", styleId: "lofi-print-anime",
+    await assert.rejects(async () => await service.savePortrait("owner", png), /未启用肖像/);
+    await assert.rejects(async () => await service.enqueue("owner", { idempotencyKey: "missing" }), /确认简历/);
+    await assert.rejects(async () => await service.enqueue("owner", { brief, portraitAssetId: "avatar", styleId: "lofi-print-anime",
       idempotencyKey: "portrait" }), /未启用肖像/);
-    assert.equal(service.enqueue("owner", { brief, idempotencyKey: "text" }).status, "QUEUED");
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal((await service.enqueue("owner", { brief, idempotencyKey: "text" })).status, "QUEUED");
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("lease heartbeat and completion are fenced by token", () => {
-  const db = openDatabase(":memory:");
+test("lease heartbeat and completion are fenced by token", async () => {
+  const db = await openDatabase();
   let time = Date.now();
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 99999);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-lease-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, now: () => time, leaseMs: 1000 });
-    const task = service.enqueue("owner", { brief, idempotencyKey: "lease" });
-    const first = service.leaseNext();
+    const task = await service.enqueue("owner", { brief, idempotencyKey: "lease" });
+    const first = await service.leaseNext();
     assert.equal(first.id, task.id);
     assert.equal(first.attempt_count, 1);
-    assert.equal(service.heartbeat(task.id, "wrong"), false);
+    assert.equal(await service.heartbeat(task.id, "wrong"), false);
     time += 500;
-    assert.equal(service.heartbeat(task.id, first.lease_token), true);
+    assert.equal(await service.heartbeat(task.id, first.lease_token), true);
     time += 1501;
-    const second = service.leaseNext();
+    const second = await service.leaseNext();
     assert.equal(second.id, task.id);
     assert.notEqual(second.lease_token, first.lease_token);
     assert.equal(second.attempt_count, 2);
-    assert.equal(service.complete(task.id, { leaseToken: first.lease_token }), false);
-    assert.equal(service.fail(task.id, "late", { leaseToken: first.lease_token }), false);
-    assert.equal(service.complete(task.id, { leaseToken: second.lease_token }), true);
-    assert.equal(service.getTask("owner", task.id).status, "SUCCEEDED");
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal(await service.complete(task.id, { leaseToken: first.lease_token }), false);
+    assert.equal(await service.fail(task.id, "late", { leaseToken: first.lease_token }), false);
+    assert.equal(await service.complete(task.id, { leaseToken: second.lease_token }), true);
+    assert.equal((await service.getTask("owner", task.id)).status, "SUCCEEDED");
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("stale worker cannot publish an avatar asset after a replacement lease", () => {
-  const db = openDatabase(":memory:");
+test("stale worker cannot publish an avatar asset after a replacement lease", async () => {
+  const db = await openDatabase();
   let time = Date.now();
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 99999);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-fenced-output-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time, leaseMs: 1000 });
-    const portrait = service.savePortrait("owner", png);
-    const task = service.enqueue("owner", { brief, portraitAssetId: portrait.id,
+    const portrait = await service.savePortrait("owner", png);
+    const task = await service.enqueue("owner", { brief, portraitAssetId: portrait.id,
       styleId: "lofi-print-anime", idempotencyKey: "fence" });
-    const first = service.leaseNext();
+    const first = await service.leaseNext();
     time += 1001;
-    const second = service.leaseNext();
+    const second = await service.leaseNext();
     const image = { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" };
-    assert.throws(() => service.storeOutput(task.id, image, first.lease_token), /lease/);
+    await assert.rejects(async () => await service.storeOutput(task.id, image, first.lease_token), /lease/);
     assert.equal(readdirSync(root).length, 1); // Only the source portrait remains.
-    const heroId = service.storeOutput(task.id, image, second.lease_token);
-    assert.equal(service.outputExists(heroId), true);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    const heroId = await service.storeOutput(task.id, image, second.lease_token);
+    assert.equal(await service.outputExists(heroId), true);
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("retryable errors back off and stop after the configured attempt limit", () => {
-  const db = openDatabase(":memory:");
+test("retryable errors back off and stop after the configured attempt limit", async () => {
+  const db = await openDatabase();
   let time = Date.now();
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 99999);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-retry-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, now: () => time,
       maxAttempts: 2, retryBaseMs: 1000 });
-    const task = service.enqueue("owner", { brief, idempotencyKey: "retry" });
-    const first = service.leaseNext();
-    assert.equal(service.fail(task.id, "transient", { leaseToken: first.lease_token, retryable: true }), true);
-    assert.equal(service.getTask("owner", task.id).status, "QUEUED");
-    assert.equal(service.leaseNext(), null);
+    const task = await service.enqueue("owner", { brief, idempotencyKey: "retry" });
+    const first = await service.leaseNext();
+    assert.equal(await service.fail(task.id, "transient", { leaseToken: first.lease_token, retryable: true }), true);
+    assert.equal((await service.getTask("owner", task.id)).status, "QUEUED");
+    assert.equal(await service.leaseNext(), null);
     time += 1001;
-    const second = service.leaseNext();
+    const second = await service.leaseNext();
     assert.equal(second.attempt_count, 2);
-    assert.equal(service.fail(task.id, "still failing", { leaseToken: second.lease_token, retryable: true }), true);
-    assert.equal(service.getTask("owner", task.id).status, "FAILED");
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal(await service.fail(task.id, "still failing", { leaseToken: second.lease_token, retryable: true }), true);
+    assert.equal((await service.getTask("owner", task.id)).status, "FAILED");
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("owner cancellation removes queued work before any image API call", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("other", 1, Date.now() + 99999);
+test("owner cancellation removes queued work before any image API call", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("other", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-cancel-queued-"));
   try {
     const service = createGenerationService({ db, assetRoot: root });
-    const task = service.enqueue("owner", { brief, idempotencyKey: "cancel-queued" });
-    assert.throws(() => service.cancel("other", task.id), /不存在|无权/);
-    assert.equal(service.cancel("owner", task.id).status, "CANCELLED");
-    assert.equal(service.cancel("owner", task.id).status, "CANCELLED");
-    assert.equal(service.leaseNext(), null);
-    assert.equal(service.getTask("owner", task.id).status, "CANCELLED");
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    const task = await service.enqueue("owner", { brief, idempotencyKey: "cancel-queued" });
+    await assert.rejects(async () => await service.cancel("other", task.id), /不存在|无权/);
+    assert.equal((await service.cancel("owner", task.id)).status, "CANCELLED");
+    assert.equal((await service.cancel("owner", task.id)).status, "CANCELLED");
+    assert.equal(await service.leaseNext(), null);
+    assert.equal((await service.getTask("owner", task.id)).status, "CANCELLED");
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("running cancellation is visible and fences output; worker acknowledgment finishes it", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+test("running cancellation is visible and fences output; worker acknowledgment finishes it", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-cancel-running-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
-    const portrait = service.savePortrait("owner", png);
-    const task = service.enqueue("owner", { brief, portraitAssetId: portrait.id,
+    const portrait = await service.savePortrait("owner", png);
+    const task = await service.enqueue("owner", { brief, portraitAssetId: portrait.id,
       styleId: "lofi-print-anime", idempotencyKey: "cancel-running" });
-    const lease = service.leaseNext();
-    assert.equal(service.getLeasedTask(task.id, lease.lease_token)?.id, task.id);
-    assert.equal(service.getLeasedTask(task.id, "wrong"), null);
-    assert.equal(service.cancel("owner", task.id).status, "CANCELLING");
-    assert.equal(service.isCancelRequested(task.id, lease.lease_token), true);
-    assert.equal(service.complete(task.id, { leaseToken: lease.lease_token }), false);
-    assert.throws(() => service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" },
+    const lease = await service.leaseNext();
+    assert.equal((await service.getLeasedTask(task.id, lease.lease_token))?.id, task.id);
+    assert.equal(await service.getLeasedTask(task.id, "wrong"), null);
+    assert.equal((await service.cancel("owner", task.id)).status, "CANCELLING");
+    assert.equal(await service.isCancelRequested(task.id, lease.lease_token), true);
+    assert.equal(await service.complete(task.id, { leaseToken: lease.lease_token }), false);
+    await assert.rejects(async () => await service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" },
       lease.lease_token), /cancel/i);
-    assert.equal(service.acknowledgeCancel(task.id, lease.lease_token), true);
-    assert.equal(service.getLeasedTask(task.id, lease.lease_token), null);
-    assert.equal(service.getTask("owner", task.id).status, "CANCELLED");
-    assert.equal(service.leaseNext(), null);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal(await service.acknowledgeCancel(task.id, lease.lease_token), true);
+    assert.equal(await service.getLeasedTask(task.id, lease.lease_token), null);
+    assert.equal((await service.getTask("owner", task.id)).status, "CANCELLED");
+    assert.equal(await service.leaseNext(), null);
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("an abandoned cancelling lease becomes terminal without replaying the image call", () => {
-  const db = openDatabase(":memory:");
+test("an abandoned cancelling lease becomes terminal without replaying the image call", async () => {
+  const db = await openDatabase();
   let time = Date.now();
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 99999);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-cancel-expired-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, now: () => time, leaseMs: 1000 });
-    const task = service.enqueue("owner", { brief, idempotencyKey: "cancel-expired" });
-    const lease = service.leaseNext();
-    assert.equal(service.cancel("owner", task.id).status, "CANCELLING");
+    const task = await service.enqueue("owner", { brief, idempotencyKey: "cancel-expired" });
+    const lease = await service.leaseNext();
+    assert.equal((await service.cancel("owner", task.id)).status, "CANCELLING");
     time += 1001;
-    assert.equal(service.isCancelRequested(task.id, lease.lease_token), true);
-    assert.equal(service.getLeasedTask(task.id, lease.lease_token), null);
-    assert.equal(service.leaseNext(), null);
-    assert.equal(service.getTask("owner", task.id).status, "CANCELLED");
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal(await service.isCancelRequested(task.id, lease.lease_token), true);
+    assert.equal(await service.getLeasedTask(task.id, lease.lease_token), null);
+    assert.equal(await service.leaseNext(), null);
+    assert.equal((await service.getTask("owner", task.id)).status, "CANCELLED");
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("portrait storage validates bytes and binds assets to a session", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("b", 1, Date.now() + 99999);
+test("portrait storage validates bytes and binds assets to a session", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("b", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-avatar-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
-    assert.throws(() => service.savePortrait("a", "data:image/png;base64,AAAA"), /图片|照片/);
-    const asset = service.savePortrait("a", png);
+    await assert.rejects(async () => await service.savePortrait("a", "data:image/png;base64,AAAA"), /图片|照片/);
+    const asset = await service.savePortrait("a", png);
     assert.match(asset.id, /^[a-f0-9-]{36}$/);
-    assert.equal(service.readAsset("a", asset.id, "portrait").mime, "image/png");
-    assert.throws(() => service.readAsset("b", asset.id, "portrait"), /不存在|无权/);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal((await service.readAsset("a", asset.id, "portrait")).mime, "image/png");
+    await assert.rejects(() => service.readAsset("b", asset.id, "portrait"), /不存在|无权/);
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("private hero serves a compact sidecar and removes both files after expiry", () => {
-  const db = openDatabase(":memory:");
+test("private hero serves a compact sidecar and removes both files after expiry", async () => {
+  const db = await openDatabase();
   const root = mkdtempSync(join(tmpdir(), "burp-hero-compact-"));
   let time = Date.now();
   try {
-    db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", time, time + 8 * 24 * 60 * 60 * 1000);
+    await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", time, time + 8 * 24 * 60 * 60 * 1000);
     const assets = createAssetStore({ db, assetRoot: root, minPixels: 1, now: () => time, allowPortraits: true });
     const original = Buffer.from(png.split(",")[1], "base64");
     const compact = Buffer.from("synthetic compact image");
-    const { id } = assets.store("owner", "hero", original, "image/png");
+    const { id } = await assets.store("owner", "hero", original, "image/png");
     writeFileSync(join(root, `${id}.webp`), compact, { mode: 0o600 });
-    assert.deepEqual(assets.readAsset("owner", id), { bytes: compact, mime: "image/webp", kind: "hero" });
-    assert.throws(() => assets.readAsset("other", id), /不存在|无权/);
+    assert.deepEqual(await assets.readAsset("owner", id), { bytes: compact, mime: "image/webp", kind: "hero" });
+    await assert.rejects(() => assets.readAsset("other", id), /不存在|无权/);
     time += 7 * 24 * 60 * 60 * 1000 + 1;
-    assert.equal(assets.purgeExpired(), 1);
+    assert.equal(await assets.purgeExpired(), 1);
     assert.equal(existsSync(join(root, id)), false);
     assert.equal(existsSync(join(root, `${id}.webp`)), false);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("portrait storage accepts a 9 MiB photo but rejects one above 10 MiB", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
+test("portrait storage accepts a 9 MiB photo but rejects one above 10 MiB", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-avatar-size-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
     const header = Buffer.from(png.split(",")[1], "base64");
     const accepted = Buffer.concat([header, Buffer.alloc(9 * 1024 * 1024 - header.length)]);
-    const asset = service.savePortrait("a", `data:image/png;base64,${accepted.toString("base64")}`);
-    assert.equal(service.readAsset("a", asset.id, "portrait").bytes.length, accepted.length);
+    const asset = await service.savePortrait("a", `data:image/png;base64,${accepted.toString("base64")}`);
+    assert.equal((await service.readAsset("a", asset.id, "portrait")).bytes.length, accepted.length);
     const rejected = Buffer.concat([header, Buffer.alloc(10 * 1024 * 1024 + 1 - header.length)]);
-    assert.throws(() => service.savePortrait("a", `data:image/png;base64,${rejected.toString("base64")}`), /最大 10 MiB/);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    await assert.rejects(async () => await service.savePortrait("a", `data:image/png;base64,${rejected.toString("base64")}`), /最大 10 MiB/);
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("failed asset metadata insert does not leave a private portrait file", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+test("failed asset metadata insert does not leave a private portrait file", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-orphan-photo-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
-    db.exec("CREATE TRIGGER reject_avatar_asset BEFORE INSERT ON avatar_assets BEGIN SELECT RAISE(ABORT, 'forced'); END;");
-    assert.throws(() => service.savePortrait("owner", png), /forced/);
+    await db.exec("CREATE FUNCTION reject_avatar_asset() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced'; END; $$; CREATE TRIGGER reject_avatar_asset BEFORE INSERT ON avatar_assets FOR EACH ROW EXECUTE FUNCTION reject_avatar_asset()");
+    await assert.rejects(async () => await service.savePortrait("owner", png), /forced/);
     assert.deepEqual(readdirSync(root), []);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("new Pixel World photo tasks are local, session-owned and use the layered hair workflow", t => {
+test("new Pixel World photo tasks are local, session-owned and use the layered hair workflow", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-photo-"));
-  const db = openDatabase(":memory:");
-  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  const db = await openDatabase();
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
   const now = Date.now();
-  for (const owner of ["owner", "other"]) db.prepare("INSERT INTO sessions VALUES(?,?,?)").run(owner, now, now + 100_000);
+  for (const owner of ["owner", "other"]) await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run(owner, now, now + 100_000);
   const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
   const closed = createGenerationService({ db, assetRoot: root, minPixels: 1, allowPortraits: false });
   const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
   const config = { ...expected.config, templateId: "pixel-world-v1" };
-  const { id: portraitAssetId } = service.savePortrait("owner", png);
+  const { id: portraitAssetId } = await service.savePortrait("owner", png);
   const options = { config, portraitAssetId, idempotencyKey: "pixel-photo" };
-  const task = service.enqueue("owner", options);
-  assert.equal(service.enqueue("owner", options).id, task.id);
-  assert.equal(db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id).style_id, "pixel-halfbody-v1");
-  const lease = service.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
+  const task = await service.enqueue("owner", options);
+  assert.equal((await service.enqueue("owner", options)).id, task.id);
+  assert.equal((await db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id)).style_id, "pixel-halfbody-v1");
+  const lease = await service.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
   assert.equal(lease?.workflow_version, "python-agent-v10");
-  assert.throws(() => closed.savePortrait("owner", png), { status: 403 });
-  assert.throws(() => closed.enqueue("owner", options), { status: 403 });
-  assert.throws(() => service.enqueue("other", options), { status: 404 });
-  assert.throws(() => service.enqueue("owner", { ...options, styleId: "lofi-print-anime" }), { status: 400 });
-  assert.throws(() => service.enqueue("owner", { brief, portraitAssetId, idempotencyKey: "legacy", styleId: "pixel-halfbody-v1" }), { status: 400 });
-  assert.throws(() => service.enqueueResume("owner", { resumeId: "synthetic", revision: 1, role: brief.role,
+  await assert.rejects(() => closed.savePortrait("owner", png), { status: 403 });
+  await assert.rejects(() => closed.enqueue("owner", options), { status: 403 });
+  await assert.rejects(async () => await service.enqueue("other", options), { status: 404 });
+  await assert.rejects(async () => await service.enqueue("owner", { ...options, styleId: "lofi-print-anime" }), { status: 400 });
+  await assert.rejects(async () => await service.enqueue("owner", { brief, portraitAssetId, idempotencyKey: "legacy", styleId: "pixel-halfbody-v1" }), { status: 400 });
+  await assert.rejects(async () => await service.enqueueResume("owner", { resumeId: "synthetic", revision: 1, role: brief.role,
     templateId: config.templateId, portraitAssetId, idempotencyKey: "pixel-with-brief" }), { status: 400 });
 });
 
 for (const workflowVersion of ["python-agent-v7", "python-agent-v8", "python-agent-v9"]) {
-  test(`retrying an existing ${workflowVersion} Pixel World photo request preserves its original workflow`, t => {
+  test(`retrying an existing ${workflowVersion} Pixel World photo request preserves its original workflow`, async (t) => {
     const root = mkdtempSync(join(tmpdir(), "burp-pixel-replay-"));
-    const db = openDatabase(":memory:");
-    t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+    const db = await openDatabase();
+    t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
     let now = Date.now();
-    db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 2 * 86400000);
+    await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 2 * 86400000);
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => now });
     const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
     const config = { ...expected.config, templateId: "pixel-world-v1" };
-    const { id: portraitAssetId } = service.savePortrait("owner", png);
+    const { id: portraitAssetId } = await service.savePortrait("owner", png);
     const request = { config, portraitAssetId, idempotencyKey: "pixel-before-deployment" };
-    const task = service.enqueue("owner", request);
-    db.prepare("UPDATE generations SET workflow_version=? WHERE id=?").run(workflowVersion, task.id);
+    const task = await service.enqueue("owner", request);
+    await db.prepare("UPDATE generations SET workflow_version=? WHERE id=?").run(workflowVersion, task.id);
 
-    assert.equal(service.enqueue("owner", request).id, task.id);
-    assert.equal(service.leaseNext({ supportsPixelWorld: true, supportsPixelLayerAvatar: true, supportsPixelDetailedAvatar: true }).workflow_version, workflowVersion);
+    assert.equal((await service.enqueue("owner", request)).id, task.id);
+    assert.equal((await service.leaseNext({ supportsPixelWorld: true, supportsPixelLayerAvatar: true, supportsPixelDetailedAvatar: true })).workflow_version, workflowVersion);
     now += 86400001;
-    assert.equal(service.enqueue("owner", request).id, task.id);
-    assert.throws(() => service.enqueue("owner", { ...request, idempotencyKey: "expired-new" }), { status: 404 });
-    assert.equal(db.prepare("SELECT count(*) n FROM generations").get().n, 1);
+    assert.equal((await service.enqueue("owner", request)).id, task.id);
+    await assert.rejects(async () => await service.enqueue("owner", { ...request, idempotencyKey: "expired-new" }), { status: 404 });
+    assert.equal((await db.prepare("SELECT count(*) n FROM generations").get()).n, 1);
   });
 }
 
 for (const workflowVersion of ["python-agent-v8", "python-agent-v9", "python-agent-v10"]) {
-  test(`a stored ${workflowVersion} Pixel World candidate gets one completion lease after the retry cap`, t => {
+  test(`a stored ${workflowVersion} Pixel World candidate gets one completion lease after the retry cap`, async (t) => {
     const root = mkdtempSync(join(tmpdir(), "burp-pixel-completion-"));
-    const db = openDatabase(":memory:");
-    t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+    const db = await openDatabase();
+    t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
     let now = Date.now();
-    db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 86400000);
+    await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 86400000);
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => now, leaseMs: 1000, maxAttempts: 1 });
     const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
-    const photo = service.savePortrait("owner", png);
-    const task = service.enqueue("owner", { config: { ...expected.config, templateId: "pixel-world-v1" },
+    const photo = await service.savePortrait("owner", png);
+    const task = await service.enqueue("owner", { config: { ...expected.config, templateId: "pixel-world-v1" },
       portraitAssetId: photo.id, idempotencyKey: "completion-after-last-attempt" });
     if (workflowVersion !== "python-agent-v10") {
-      db.prepare("UPDATE generations SET workflow_version=? WHERE id=?").run(workflowVersion, task.id);
+      await db.prepare("UPDATE generations SET workflow_version=? WHERE id=?").run(workflowVersion, task.id);
     }
     const caps = { supportsPixelWorld: true, supportsPixelLayerAvatar: true, supportsPixelDetailedAvatar: true, supportsPixelLayeredHairAvatar: true };
-    const initialLease = service.leaseNext(caps);
+    const initialLease = await service.leaseNext(caps);
     assert.equal(initialLease?.workflow_version, workflowVersion);
-    const assetId = service.storeOutput(task.id,
+    const assetId = await service.storeOutput(task.id,
       { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" }, initialLease.lease_token);
 
     now += 1001;
-    const completionLease = service.leaseNext(caps);
+    const completionLease = await service.leaseNext(caps);
     assert.equal(completionLease?.output_asset_id, assetId);
     assert.equal(completionLease?.attempt_count, 2);
     assert.notEqual(completionLease?.lease_token, initialLease.lease_token);
     now += 1001;
-    assert.equal(service.leaseNext(caps), null);
-    assert.equal(service.getTask("owner", task.id).status, "FAILED");
+    assert.equal(await service.leaseNext(caps), null);
+    assert.equal((await service.getTask("owner", task.id)).status, "FAILED");
   });
 }
 
-test("cyber template derives its fixed portrait style and rejects a mismatched choice", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
+test("cyber template derives its fixed portrait style and rejects a mismatched choice", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-cyber-portrait-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
-    const portrait = service.savePortrait("owner", png);
+    const portrait = await service.savePortrait("owner", png);
     const saved = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8")).expected.config;
     const cyber = { ...saved, templateId: "cyber-creator-v1" };
-    const task = service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id, idempotencyKey: "cyber-auto" });
-    assert.equal(db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id).style_id, "lofi-print-anime");
-    assert.equal(service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id, idempotencyKey: "cyber-auto" }).id, task.id);
-    assert.throws(() => service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id,
+    const task = await service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id, idempotencyKey: "cyber-auto" });
+    assert.equal((await db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id)).style_id, "lofi-print-anime");
+    assert.equal((await service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id, idempotencyKey: "cyber-auto" })).id, task.id);
+    await assert.rejects(async () => await service.enqueue("owner", { config: cyber, portraitAssetId: portrait.id,
       styleId: "retro-flat-anime-head", idempotencyKey: "cyber-retro" }), /头像风格|模板/);
-    assert.throws(() => service.enqueue("owner", { config: { ...saved, templateId: "warm-v1" },
+    await assert.rejects(async () => await service.enqueue("owner", { config: { ...saved, templateId: "warm-v1" },
       portraitAssetId: portrait.id, idempotencyKey: "warm-photo" }), /暂不支持/);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("generation enqueue is idempotent and owner-only", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("b", 1, Date.now() + 99999);
+test("generation enqueue is idempotent and owner-only", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("b", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-avatar-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
-    const asset = service.savePortrait("a", png);
-    const task = service.enqueue("a", { portraitAssetId: asset.id, styleId: "lofi-print-anime", idempotencyKey: "first" });
-    assert.equal(service.enqueue("a", { portraitAssetId: asset.id, styleId: "lofi-print-anime", idempotencyKey: "first" }).id, task.id);
-    assert.equal(service.getTask("a", task.id).status, "QUEUED");
-    assert.throws(() => service.getTask("b", task.id), /不存在|无权/);
-    assert.throws(() => service.enqueue("a", { portraitAssetId: asset.id, styleId: "retro-flat-anime-head", idempotencyKey: "retired" }), /未知肖像风格/);
-    assert.throws(() => service.enqueue("a", { portraitAssetId: asset.id, styleId: "yellow-hair-doodle", idempotencyKey: "second" }), /未知肖像风格/);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    const asset = await service.savePortrait("a", png);
+    const task = await service.enqueue("a", { portraitAssetId: asset.id, styleId: "lofi-print-anime", idempotencyKey: "first" });
+    assert.equal((await service.enqueue("a", { portraitAssetId: asset.id, styleId: "lofi-print-anime", idempotencyKey: "first" })).id, task.id);
+    assert.equal((await service.getTask("a", task.id)).status, "QUEUED");
+    await assert.rejects(async () => await service.getTask("b", task.id), /不存在|无权/);
+    await assert.rejects(async () => await service.enqueue("a", { portraitAssetId: asset.id, styleId: "retro-flat-anime-head", idempotencyKey: "retired" }), /未知肖像风格/);
+    await assert.rejects(async () => await service.enqueue("a", { portraitAssetId: asset.id, styleId: "yellow-hair-doodle", idempotencyKey: "second" }), /未知肖像风格/);
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("output storage is idempotent across worker restarts", () => {
-  const db = openDatabase(":memory:");
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
+test("output storage is idempotent across worker restarts", async () => {
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-avatar-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
-    const portrait = service.savePortrait("a", png);
-    const task = service.enqueue("a", { portraitAssetId: portrait.id, styleId: "lofi-print-anime", idempotencyKey: "once" });
+    const portrait = await service.savePortrait("a", png);
+    const task = await service.enqueue("a", { portraitAssetId: portrait.id, styleId: "lofi-print-anime", idempotencyKey: "once" });
     const bytes = Buffer.from(png.split(",")[1], "base64");
-    const first = service.storeOutput(task.id, { bytes, mime: "image/png" });
-    assert.equal(service.storeOutput(task.id, { bytes, mime: "image/png" }), first);
-    assert.equal(service.outputExists(first), true);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    const first = await service.storeOutput(task.id, { bytes, mime: "image/png" });
+    assert.equal(await service.storeOutput(task.id, { bytes, mime: "image/png" }), first);
+    assert.equal(await service.outputExists(first), true);
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
 test("HTTP generation endpoints require CSRF and do not expose another session's asset", async () => {
-  const db = openDatabase(":memory:");
+  const db = await openDatabase();
   const root = mkdtempSync(join(tmpdir(), "burp-avatar-"));
   const generationService = createGenerationService({ db, assetRoot: root, minPixels: 1 });
   const server = createPaymentHttpServer({ db, service: {}, generationService, paymentConfig: null, priceFen: null });
@@ -528,12 +529,12 @@ test("HTTP generation endpoints require CSRF and do not expose another session's
     }, body: JSON.stringify({ brief, portraitAssetId: id, styleId: "lofi-print-anime", idempotencyKey: "http-hero" }) });
     assert.equal(queued.status, 201);
     const task = await queued.json();
-    const heroId = generationService.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" });
+    const heroId = await generationService.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" });
     assert.equal((await fetch(`${base}/api/hero-assets/${heroId}`, { headers: { cookie } })).status, 200);
     const other = await fetch(`${base}/api/session`);
     const otherCookie = other.headers.get("set-cookie").split(";")[0];
     assert.equal((await fetch(`${base}/api/hero-assets/${heroId}`, { headers: { cookie: otherCookie } })).status, 404);
-    const cancelTarget = generationService.enqueue(cookie.slice(13).split(".")[0], { brief, idempotencyKey: "http-cancel" });
+    const cancelTarget = await generationService.enqueue(cookie.slice(13).split(".")[0], { brief, idempotencyKey: "http-cancel" });
     const cancelUrl = `${base}/api/generations/${cancelTarget.id}/cancel`;
     assert.equal((await fetch(cancelUrl, { method: "POST", headers: { cookie } })).status, 403);
     const otherCsrf = (await other.json()).csrfToken;
@@ -541,7 +542,7 @@ test("HTTP generation endpoints require CSRF and do not expose another session's
     const cancelled = await fetch(cancelUrl, { method: "POST", headers: { cookie, "x-csrf-token": csrfToken } });
     assert.equal(cancelled.status, 200);
     assert.equal((await cancelled.json()).status, "CANCELLED");
-  } finally { await new Promise((resolve) => server.close(resolve)); db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await new Promise((resolve) => server.close(resolve)); await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
 test("project config refuses an unembedded private hero asset URL", () => {
@@ -549,60 +550,60 @@ test("project config refuses an unembedded private hero asset URL", () => {
   assert.throws(() => cleanConfig({ ...config, heroArtwork: { assetUrl: "/api/hero-assets/x", styleId: "lofi-print-anime", alt: "avatar" } }), /肖像/);
 });
 
-test("local generation allows repeated portrait tests and removes expired photo files", () => {
-  const db = openDatabase(":memory:");
+test("local generation allows repeated portrait tests and removes expired photo files", async () => {
+  const db = await openDatabase();
   let time = Date.now();
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, time + 2 * 86400000);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, time + 2 * 86400000);
   const root = mkdtempSync(join(tmpdir(), "burp-avatar-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
-    const portrait = service.savePortrait("a", png);
+    const portrait = await service.savePortrait("a", png);
     for (let i = 0; i < 7; i++) {
-      assert.equal(service.enqueue("a", { portraitAssetId: portrait.id, styleId: "lofi-print-anime", idempotencyKey: `try-${i}` }).status, "QUEUED");
+      assert.equal((await service.enqueue("a", { portraitAssetId: portrait.id, styleId: "lofi-print-anime", idempotencyKey: `try-${i}` })).status, "QUEUED");
     }
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM generations WHERE owner_session_id='a' AND portrait_asset_id IS NOT NULL").get().count, 7);
-    const path = db.prepare("SELECT path FROM avatar_assets WHERE id=?").get(portrait.id).path;
+    assert.equal((await db.prepare("SELECT COUNT(*) AS count FROM generations WHERE owner_session_id='a' AND portrait_asset_id IS NOT NULL").get()).count, 7);
+    const path = (await db.prepare("SELECT path FROM avatar_assets WHERE id=?").get(portrait.id)).path;
     time += 86400001;
-    assert.equal(service.purgeExpired(), 1);
+    assert.equal(await service.purgeExpired(), 1);
     assert.equal(existsSync(path), false);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("expired hero is not returned as a successful preview", () => {
-  const db = openDatabase(":memory:");
+test("expired hero is not returned as a successful preview", async () => {
+  const db = await openDatabase();
   let time = Date.now();
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, time + 9 * 86400000);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, time + 9 * 86400000);
   const root = mkdtempSync(join(tmpdir(), "burp-avatar-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
-    const photo = service.savePortrait("a", png);
-    const task = service.enqueue("a", { portraitAssetId: photo.id, styleId: "lofi-print-anime", idempotencyKey: "expiry" });
-    service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" });
-    service.complete(task.id);
+    const photo = await service.savePortrait("a", png);
+    const task = await service.enqueue("a", { portraitAssetId: photo.id, styleId: "lofi-print-anime", idempotencyKey: "expiry" });
+    await service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" });
+    await service.complete(task.id);
     time += 7 * 86400000 + 1;
-    const expired = service.getTask("a", task.id);
+    const expired = await service.getTask("a", task.id);
     assert.equal(expired.status, "EXPIRED");
     assert.equal(expired.heroArtwork, undefined);
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("an attached Pixel World candidate with a missing file cannot be reused", () => {
-  const db = openDatabase(":memory:");
+test("an attached Pixel World candidate with a missing file cannot be reused", async () => {
+  const db = await openDatabase();
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-missing-output-"));
   try {
     const time = Date.now();
-    db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", time, time + 86400000);
+    await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", time, time + 86400000);
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
     const config = JSON.parse(readFileSync(new URL("../../../packages/contracts/fixtures/agent-golden.v3.json", import.meta.url))).expected.config;
-    const portrait = service.savePortrait("a", png);
-    const task = service.enqueue("a", { portraitAssetId: portrait.id, idempotencyKey: "missing-result",
+    const portrait = await service.savePortrait("a", png);
+    const task = await service.enqueue("a", { portraitAssetId: portrait.id, idempotencyKey: "missing-result",
       config: { ...config, templateId: "pixel-world-v1" } });
-    const lease = service.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
-    const assetId = service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" }, lease.lease_token);
-    assert.equal(service.outputExists(assetId), true);
+    const lease = await service.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
+    const assetId = await service.storeOutput(task.id, { bytes: Buffer.from(png.split(",")[1], "base64"), mime: "image/png" }, lease.lease_token);
+    assert.equal(await service.outputExists(assetId), true);
     rmSync(join(root, assetId));
-    assert.equal(service.getLeasedTask(task.id, lease.lease_token).output_asset_id, assetId);
-    assert.equal(service.outputExists(assetId), false);
-    assert.throws(() => service.readArtworkAsset("a", assetId), { status: 404 });
-  } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+    assert.equal((await service.getLeasedTask(task.id, lease.lease_token)).output_asset_id, assetId);
+    assert.equal(await service.outputExists(assetId), false);
+    await assert.rejects(async () => await service.readArtworkAsset("a", assetId), { status: 404 });
+  } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });

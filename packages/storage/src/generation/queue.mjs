@@ -1,3 +1,4 @@
+import { matchingResumeProject } from "../project-matching.mjs";
 import { isDeepStrictEqual } from 'node:util';
 import { createResumeMediaStore } from './resume-media.mjs';
 import { randomUUID } from "node:crypto";
@@ -21,9 +22,9 @@ export function isPixelCandidateWorkflow(version) {
 export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, maxAttempts, retryBaseMs,
   allowPortraits, requireBrief }) {
   const media=createResumeMediaStore({db,now});
-  function publicTask(row) {
-    const deleted = row.project_id && db.prepare("SELECT deleted_at FROM projects WHERE id=?").get(row.project_id)?.deleted_at != null;
-    const expired = deleted || row.status === "SUCCEEDED" && row.output_asset_id && !assets.outputExists(row.output_asset_id);
+  async function publicTask(row) {
+    const deleted = row.project_id && (await db.prepare("SELECT deleted_at FROM projects WHERE id=?").get(row.project_id))?.deleted_at != null;
+    const expired = deleted || row.status === "SUCCEEDED" && row.output_asset_id && !await assets.outputExists(row.output_asset_id);
     const cancelling = row.status === "RUNNING" && row.cancel_requested_at != null;
     const expiredMessage = isPixelCandidateWorkflow(row.workflow_version) ? PIXEL_CANDIDATE_EXPIRED_MESSAGE : "成图已过期，请重新上传照片生成。";
     const resumeId = row.resume_request_json && JSON.parse(row.resume_request_json).resumeId;
@@ -32,29 +33,29 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       ...(row.status === "SUCCEEDED" && !expired && row.config_json ? { config: JSON.parse(row.config_json) } : {}),
       ...(row.status === "SUCCEEDED" && row.output_asset_id && !expired ? { heroArtwork: { assetUrl: `/api/hero-assets/${row.output_asset_id}`, styleId: row.style_id,
         alt: row.style_id === PIXEL_AVATAR_STYLE_ID ? "个人像素头像" : "根据本人肖像生成的动画风格虚拟形象",
-        ...(row.cutout_asset_id && assets.cutoutExists(row.cutout_asset_id) ? { cutoutAssetUrl: `/api/hero-assets/${row.cutout_asset_id}` } : {}) } } : {}) };
+        ...(row.cutout_asset_id && await assets.cutoutExists(row.cutout_asset_id) ? { cutoutAssetUrl: `/api/hero-assets/${row.cutout_asset_id}` } : {}) } } : {}) };
   }
-  function getTask(sessionId, id) {
-    const row = db.prepare("SELECT * FROM generations WHERE id=? AND owner_session_id=?").get(id, sessionId);
+  async function getTask(sessionId, id) {
+    const row = await db.prepare("SELECT * FROM generations WHERE id=? AND owner_session_id=?").get(id, sessionId);
     if (!row) throw new ServiceError(404, "生成任务不存在或无权访问。");
-    return publicTask(row);
+    return await publicTask(row);
   }
-  function cancel(sessionId, id) {
-    return transaction(db, () => {
-      const row = db.prepare("SELECT * FROM generations WHERE id=? AND owner_session_id=?").get(id, sessionId);
+  async function cancel(sessionId, id) {
+    return await transaction(db, async () => {
+      const row = await db.prepare("SELECT * FROM generations WHERE id=? AND owner_session_id=? FOR UPDATE").get(id, sessionId);
       if (!row) throw new ServiceError(404, "生成任务不存在或无权访问。");
       const time = now();
       if (row.status === "QUEUED") {
-        db.prepare("UPDATE generations SET status='CANCELLED',cancel_requested_at=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND status='QUEUED'")
+        await db.prepare("UPDATE generations SET status='CANCELLED',cancel_requested_at=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND status='QUEUED'")
           .run(time, time, id);
       } else if (row.status === "RUNNING" && row.cancel_requested_at == null) {
-        db.prepare("UPDATE generations SET cancel_requested_at=?,updated_at=? WHERE id=? AND status='RUNNING'")
+        await db.prepare("UPDATE generations SET cancel_requested_at=?,updated_at=? WHERE id=? AND status='RUNNING'")
           .run(time, time, id);
       }
-      return publicTask(db.prepare("SELECT * FROM generations WHERE id=?").get(id));
+      return await publicTask(await db.prepare("SELECT * FROM generations WHERE id=?").get(id));
     });
   }
-  function enqueue(sessionId, { portraitAssetId = null, styleId = null, idempotencyKey, config = null, brief = null }) {
+  async function enqueue(sessionId, { portraitAssetId = null, styleId = null, idempotencyKey, config = null, brief = null }) {
     if (typeof idempotencyKey !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(idempotencyKey)) throw new ServiceError(400, "生成请求标识无效。");
     if (portraitAssetId && !allowPortraits) throw new ServiceError(403, "当前环境未启用肖像生成。");
     if (requireBrief && !brief) throw new ServiceError(400, "请先确认简历内容并完成测评。");
@@ -74,14 +75,15 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
         if (styleId !== DEFAULT_AVATAR_STYLE_ID) throw new ServiceError(400, "未知肖像风格。");
       }
     } else if (styleId) throw new ServiceError(400, "未上传照片时不能选择生图风格。");
-    const existing = db.prepare("SELECT * FROM generations WHERE owner_session_id=? AND idempotency_key=?").get(sessionId, idempotencyKey);
-    if (existing) {
+    const existing = await db.prepare("SELECT * FROM generations WHERE owner_session_id=? AND idempotency_key=?").get(sessionId, idempotencyKey);
+    const reuse = existing => {
       if (existing.portrait_asset_id !== portraitAssetId || existing.style_id !== styleId ||
         (!safeBrief && existing.config_json !== safeConfig) || existing.brief_json !== safeBrief) throw new ServiceError(409, "生成请求标识已用于其他内容。");
       return publicTask(existing);
-    }
+    };
+    if (existing) return reuse(existing);
     if (portraitAssetId) {
-      const asset = db.prepare("SELECT id FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind='portrait' AND expires_at>?")
+      const asset = await db.prepare("SELECT id FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind='portrait' AND expires_at>?")
         .get(portraitAssetId, sessionId, now());
       if (!asset) throw new ServiceError(404, "照片不存在或无权访问。");
     }
@@ -93,70 +95,72 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       : resumeVersion === "resume-v3" ? "python-agent-v4"
       : resumeVersion === "resume-v2" ? "python-agent-v3"
       : WORKFLOW_VERSION;
-    db.prepare("INSERT INTO generations(id,owner_session_id,portrait_asset_id,style_id,config_json,brief_json,idempotency_key,workflow_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,?)")
+    const inserted = await db.prepare("INSERT INTO generations(id,owner_session_id,portrait_asset_id,style_id,config_json,brief_json,idempotency_key,workflow_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,?) ON CONFLICT(owner_session_id,idempotency_key) DO NOTHING")
       .run(id, sessionId, portraitAssetId, styleId, safeConfig, safeBrief, idempotencyKey, workflowVersion, time, time);
+    if (!inserted.changes) return reuse(await db.prepare("SELECT * FROM generations WHERE owner_session_id=? AND idempotency_key=?").get(sessionId, idempotencyKey));
     return getTask(sessionId, id);
   }
-  function leaseNext({ supportsPresentationHighlights = true, supportsPixelWorld = false, supportsPixelLayerAvatar = false,
+  async function leaseNext({ supportsPresentationHighlights = true, supportsPixelWorld = false, supportsPixelLayerAvatar = false,
     supportsPixelDetailedAvatar = false, supportsPixelLayeredHairAvatar = false } = {}) {
     const canLeaseLayeredHair = supportsPixelWorld === true && supportsPixelLayeredHairAvatar === true;
-    for (let scanned = 0; scanned < 20; scanned++) {
-      const time = now();
-      db.prepare("UPDATE generations SET status='CANCELLED',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE status='RUNNING' AND cancel_requested_at IS NOT NULL AND lease_until<=?")
-        .run(time, time);
-      // Older Agents cannot decode even an explicit empty array. Leave those tasks queued for a capable worker.
-      const row = db.prepare(`SELECT * FROM generations
-        WHERE ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))
-          AND (? OR workflow_version <> 'python-agent-v7')
-          AND (? OR workflow_version <> '${PIXEL_LAYER_WORKFLOW_VERSION}')
-          AND (? OR workflow_version <> '${PIXEL_DETAILED_WORKFLOW_VERSION}')
-          AND (? OR workflow_version <> '${PIXEL_LAYERED_HAIR_WORKFLOW_VERSION}')
-          AND (? OR NOT EXISTS (
-            SELECT 1 FROM json_tree(COALESCE(brief_json, config_json, '{}'), '$.content.resume.sections')
-            WHERE key='presentationHighlights'
-          ))
-        ORDER BY created_at LIMIT 1`).get(time, time, Number(supportsPixelWorld), Number(supportsPixelLayerAvatar),
-          Number(supportsPixelDetailedAvatar), Number(canLeaseLayeredHair), Number(supportsPresentationHighlights));
-      if (!row) return null;
-      // A task with a stored candidate can finalize once without classifying the photo again.
-      const canFinalize = isPixelCandidateWorkflow(row.workflow_version) && row.output_asset_id && row.attempt_count === maxAttempts;
-      if (row.attempt_count >= maxAttempts && !canFinalize) {
-        db.prepare("UPDATE generations SET status='FAILED',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))")
-          .run("生成任务重试次数已达上限。", time, row.id, time, time);
-        continue;
+    return transaction(db, async () => {
+      for (let scanned = 0; scanned < 20; scanned++) {
+        const time = now();
+        await db.prepare("UPDATE generations SET status='CANCELLED',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id IN (SELECT id FROM generations WHERE status='RUNNING' AND cancel_requested_at IS NOT NULL AND lease_until<=? ORDER BY lease_until LIMIT 20 FOR UPDATE SKIP LOCKED)")
+          .run(time, time);
+        // Older Agents cannot decode even an explicit empty array. Leave those tasks queued for a capable worker.
+        const row = await db.prepare(`SELECT * FROM generations
+          WHERE ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))
+            AND (?::boolean OR workflow_version <> 'python-agent-v7')
+            AND (?::boolean OR workflow_version <> '${PIXEL_LAYER_WORKFLOW_VERSION}')
+            AND (?::boolean OR workflow_version <> '${PIXEL_DETAILED_WORKFLOW_VERSION}')
+            AND (?::boolean OR workflow_version <> '${PIXEL_LAYERED_HAIR_WORKFLOW_VERSION}')
+            AND (?::boolean OR NOT EXISTS (
+              SELECT 1 WHERE jsonb_path_exists(COALESCE(brief_json, config_json, '{}')::jsonb, '$.content.resume.sections.**.presentationHighlights')
+            ))
+          ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`).get(time, time, supportsPixelWorld, supportsPixelLayerAvatar,
+            supportsPixelDetailedAvatar, canLeaseLayeredHair, supportsPresentationHighlights);
+        if (!row) return null;
+        // A task with a stored candidate can finalize once without classifying the photo again.
+        const canFinalize = isPixelCandidateWorkflow(row.workflow_version) && row.output_asset_id && row.attempt_count === maxAttempts;
+        if (row.attempt_count >= maxAttempts && !canFinalize) {
+          await db.prepare("UPDATE generations SET status='FAILED',error=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))")
+            .run("生成任务重试次数已达上限。", time, row.id, time, time);
+          continue;
+        }
+        const leaseToken = randomUUID();
+        const result = await db.prepare("UPDATE generations SET status='RUNNING',lease_token=?,lease_until=?,attempt_count=attempt_count+1,error=NULL,updated_at=? WHERE id=? AND ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))")
+          .run(leaseToken, time + leaseMs, time, row.id, time, time);
+        if (result.changes) return { ...row, status: "RUNNING", lease_token: leaseToken, lease_until: time + leaseMs,
+          attempt_count: row.attempt_count + 1 };
       }
-      const leaseToken = randomUUID();
-      const result = db.prepare("UPDATE generations SET status='RUNNING',lease_token=?,lease_until=?,attempt_count=attempt_count+1,error=NULL,updated_at=? WHERE id=? AND ((status='QUEUED' AND next_attempt_at<=?) OR (status='RUNNING' AND cancel_requested_at IS NULL AND lease_until<=?))")
-        .run(leaseToken, time + leaseMs, time, row.id, time, time);
-      if (result.changes) return { ...row, status: "RUNNING", lease_token: leaseToken, lease_until: time + leaseMs,
-        attempt_count: row.attempt_count + 1 };
-    }
-    return null;
+      return null;
+    });
   }
-  function heartbeat(id, leaseToken) {
+  async function heartbeat(id, leaseToken) {
     const time = now();
-    return db.prepare("UPDATE generations SET lease_until=?,updated_at=? WHERE id=? AND status='RUNNING' AND lease_token=? AND lease_until>?")
-      .run(time + leaseMs, time, id, leaseToken, time).changes === 1;
+    return (await db.prepare("UPDATE generations SET lease_until=?,updated_at=? WHERE id=? AND status='RUNNING' AND lease_token=? AND lease_until>?")
+      .run(time + leaseMs, time, id, leaseToken, time)).changes === 1;
   }
-  function isCancelRequested(id, leaseToken) {
-    const row = db.prepare("SELECT status,lease_token,lease_until,cancel_requested_at FROM generations WHERE id=?").get(id);
+  async function isCancelRequested(id, leaseToken) {
+    const row = await db.prepare("SELECT status,lease_token,lease_until,cancel_requested_at FROM generations WHERE id=?").get(id);
     return !row || row.status !== "RUNNING" || row.lease_token !== leaseToken || row.lease_until <= now() ||
       row.cancel_requested_at != null;
   }
-  function getLeasedTask(id, leaseToken) {
+  async function getLeasedTask(id, leaseToken, lock = false) {
     if (!leaseToken) return null;
-    return db.prepare("SELECT * FROM generations WHERE id=? AND status='RUNNING' AND lease_token=? AND lease_until>?")
+    return await db.prepare(`SELECT * FROM generations WHERE id=? AND status='RUNNING' AND lease_token=? AND lease_until>?${lock ? " FOR UPDATE" : ""}`)
       .get(id, leaseToken, now()) ?? null;
   }
-  function acknowledgeCancel(id, leaseToken) {
-    return db.prepare("UPDATE generations SET status='CANCELLED',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND status='RUNNING' AND lease_token=? AND cancel_requested_at IS NOT NULL")
-      .run(now(), id, leaseToken).changes === 1;
+  async function acknowledgeCancel(id, leaseToken) {
+    return (await db.prepare("UPDATE generations SET status='CANCELLED',error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND status='RUNNING' AND lease_token=? AND cancel_requested_at IS NOT NULL AND lease_until>?")
+      .run(now(), id, leaseToken, now())).changes === 1;
   }
-  function storeOutput(id, image, leaseToken = null) {
+  async function storeOutput(id, image, leaseToken = null) {
     let created = null;
     try {
-      return transaction(db, () => {
-        const row = db.prepare("SELECT * FROM generations WHERE id=?").get(id);
+      return await transaction(db, async () => {
+        const row = await db.prepare("SELECT * FROM generations WHERE id=? FOR UPDATE").get(id);
         if (!row) throw new Error("Generation missing");
         if (row.cancel_requested_at != null) throw new Error("Generation cancelled");
         if (row.output_asset_id) return row.output_asset_id;
@@ -166,8 +170,8 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
         }
         if (row.status !== "RUNNING" && row.status !== "QUEUED") throw new Error("Generation is no longer writable");
         const mime = validateImage(image.bytes, image.mime, minPixels);
-        created = assets.store(row.owner_session_id, "hero", image.bytes, mime).id;
-        const result = db.prepare("UPDATE generations SET output_asset_id=?,updated_at=? WHERE id=? AND output_asset_id IS NULL")
+        created = (await assets.store(row.owner_session_id, "hero", image.bytes, mime)).id;
+        const result = await db.prepare("UPDATE generations SET output_asset_id=?,updated_at=? WHERE id=? AND output_asset_id IS NULL")
           .run(created, now(), id);
         if (!result.changes) throw new Error("Generation output was already stored");
         return created;
@@ -177,20 +181,20 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       throw error;
     }
   }
-  function existingOutput(taskId) {
-    return db.prepare("SELECT output_asset_id FROM generations WHERE id=?").get(taskId)?.output_asset_id ?? null;
+  async function existingOutput(taskId) {
+    return (await db.prepare("SELECT output_asset_id FROM generations WHERE id=?").get(taskId))?.output_asset_id ?? null;
   }
-  function storeCutout(id, image, leaseToken) {
+  async function storeCutout(id, image, leaseToken) {
     let created = null;
     try {
-      return transaction(db, () => {
-        const row = getLeasedTask(id, leaseToken);
+      return await transaction(db, async () => {
+        const row = await getLeasedTask(id, leaseToken, true);
         if (!row || row.cancel_requested_at != null || !row.output_asset_id) throw new Error("Generation cutout lease is no longer active");
         if (row.cutout_asset_id) return row.cutout_asset_id;
         if (!["image/png", "image/webp"].includes(image.mime)) throw new ServiceError(415, "透明肖像格式无效。");
         const mime = validateImage(image.bytes, image.mime, minPixels);
-        created = assets.store(row.owner_session_id, "hero_cutout", image.bytes, mime).id;
-        db.prepare("UPDATE generations SET cutout_asset_id=?,updated_at=? WHERE id=? AND cutout_asset_id IS NULL")
+        created = (await assets.store(row.owner_session_id, "hero_cutout", image.bytes, mime)).id;
+        await db.prepare("UPDATE generations SET cutout_asset_id=?,updated_at=? WHERE id=? AND cutout_asset_id IS NULL")
           .run(created, now(), id);
         return created;
       });
@@ -199,9 +203,9 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
       throw error;
     }
   }
-  function complete(id, { config = null, leaseToken = null } = {}) {
-    return transaction(db,()=>{
-      const time=now(),row=db.prepare('SELECT * FROM generations WHERE id=?').get(id);
+  async function complete(id, { config = null, leaseToken = null } = {}) {
+    return await transaction(db,async ()=>{
+      const time=now(),row=await db.prepare('SELECT * FROM generations WHERE id=? FOR UPDATE').get(id);
       if(!row || row.cancel_requested_at!=null || (leaseToken ? row.status!=='RUNNING' || row.lease_token!==leaseToken || row.lease_until<=time : row.status!=='QUEUED')) return false;
       const safeConfig=config ? cleanConfig(config) : row.config_json;
       if (isPixelCandidateWorkflow(row.workflow_version)) {
@@ -210,48 +214,57 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
           || !isDeepStrictEqual(JSON.parse(safeConfig), queuedConfig)) {
           throw new ServiceError(400, "头像生成结果与原作品配置不一致。");
         }
-        if (!row.output_asset_id || !assets.outputExists(row.output_asset_id)) return false;
+        if (!row.output_asset_id || !await assets.outputExists(row.output_asset_id)) return false;
       } else if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version)){
         const confirmedBrief=JSON.parse(row.brief_json || row.config_json), published=JSON.parse(safeConfig || 'null');
         if(!published || !isDeepStrictEqual(published.content,confirmedBrief.content)
           || ['python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version) && published.templateId!==confirmedBrief.templateId)
           throw new ServiceError(400,'生成结果与确认内容不一致。');
       }
-      db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(safeConfig,time,id);
+      await db.prepare("UPDATE generations SET status='SUCCEEDED',config_json=?,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(safeConfig,time,id);
       if(['python-agent-v3','python-agent-v4','python-agent-v5','python-agent-v6','python-agent-v7'].includes(row.workflow_version) && !row.portrait_asset_id){
-        const projectId=randomUUID();
-        db.prepare(`INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at,resume_id)
-          VALUES(?,?,?,?,?,(SELECT id FROM resumes WHERE id=json_extract(?, '$.resumeId') AND owner_session_id=?))`)
-          .run(projectId,row.owner_session_id,safeConfig,time,time,row.resume_request_json,row.owner_session_id);
-        media.attachProject(row.owner_session_id,projectId,JSON.parse(safeConfig));
-        db.prepare('UPDATE generations SET project_id=? WHERE id=?').run(projectId,id);
+        const owner = row.owner_session_id;
+        const requestedResumeId = row.resume_request_json && JSON.parse(row.resume_request_json).resumeId;
+        const resume = requestedResumeId && await db.prepare("SELECT id FROM resumes WHERE id=? AND owner_session_id=?")
+          .get(requestedResumeId, owner);
+        if (resume) await db.prepare("SELECT id FROM sessions WHERE id=? FOR NO KEY UPDATE").get(owner);
+        const existing = resume && await matchingResumeProject(db, owner, resume.id, safeConfig);
+        const projectId = existing ? existing.id : randomUUID();
+        if (!existing) {
+          await db.prepare("INSERT INTO projects(id,owner_session_id,config_json,created_at,updated_at,resume_id) VALUES(?,?,?,?,?,?)")
+            .run(projectId,owner,safeConfig,time,time,resume?.id ?? null);
+          await media.attachProject(owner,projectId,JSON.parse(safeConfig));
+        }
+        await db.prepare('UPDATE generations SET project_id=? WHERE id=?').run(projectId,id);
       }
       return true;
     });
   }
-  function fail(id, message, { leaseToken = null, retryable = false } = {}) {
-    const time = now();
-    const row = db.prepare("SELECT attempt_count,cancel_requested_at FROM generations WHERE id=?").get(id);
-    if (!row) return false;
-    const shouldRetry = row.cancel_requested_at == null && retryable && row.attempt_count < maxAttempts;
-    const status = row.cancel_requested_at != null ? "CANCELLED" : shouldRetry ? "QUEUED" : "FAILED";
-    const next = shouldRetry ? time + Math.min(60_000, retryBaseMs * 2 ** Math.max(0, row.attempt_count - 1)) : 0;
-    const condition = leaseToken ? "status='RUNNING' AND lease_token=? AND lease_until>?" : "status='QUEUED'";
-    const params = leaseToken ? [leaseToken, time] : [];
-    return db.prepare(`UPDATE generations SET status=?,error=?,next_attempt_at=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND ${condition}`)
-      .run(status, String(message).slice(0, 300), next, time, id, ...params).changes === 1;
+  async function fail(id, message, { leaseToken = null, retryable = false } = {}) {
+    return transaction(db, async () => {
+      const time = now();
+      const row = await db.prepare("SELECT attempt_count,cancel_requested_at FROM generations WHERE id=? FOR UPDATE").get(id);
+      if (!row) return false;
+      const shouldRetry = row.cancel_requested_at == null && retryable && row.attempt_count < maxAttempts;
+      const status = row.cancel_requested_at != null ? "CANCELLED" : shouldRetry ? "QUEUED" : "FAILED";
+      const next = shouldRetry ? time + Math.min(60_000, retryBaseMs * 2 ** Math.max(0, row.attempt_count - 1)) : 0;
+      const condition = leaseToken ? "status='RUNNING' AND lease_token=? AND lease_until>?" : "status='QUEUED'";
+      const params = leaseToken ? [leaseToken, time] : [];
+      return (await db.prepare(`UPDATE generations SET status=?,error=?,next_attempt_at=?,lease_token=NULL,lease_until=NULL,updated_at=? WHERE id=? AND ${condition}`)
+        .run(status, String(message).slice(0, 300), next, time, id, ...params)).changes === 1;
+    });
   }
   function recoverRunning() {
     // Leases belong to workers, not processes. A new process must wait for expiry.
   }
-  function touchWorker(workerId) {
+  async function touchWorker(workerId) {
     if (typeof workerId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(workerId)) throw new Error("Invalid worker ID");
-    db.prepare("INSERT INTO worker_heartbeats(worker_id,touched_at) VALUES(?,?) ON CONFLICT(worker_id) DO UPDATE SET touched_at=excluded.touched_at")
+    await db.prepare("INSERT INTO worker_heartbeats(worker_id,touched_at) VALUES(?,?) ON CONFLICT(worker_id) DO UPDATE SET touched_at=excluded.touched_at")
       .run(workerId, now());
   }
-  function workerHealthy(maxAgeMs = 45_000) {
+  async function workerHealthy(maxAgeMs = 45_000) {
     if (!Number.isFinite(maxAgeMs) || maxAgeMs <= 0) throw new Error("Invalid worker heartbeat age");
-    return Boolean(db.prepare("SELECT 1 FROM worker_heartbeats WHERE touched_at>=? LIMIT 1").get(now() - maxAgeMs));
+    return Boolean(await db.prepare("SELECT 1 FROM worker_heartbeats WHERE touched_at>=? LIMIT 1").get(now() - maxAgeMs));
   }
   return { enqueue, getTask, cancel, leaseNext, heartbeat, isCancelRequested, getLeasedTask, acknowledgeCancel,
     storeOutput, storeCutout, existingOutput, complete, fail, recoverRunning,

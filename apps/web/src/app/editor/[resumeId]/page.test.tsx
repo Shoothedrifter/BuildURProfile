@@ -591,3 +591,25 @@ it('offers recovery and deletion of images uploaded before an unsaved reload', a
   fireEvent.click(within(recovery).getByRole('button',{name:'删除未保存图片 1'}));
   await waitFor(()=>expect(resumeApi.deleteImage).toHaveBeenCalledWith('resume-1','recover2'));
 });
+
+it('shows an unchanged save result and opens empty or failed image management without version history', async () => {
+  vi.mocked(resumeApi.read).mockResolvedValue({ draft: fixture as never, revision: 1, expiresAt: '' });
+  vi.mocked(resumeApi.pendingImages).mockResolvedValueOnce({images:[]})
+    .mockRejectedValueOnce(new Error('未保存图片读取失败。'));
+  render(<ResumeEditorPage params={Promise.resolve({ resumeId: 'resume-1' })} />);
+  const save = screen.getByRole('button', {name:'保存草稿'});
+  await waitFor(() => expect(save).toBeEnabled());
+  fireEvent.click(save);
+  expect(await screen.findByText('草稿已保存，无待保存修改。')).toBeInTheDocument();
+  expect(resumeApi.save).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', {name:'版本历史'})).not.toBeInTheDocument();
+  expect(resumeApi.versions).not.toHaveBeenCalled();
+  const manage = screen.getByRole('button', {name:'管理未保存图片'});
+  fireEvent.click(manage);
+  const panel = screen.getByRole('region', {name:'未保存图片'});
+  expect(await within(panel).findByRole('alert')).toHaveTextContent('未保存图片读取失败。');
+  fireEvent.click(manage);
+  expect(await within(panel).findByText('暂无未保存图片。')).toBeInTheDocument();
+  fireEvent.click(within(panel).getByRole('button', {name:'关闭未保存图片'}));
+  expect(screen.queryByRole('region', {name:'未保存图片'})).not.toBeInTheDocument();
+});

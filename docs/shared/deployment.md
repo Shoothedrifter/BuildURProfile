@@ -9,13 +9,13 @@
 | [apps/launcher/.env.local.example](../../apps/launcher/.env.local.example) | 本机 Next.js 与开发启动器 | 根 `.env` |
 | [apps/launcher/.env.example](../../apps/launcher/.env.example) | Compose 的 Next.js 支付配置 | 根 `.env.api` |
 | [apps/agent/.env.example](../../apps/agent/.env.example) | Python 图像与简历文本供应商 | 根 `.env.agent` |
-| [deploy/.env.compose.example](../../deploy/.env.compose.example) | Compose 的共享服务令牌 | 补入根 `.env` |
+| [deploy/.env.compose.example](../../deploy/.env.compose.example) | Compose 的共享服务令牌和 PostgreSQL 密码 | 补入根 `.env` |
 
 已有目标文件时逐项补充，不覆盖文件。不把真实配置或密钥提交到 Git。模块目录中的样例不意味着入口会自动读取模块内的实际 `.env`。
 
 | 启动入口 | 配置来源 |
 | --- | --- |
-| `npm run dev` | 根 `.env`；从根 `.env.agent` 选取图像配置和 checkpoint 路径给 Python；无共享令牌时生成临时令牌 |
+| `npm run dev` | 根 `.env`；从根 `.env.agent` 选取模型和 PostgreSQL checkpoint 配置给 Python；无共享令牌时生成临时令牌 |
 | `npm start` / `npm run dev:server` | Node 进程环境和仓库根 `.env`，不自动读取 `.env.api` |
 | `npm run dev:agent` | 进程环境、根 `.env` 及根 `.env.agent` 中允许的 Agent 字段；需自行配置与 Web 服务相同的服务令牌 |
 | `python -m buildurprofile_agent.server` | 进程环境，不自动读取环境文件 |
@@ -28,16 +28,16 @@
 1. 安装 Node.js 22.12+（推荐 24+）、Python 3.11+ 和 uv 0.11.x。
 2. 运行 `npm ci` 和 `uv sync --project apps/agent --frozen --extra test`。
    若需在本机处理扫描页，另安装 Tesseract 可执行文件及 `eng`、`chi_sim` 语言包，并验证 `tesseract --list-langs` 包含两者；Compose 的 Agent 镜像已安装这些组件。缺少组件时普通文本解析仍可使用，OCR 会返回专用错误码。
-3. 旧浏览器解析与无照片预览可直接运行 `npm run dev`。新 Agent 简历解析需从 `apps/agent/.env.example` 准备根 `.env.agent`，按所选 OpenAI 或 GLM 供应商填入模型和对应 Key；需要支付时，再从 `apps/launcher/.env.local.example` 准备根 `.env`；需要肖像时运行 `npm run setup:avatar` 并配置图像供应商。修改 `.env.agent` 后重启 `npm run dev`，运行中的 Python Agent 不会自动重新读取它。
+3. 配置 PostgreSQL 业务库与 Agent checkpoint，见[迁移指南](postgresql-migration.md#本机开发与迁移演练)。旧浏览器解析与无照片预览可直接运行 `npm run dev`。新 Agent 简历解析需从 `apps/agent/.env.example` 准备根 `.env.agent`，按所选 OpenAI 或 GLM 供应商填入模型和对应 Key；需要支付时，再从 `apps/launcher/.env.local.example` 准备根 `.env`；需要肖像时运行 `npm run setup:avatar` 并配置图像供应商。修改 `.env.agent` 后重启 `npm run dev`，运行中的 Python Agent 不会自动重新读取它。
 4. 打开 `http://127.0.0.1:5173`；Next.js 开发服务默认监听 5173（前后端同源），Agent 默认 8788。图像服务配置见[Agent](../agent/README.md)，支付字段见[支付文档](../api/payment.md)。
 
 启动脚本会自动检测 `apps/agent/.venv/bin/python`（Unix）与 `apps/agent/.venv/Scripts/python.exe`（Windows），也可通过环境变量 `PYTHON` 显式指定 Python 路径。
 
-端口可通过 `VITE_PORT`（或 `PORT`）、`SERVER_PORT`、`AGENT_PORT` 调整。并行运行多组服务时，另外隔离 `DATABASE_PATH`、`AVATAR_ASSET_ROOT`、`AGENT_CHECKPOINT_PATH`。
+端口可通过 `VITE_PORT`（或 `PORT`）、`SERVER_PORT`、`AGENT_PORT` 调整。并行运行多组服务时，另外隔离 `DATABASE_URL` / `DATABASE_SCHEMA`、`AVATAR_ASSET_ROOT`、`AGENT_CHECKPOINT_DATABASE_URL` / `AGENT_CHECKPOINT_SCHEMA`。
 
 ## 单机 Compose
 
-准备根 `.env.api`、`.env.agent`，并在根 `.env` 中配置随机生成的 `AGENT_SERVICE_TOKEN`（至少 32 字符、不含空白，两端共享）。保留已有 `.env` 的其他内容。
+准备根 `.env.api`、`.env.agent`，并在根 `.env` 中配置随机生成的 `AGENT_SERVICE_TOKEN`（至少 32 字符、不含空白，两端共享）和三项独立 PostgreSQL 密码。保留已有 `.env` 的其他内容。
 
 ```sh
 docker compose -f compose.agent.yml up --build
@@ -45,7 +45,7 @@ docker compose -f compose.agent.yml up --build
 
 - `web-api` 使用 `apps/launcher/Dockerfile` 构建并运行 Next.js 全栈生产服务，宿主机只绑定 `127.0.0.1:8787`；`agent` 仅在容器网络中运行。
 - `.env.api` 中的 `PUBLIC_BASE_URL` 应改为实际访问 origin；生产使用 HTTPS，并配置公网通知接口。
-- Compose 挂载 `app_data` 和独立 `agent_checkpoints` 卷。两端实际环境文件不打包进镜像。
+- Compose 使用独立 PostgreSQL 服务及 `postgres_data` 持久卷。`app_data` 保留原 PDF、照片及会话密钥。生产隔离和 SQLite 升级步骤见[迁移指南](postgresql-migration.md)。
 - `compose.tunnel.yml` 是 FRP 穿透配置，与应用编排不同；启动应用须显式选择 `compose.agent.yml`。
 
 当前检出版本的生产容器默认关闭肖像演示；自有肖像 Skill 的部署配置以相应分支为准。
@@ -54,7 +54,7 @@ docker compose -f compose.agent.yml up --build
 
 在服务器上安装 Docker Engine 与 Compose 插件，将仓库部署文件复制到服务器；不复制开发环境的 `.env`、沙箱凭据或 `data/`。使用下列样例分别准备仓库根目录 `.env`、`.env.api` 和 `.env.agent`；已有文件逐项合并，不覆盖。限制这些文件的读取权限，例如 `chmod 600 .env .env.api .env.agent`。
 
-- `.env`：从 `deploy/.env.compose.example` 设置独立随机 `AGENT_SERVICE_TOKEN`。
+- `.env`：从 `deploy/.env.compose.example` 设置独立随机 `AGENT_SERVICE_TOKEN` 和三项 PostgreSQL 密码。
 - `.env.api`：从 `apps/launcher/.env.example` 配置 `PAYMENT_ENV=production`、生产售价、生产应用和商户参数，`PUBLIC_BASE_URL=https://域名`，`ALIPAY_NOTIFY_URL=https://域名/api/payment/notify`。私钥由部署者自行安全注入，不能提交或发送到聊天。
 - `.env.agent`：从 `apps/agent/.env.example` 设置所需供应商参数；无肖像作品仍需要运行 Agent。
 
@@ -66,7 +66,7 @@ docker compose -p buildurprofile-production -f compose.agent.yml up -d --build
 docker compose -p buildurprofile-production -f compose.agent.yml ps
 ```
 
-Web 监听宿主机 `127.0.0.1:8787`，Agent 不发布端口。由服务器上的 Nginx 负责 HTTPS 和反向代理至 `http://127.0.0.1:8787`，并在转发前拒绝 `/_internal/agent/` 和 `/api/_internal/agent/` 及其子路径；支付宝通知路径 `/api/payment/notify` 必须允许 POST 且不重定向。应用数据卷和 checkpoint 卷均需备份；不要使用 `down -v` 删除生产卷。确认 `/healthz` 和 `/readyz` 正常，以及公网内部接口不可访问。支付宝回调和真实付款仍须在域名及生产凭据就绪后按[支付上线验收](../api/payment.md)逐项验证。
+Web 监听宿主机 `127.0.0.1:8787`，Agent 不发布端口。由服务器上的 Nginx 负责 HTTPS 和反向代理至 `http://127.0.0.1:8787`，并在转发前拒绝 `/_internal/agent/` 和 `/api/_internal/agent/` 及其子路径；支付宝通知路径 `/api/payment/notify` 必须允许 POST 且不重定向。两个 PostgreSQL 数据库和应用文件卷均需备份；不要使用 `down -v` 删除生产卷。确认 `/healthz` 和 `/readyz` 正常，以及公网内部接口不可访问。支付宝回调和真实付款仍须在域名及生产凭据就绪后按[支付上线验收](../api/payment.md)逐项验证。
 
 ### GitHub Pages 授权与验收
 
@@ -79,7 +79,7 @@ Web 监听宿主机 `127.0.0.1:8787`，Agent 不发布端口。由服务器上�
 
 完整运行需要两个服务：Next.js 先执行 `npm run build`，再以进程环境启动 `npm start`（监听 `SERVER_PORT`，默认 8787）；Python 安装锁定依赖后，以其虚拟环境执行 `python -m buildurprofile_agent.server`。两者注入相同服务令牌，Python 的 `AGENT_API_URL` 指向可访问的 Next.js 私有地址。
 
-Python 环境包括 `AGENT_SERVICE_TOKEN`、`AGENT_API_URL`、持久化的 `AGENT_CHECKPOINT_PATH`，以及所选供应商配置；可设置 `AGENT_HOST`、`AGENT_PORT`。Next.js 服务端独立配置服务绑定、数据库、资产目录和支付。部署平台负责环境注入，不依赖模块目录中隐式加载的环境文件。
+Python 环境包括 `AGENT_SERVICE_TOKEN`、`AGENT_API_URL`、`AGENT_CHECKPOINT_DATABASE_URL`、可选 `AGENT_CHECKPOINT_SCHEMA`，以及所选供应商配置；可设置 `AGENT_HOST`、`AGENT_PORT`。Next.js 服务端独立配置服务绑定、数据库、资产目录和支付。部署平台负责环境注入，不依赖模块目录中隐式加载的环境文件。
 
 从旧版升级成果展示合同，先更新 Agent Worker 再更新 Web。新建 PDF 或 OCR 解析任务及包含成果字段的生成任务会等待新版 Worker。两端启动完成后再验收完整生成链路。
 
@@ -93,4 +93,4 @@ Python 环境包括 `AGENT_SERVICE_TOKEN`、`AGENT_API_URL`、持久化的 `AGEN
 | 备份与重启 | 验证卷恢复、资格保留、任务恢复、租约与会话隔离 |
 | 上线验收 | 按[支付](../api/payment.md)和[Agent](../agent/README.md)分别验证真实外部服务 |
 
-默认本机数据库为 `data/buildurprofile.sqlite`（沙箱）或 `data/buildurprofile-production.sqlite`（生产），可通过 `DATABASE_PATH` 指定。Compose 显式指定卷内数据库路径；切换环境时也要隔离卷或调整部署配置。
+Web 使用 `DATABASE_URL` 和可选 `DATABASE_SCHEMA`。Agent 通过专用账号连接 checkpoint 数据库。生产和沙箱使用独立 Compose 项目与数据卷。

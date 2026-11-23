@@ -56,8 +56,8 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
   const read = db.prepare("SELECT * FROM github_deployments WHERE id=?");
   let rateLimitedUntil = 0;
 
-  function projectForWrite(sessionId, projectId, revision) {
-    const project = service.getProject(sessionId, projectId);
+  async function projectForWrite(sessionId, projectId, revision) {
+    const project = await service.getProject(sessionId, projectId);
     if (!project.paid) throw new DeployError(402, "请先解锁当前项目的发布资格。");
     if (project.revision !== revision) throw new DeployError(409, "作品版本已变化，请确认当前版本后重新发起部署。");
     assertDeliverableConfig(project.config);
@@ -84,7 +84,7 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
       repoUrl: record.github_repo_id ? `https://github.com/${encode(login)}/${encode(repo)}` : null };
   }
 
-  function start(sessionId, projectId, input) {
+  async function start(sessionId, projectId, input) {
     const { repo: requested, revision, confirmed, deploymentId } = input ?? {};
     const repo = typeof requested === "string" ? requested.trim() : "";
     if (confirmed !== true || !Number.isSafeInteger(revision) || revision < 1 ||
@@ -93,9 +93,10 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
     }
     const state = randomBytes(32).toString("base64url");
     const verifier = randomBytes(32).toString("base64url");
-    return transaction(db, () => {
-      projectForWrite(sessionId, projectId, revision);
-      const existing = db.prepare("SELECT * FROM github_deployments WHERE project_id=? AND revision=? AND repo=?").get(projectId, revision, repo);
+    return await transaction(db, async () => {
+      await db.prepare("SELECT id FROM projects WHERE id=? AND owner_session_id=? FOR UPDATE").get(projectId, sessionId);
+      await projectForWrite(sessionId, projectId, revision);
+      const existing = await db.prepare("SELECT * FROM github_deployments WHERE project_id=? AND revision=? AND lower(repo)=lower(?)").get(projectId, revision, repo);
       if (deploymentId && existing?.id !== deploymentId) throw new DeployError(404, "部署记录不存在。");
       const id = existing?.id ?? randomUUID();
       if (existing && ["published", "building", "uploading"].includes(present(existing).stage)) {
@@ -105,23 +106,23 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
         throw new DeployError(429, "GitHub 请求受限，请稍后重试。");
       }
       if (existing) {
-        db.prepare(`UPDATE github_deployments SET oauth_state_hash=?,oauth_verifier=?,oauth_expires_at=?,
+        await db.prepare(`UPDATE github_deployments SET oauth_state_hash=?,oauth_verifier=?,oauth_expires_at=?,
           stage='authorizing',error=NULL,updated_at=? WHERE id=?`)
           .run(sha256(state).digest("hex"), verifier, now() + AUTH_WINDOW, now(), id);
       } else {
-        db.prepare(`INSERT INTO github_deployments(id,project_id,revision,repo,stage,oauth_state_hash,oauth_verifier,oauth_expires_at,updated_at)
+        await db.prepare(`INSERT INTO github_deployments(id,project_id,revision,repo,stage,oauth_state_hash,oauth_verifier,oauth_expires_at,updated_at)
           VALUES(?,?,?,?,'authorizing',?,?,?,?)`)
           .run(id, projectId, revision, repo, sha256(state).digest("hex"), verifier, now() + AUTH_WINDOW, now());
       }
       const authorizationUrl = new URL("https://github.com/login/oauth/authorize");
       authorizationUrl.search = new URLSearchParams({ client_id: config.clientId, redirect_uri: redirectUri, scope: "repo",
         state, code_challenge: sha256(verifier).digest("base64url"), code_challenge_method: "S256" }).toString();
-      return { deployment: present(read.get(id)), authorizationUrl: authorizationUrl.href };
+      return { deployment: present(await read.get(id)), authorizationUrl: authorizationUrl.href };
     });
   }
 
-  function recordFailure(id, error) {
-    db.prepare("UPDATE github_deployments SET stage='failed',error=?,updated_at=?,write_until=0,next_check_at=? WHERE id=?")
+  async function recordFailure(id, error) {
+    await db.prepare("UPDATE github_deployments SET stage='failed',error=?,updated_at=?,write_until=0,next_check_at=? WHERE id=?")
       .run(error instanceof DeployError || (error instanceof ServiceError && error.status < 500)
         ? error.message : "部署未能完成，可以重新授权后继续。", now(), error.retryAt ?? 0, id);
   }
@@ -173,7 +174,7 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
   }
 
   async function deploy(record, sessionId, token) {
-    const project = projectForWrite(sessionId, record.project_id, record.revision);
+    const project = await projectForWrite(sessionId, record.project_id, record.revision);
     const account = await github("/user", { token });
     if (!Number.isSafeInteger(account.id) || !/^[a-z0-9][a-z0-9-]{0,38}$/i.test(account.login)) {
       throw new DeployError(403, "无法确认 GitHub 个人账户。");
@@ -186,8 +187,8 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
     if (html.length > MAX_HTML) throw new DeployError(413, "作品 HTML 超过 25 MiB，请减少图片体积后再部署。");
     const hash = sha256(html).digest("hex");
     if (record.html_hash && record.html_hash !== hash) throw new DeployError(409, "本次打包内容已变化，请使用新仓库部署当前版本。");
-    projectForWrite(sessionId, record.project_id, record.revision);
-    db.prepare("UPDATE github_deployments SET github_user_id=?,github_login=?,html_hash=? WHERE id=?")
+    await projectForWrite(sessionId, record.project_id, record.revision);
+    await db.prepare("UPDATE github_deployments SET github_user_id=?,github_login=?,html_hash=? WHERE id=?")
       .run(account.id, account.login, hash, record.id);
 
     const path = `/repos/${encode(account.login)}/${encode(record.repo)}`;
@@ -205,7 +206,7 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
     if (record.branch && record.branch !== repo.default_branch) throw new DeployError(409, "仓库默认分支已变化，请到 GitHub 检查仓库。");
     const branch = repo.default_branch;
     if (!Number.isSafeInteger(repo.id) || !branch) throw new DeployError(502, "GitHub 尚未准备好仓库默认分支，请重试。");
-    db.prepare("UPDATE github_deployments SET github_repo_id=?,branch=? WHERE id=?").run(repo.id, branch, record.id);
+    await db.prepare("UPDATE github_deployments SET github_repo_id=?,branch=? WHERE id=?").run(repo.id, branch, record.id);
 
     const files = [[".nojekyll", Buffer.from("\n")], ["index.html", html]];
     let htmlCommit = record.commit_sha;
@@ -218,7 +219,7 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
         }
       } else {
         if (record.commit_sha) throw new DeployError(409, "已提交的页面文件发生变化，请到 GitHub 检查仓库。");
-        if (file === "index.html") projectForWrite(sessionId, record.project_id, record.revision);
+        if (file === "index.html") await projectForWrite(sessionId, record.project_id, record.revision);
         const written = await github(endpoint, { token, method: "PUT",
           body: { branch, message: `Publish Showcase: ${file}`, content: bytes.toString("base64") } });
         if (file === "index.html") htmlCommit = written.commit.sha;
@@ -231,7 +232,7 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
       }
       htmlCommit ??= head.object.sha;
     }
-    db.prepare("UPDATE github_deployments SET commit_sha=? WHERE id=?").run(htmlCommit, record.id);
+    await db.prepare("UPDATE github_deployments SET commit_sha=? WHERE id=?").run(htmlCommit, record.id);
     const pages = await github(`${path}/pages`, { token, allowMissing: true });
     if (!pages) {
       await github(`${path}/pages`, { token, method: "POST", body: { build_type: "legacy", source: { branch, path: "/" } } });
@@ -247,18 +248,18 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
       }
     }
     const time = now();
-    db.prepare(`UPDATE github_deployments SET stage='building',build_started_at=?,next_check_at=?,updated_at=?,write_until=0 WHERE id=?`)
+    await db.prepare(`UPDATE github_deployments SET stage='building',build_started_at=?,next_check_at=?,updated_at=?,write_until=0 WHERE id=?`)
       .run(time, time, time, record.id);
   }
 
   async function callback(sessionId, params) {
     const state = params.get("state");
     if (!state || !/^[a-zA-Z0-9_-]{43}$/.test(state)) throw new DeployError(400, "GitHub 授权请求无效，请重新发起部署。");
-    const record = transaction(db, () => {
-      const result = db.prepare(`SELECT d.* FROM github_deployments d JOIN projects p ON p.id=d.project_id
-        WHERE d.oauth_state_hash=? AND p.owner_session_id=?`).get(sha256(state).digest("hex"), sessionId);
+    const record = await transaction(db, async () => {
+      const result = await db.prepare(`SELECT d.* FROM github_deployments d JOIN projects p ON p.id=d.project_id
+        WHERE d.oauth_state_hash=? AND p.owner_session_id=? FOR UPDATE OF d`).get(sha256(state).digest("hex"), sessionId);
       if (!result) throw new DeployError(400, "GitHub 授权请求无效或已使用，请返回作品页查看部署状态。");
-      db.prepare(`UPDATE github_deployments SET oauth_state_hash=NULL,oauth_verifier=NULL,oauth_expires_at=NULL,
+      await db.prepare(`UPDATE github_deployments SET oauth_state_hash=NULL,oauth_verifier=NULL,oauth_expires_at=NULL,
         stage='uploading',write_until=?,updated_at=? WHERE id=?`).run(now() + WRITE_WINDOW, now(), result.id);
       return result;
     });
@@ -266,18 +267,18 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
       if (record.oauth_expires_at <= now()) throw new DeployError(400, "GitHub 授权请求已过期，请重新授权。");
       const code = params.get("code");
       if (!code || params.has("error")) throw new DeployError(403, "GitHub 授权未完成，可以重新授权。");
-      projectForWrite(sessionId, record.project_id, record.revision);
+      await projectForWrite(sessionId, record.project_id, record.revision);
       await deploy(record, sessionId, await exchange(code, record.oauth_verifier));
     } catch (error) {
-      recordFailure(record.id, error);
+      await recordFailure(record.id, error);
     }
     return `/?github_deployment=${encode(record.id)}#work`;
   }
 
-  function list(sessionId, projectId) {
-    service.getProject(sessionId, projectId);
-    return db.prepare("SELECT * FROM github_deployments WHERE project_id=? ORDER BY updated_at DESC, rowid DESC")
-      .all(projectId).map(present);
+  async function list(sessionId, projectId) {
+    await service.getProject(sessionId, projectId);
+    return (await db.prepare("SELECT * FROM github_deployments WHERE project_id=? ORDER BY updated_at DESC, insertion_order DESC")
+      .all(projectId)).map(present);
   }
 
   async function confirmedDeploymentUrl(path, record) {
@@ -290,18 +291,18 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
     return latest?.state === "success" ? safeSiteUrl(latest.environment_url, record) : null;
   }
 
-  function markPublished(record, site) {
-    db.prepare(`UPDATE github_deployments SET stage='published',site_url=?,error=NULL,updated_at=?
+  async function markPublished(record, site) {
+    await db.prepare(`UPDATE github_deployments SET stage='published',site_url=?,error=NULL,updated_at=?
       WHERE id=? AND stage='building' AND build_started_at=?`).run(site, now(), record.id, record.build_started_at);
   }
 
   async function status(sessionId, id) {
-    const record = read.get(id);
+    const record = await read.get(id);
     if (!record) throw new DeployError(404, "部署记录不存在。");
-    service.getProject(sessionId, record.project_id);
+    await service.getProject(sessionId, record.project_id);
     const time = now();
-    if (record.stage !== "building" || rateLimitedUntil > time || !db.prepare(`UPDATE github_deployments SET next_check_at=?
-      WHERE id=? AND next_check_at<=? AND stage='building'`).run(time + CHECK_INTERVAL, id, time).changes) return present(record);
+    if (record.stage !== "building" || rateLimitedUntil > time || !(await db.prepare(`UPDATE github_deployments SET next_check_at=?
+      WHERE id=? AND next_check_at<=? AND stage='building'`).run(time + CHECK_INTERVAL, id, time)).changes) return present(record);
     const path = `/repos/${encode(record.github_login)}/${encode(record.repo)}`;
     try {
       const build = await github(`${path}/pages/builds/latest`, { allowMissing: true });
@@ -327,7 +328,7 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
               }
             }
             if (length <= MAX_HTML && digest.digest("hex") === record.html_hash) {
-              markPublished(record, site);
+              await markPublished(record, site);
             }
           } else {
             await response.body?.cancel();
@@ -337,23 +338,23 @@ export function createGitHubPagesService({ db, service, config, renderHtml, fetc
       // Public Pages metadata can return 404 even for a successful deployment.
       if (!build || pages === null) {
         const site = await confirmedDeploymentUrl(path, record);
-        if (site) markPublished(record, site);
+        if (site) await markPublished(record, site);
       }
     } catch (error) {
       if (error instanceof DeployError && error.status === 429) {
         rateLimitedUntil = error.retryAt;
-        db.prepare(`UPDATE github_deployments SET next_check_at=?
+        await db.prepare(`UPDATE github_deployments SET next_check_at=?
           WHERE id=? AND stage='building' AND build_started_at=?`).run(rateLimitedUntil, id, record.build_started_at);
       } else if (error instanceof DeployError && error.status === 422) {
-        db.prepare(`UPDATE github_deployments SET stage='failed',error=?,updated_at=?,next_check_at=0
+        await db.prepare(`UPDATE github_deployments SET stage='failed',error=?,updated_at=?,next_check_at=0
           WHERE id=? AND stage='building' AND build_started_at=?`).run(error.message, now(), id, record.build_started_at);
       }
     }
-    return present(read.get(id));
+    return present(await read.get(id));
   }
 
-  function cleanup() {
-    db.prepare(`UPDATE github_deployments SET oauth_state_hash=NULL,oauth_verifier=NULL,stage='failed',
+  async function cleanup() {
+    await db.prepare(`UPDATE github_deployments SET oauth_state_hash=NULL,oauth_verifier=NULL,stage='failed',
       error='GitHub 授权已超时，请重新授权。' WHERE stage='authorizing' AND oauth_expires_at<=?`).run(now());
   }
 

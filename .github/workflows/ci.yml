@@ -14,6 +14,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: buildurprofile_ci
+          POSTGRES_USER: buildurprofile_ci
+          POSTGRES_PASSWORD: ci-ephemeral
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U buildurprofile_ci -d buildurprofile_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgresql://buildurprofile_ci:ci-ephemeral@127.0.0.1:5432/buildurprofile_ci
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

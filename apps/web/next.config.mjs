@@ -8,7 +8,7 @@ const nextConfig = {
     "@buildurprofile/skills",
     "@buildurprofile/storage"
   ],
-  serverExternalPackages: ["alipay-sdk", "image-size", "subset-font"],
+  serverExternalPackages: ["alipay-sdk", "image-size", "subset-font", "pg"],
   async rewrites() {
     return [
       {

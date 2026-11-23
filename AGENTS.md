@@ -9,7 +9,7 @@
 - `apps/agent`：Python FastAPI + LangGraph；通过私有 HTTP 协议领取任务并调用版本化 Skills。无照片作品同样必须经过图执行。
 - `packages/contracts`：展示合同、运行时校验、JSON Schema 和黄金样例。
 - `packages/skills`：浏览器与 TS Skills、固定模板映射、旧评分兼容及 Node 风格资源校验；Python 有独立 Skill 注册表。
-- `packages/storage`：Node 数据库迁移、任务租约与资产存储；Agent 不直接访问支付数据库。
+- `packages/storage`：Node PostgreSQL 迁移、任务租约与资产存储；Agent 不直接访问支付数据库。
 
 ## 重要概念澄清（产品本体 vs. 交付产物）
 
@@ -35,7 +35,7 @@
 - 新增模型供应商密钥只写入 `.env.agent`，并同步登记 `apps/launcher/src/web-env.mjs` 的 `WEB_EXCLUDED_KEYS`，确保 dev 启动时不透传给 Web 子进程。
 - 匿名项目所有权由服务端会话决定；写操作保持 CSRF 校验，任务和资产按会话隔离。
 - 私有 `/_internal/agent/` 接口只接受服务令牌，反向代理禁止向公网转发；任务读写同时核对有效租约。
-- 数据库、资产、会话密钥和 Agent checkpoint 持久化；生产和沙箱分库分密钥。多主机不得共享 SQLite 文件。
+- 数据库、资产、会话密钥和 Agent checkpoint 持久化；生产和沙箱分库分密钥，Web 业务与 Agent checkpoint 使用独立账号和数据库。多主机部署还需共享私有资产和会话密钥。
 
 ## 生成、支付与交付
 

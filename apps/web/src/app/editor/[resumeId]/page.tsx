@@ -5,7 +5,7 @@ import { projectConfirmedResumeV3, RESUME_MODULE_MAPPING } from "../../../../../
 import type { ResumeDraftItemV2, ResumeDraftSectionV2, ResumeDraftV2, ResumeModuleKind } from "../../../../../../packages/contracts/src/resume-draft";
 import { validHttpUrl } from "../../../../../../packages/contracts/src/resume-v2.mjs";
 import { supportsHighlights } from "../../../../../../packages/contracts/src/presentation-highlights.mjs";
-import { resumeApi, type PendingResumeImage, type ResumeVersion, type ResumeCandidate } from "../../../lib/resumeApi";
+import { resumeApi, type PendingResumeImage, type ResumeCandidate } from "../../../lib/resumeApi";
 import { createResumeAutosave } from "../../../lib/resumeAutosave";
 import { applyLocalDelta, getLocalDelta, makeLocalDelta, putLocalDelta, removeLocalDelta, type ResumeLocalDelta } from "../../../lib/resumeLocalDraft";
 import { AgentChrome } from "../../../components/AgentChrome";
@@ -56,9 +56,10 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState("");
   const [saveStatus,setSaveStatus]=useState<'saved'|'dirty'|'saving'|'offline'|'conflict'|'invalid'>('saved');
-  const [versions,setVersions]=useState<ResumeVersion[]>([]);
-  const [historyOpen,setHistoryOpen]=useState(false);
-  const [historyPreview,setHistoryPreview]=useState<ResumeDraftV2|null>(null);
+  const [saveFeedback, setSaveFeedback] = useState('');
+  const [imagesOpen, setImagesOpen] = useState(false);
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const [imagesError, setImagesError] = useState('');
   const [candidateMode,setCandidateMode]=useState<'overwrite'|'fillEmpty'>('fillEmpty');
   const [candidateTaskId,setCandidateTaskId]=useState('');
   const [candidate,setCandidate]=useState<ResumeCandidate|null>(null);
@@ -97,9 +98,19 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         const result=await resumeApi.candidate(resumeId,candidateTaskId);
         if(!active)return;
         setCandidate(result);
+        setError(current => current === '暂时无法读取重解析进度，正在重试。' ? '' : current);
         if(!['SUCCEEDED','FAILED','CANCELLED'].includes(result.status))timer=setTimeout(()=>void poll(),2000);
       }catch(cause){
-        if(active)setError(cause instanceof Error?cause.message:'重解析候选读取失败。');
+        if (!active) return;
+        const detail = cause instanceof Error ? cause.message : '';
+        if (detail === 'CANDIDATE_NOT_FOUND') {
+          sessionStorage.removeItem(`burp-reparse-candidate-${resumeId}`);
+          setCandidate(null); setCandidateTaskId('');
+          setError('旧的重解析候选已不存在，可以重新发起。');
+        } else {
+          setError('暂时无法读取重解析进度，正在重试。');
+          timer = setTimeout(() => void poll(), 2000);
+        }
       }
     };
     void poll();
@@ -109,7 +120,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     if(!resumeId)return;
     const controller=createResumeAutosave<ResumeDraftV2>({
       save:next=>resumeApi.save(resumeId,normalizeEditorLinks(next)),
-      onStatus:status=>{if(mounted.current)setSaveStatus(status);},
+      onStatus:status=>{if(mounted.current){setSaveStatus(status);if(status==='dirty')setSaveFeedback('');}},
       onSaved:(result,sent)=>{
         baseDraftRef.current=result.draft;
         if(!mounted.current)return;
@@ -119,7 +130,6 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
           const fingerprint=(value:ResumeDraftV2)=>JSON.stringify({...value,revision:0});
           return fingerprint(current)===fingerprint(sent)?result.draft:{...current,revision:result.revision};
         });
-        if(typeof resumeApi.versions==='function')void resumeApi.versions(resumeId).then(result=>{if(mounted.current)setVersions(result.versions);}).catch(()=>{});
       }
     });
     autosaveRef.current=controller;
@@ -138,9 +148,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         .catch(()=>{}).finally(()=>{if(active)setLocalReady(true);});
       else setLocalReady(true);
     }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "草稿读取失败。"); });
-    if(typeof resumeApi.versions==='function')void resumeApi.versions(resumeId).then(result=>{if(active)setVersions(result.versions);}).catch(()=>{});
     void resumeApi.pendingImages(resumeId).then(result => {
-      if (active) setPendingImages(result.images);
+      if (active) { setPendingImages(result.images); if (result.images.length) setImagesOpen(true); }
     }).catch(() => { /* 可以通过管理入口重试；不影响现有草稿。 */ });
     // 原文对照是辅助信息：拉取失败时静默降级为不显示，不阻塞编辑
     void resumeApi.blocks(resumeId).then((result) => {
@@ -299,7 +308,8 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       if(section)selectModule(section.kind);
       setError('链接须为有效 HTTP(S) 地址。');return;
     }
-    setBusy(true); setError("");
+    const alreadySaved = autosaveRef.current?.status() === "saved";
+    setBusy(true); setError(""); setSaveFeedback("");
     try {
       if (continueToStyle) projectConfirmedResumeV3(normalized);
       setDraft(normalized);
@@ -307,6 +317,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       if(autosaveRef.current?.status()!=='saved')throw new Error('REVISION_CONFLICT');
       setDialog(null);
       if (continueToStyle){allowLeaveRef.current=true;window.location.assign(`/style/${encodeURIComponent(resumeId)}`);}
+      else setSaveFeedback(alreadySaved ? "草稿已保存，无待保存修改。" : "草稿已保存。");
     } catch (cause) {
       // 保存失败走挽留弹窗：改动仍在页面上，可一键重试或继续编辑
       const detail = cause instanceof Error ? cause.message : "保存失败。";
@@ -398,7 +409,6 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       const result=await resumeApi.applyCandidate(resumeId,candidate.taskId,revision);
       const updated=result.draft??(await resumeApi.read(resumeId)).draft;
       baseDraftRef.current=updated;autosaveRef.current?.initialize(updated);setDraft(updated);
-      setVersions((await resumeApi.versions(resumeId)).versions);
       setCandidate(null);setCandidateTaskId('');setDialog(null);
       sessionStorage.removeItem(`burp-reparse-candidate-${resumeId}`);
     }catch(cause){setError(cause instanceof Error?cause.message:'候选应用失败，请重新核对。');}
@@ -413,14 +423,18 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
   };
 
   const refreshPendingImages = async () => {
+    setImagesOpen(true);
+    setImagesLoading(true);
+    setImagesError("");
     try { setPendingImages((await resumeApi.pendingImages(resumeId)).images); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "未保存图片读取失败。"); }
+    catch (cause) { setImagesError(cause instanceof Error ? cause.message : "未保存图片读取失败。"); }
+    finally { setImagesLoading(false); }
   };
   const recoverImage = (imageId: string, itemId: string) => {
     const target = draft?.sections.find(section => section.items.some(item => item.itemId === itemId));
     const item = target?.items.find(item => item.itemId === itemId);
     const count = draft?.sections.flatMap(section => section.items.flatMap(item => item.supplements?.images ?? [])).length ?? 0;
-    if (!target || !item) { setError("请先选择要恢复的条目。"); return; }
+    if (!target || !item) { setImagesError("请先选择要恢复的条目。"); return; }
     if ((item.supplements?.images.length ?? 0) >= 6 || count >= 24) { setError("每条最多 6 张、整份简历最多 24 张图片。"); return; }
     immediateSaveRef.current=true;
     updateItem(target.kind, itemId, current => ({...current,
@@ -431,10 +445,11 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     selectModule(target.kind);
   };
   const discardPendingImage = async (imageId: string) => {
+    setImagesError("");
     try {
       await resumeApi.deleteImage(resumeId, imageId);
       setPendingImages(previous => previous.filter(image => image.imageId !== imageId));
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "图片删除失败。"); }
+    } catch (cause) { setImagesError(cause instanceof Error ? cause.message : "图片删除失败。"); }
   };
   const recoverLocal=()=>{
     if(!draft||!recoverableDelta)return;
@@ -448,27 +463,6 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     const url=URL.createObjectURL(new Blob([JSON.stringify(recoverableDelta,null,2)],{type:'application/json'}));
     const anchor=document.createElement('a');anchor.href=url;anchor.download='简历未保存修改.json';anchor.click();
     setTimeout(()=>URL.revokeObjectURL(url),0);
-  };
-  const previewVersion=async(revision:number)=>{
-    try{setHistoryPreview((await resumeApi.version(resumeId,revision)).draft);setError('');}
-    catch(cause){setError(cause instanceof Error?cause.message:'历史版本读取失败。');}
-  };
-  const restoreHistory=async()=>{
-    if(!historyPreview||!draft)return;
-    setBusy(true);
-    try{
-      await autosaveRef.current?.flush(draft);
-      if(autosaveRef.current?.status()!=='saved')throw new Error('请先解决未保存修改。');
-      const expected=autosaveRef.current.latest()?.revision??draft.revision;
-      const restored=await resumeApi.restore(resumeId,expected,historyPreview.revision);
-      baseDraftRef.current=restored.draft;
-      autosaveRef.current?.initialize(restored.draft);
-      setDraft(restored.draft);setHistoryPreview(null);
-      setVersions((await resumeApi.versions(resumeId)).versions);
-      if(cacheScopeRef.current)void removeLocalDelta(cacheScopeRef.current,resumeId).catch(()=>{});
-      setError('');
-    }catch(cause){setError(cause instanceof Error?cause.message:'历史恢复失败。');}
-    finally{setBusy(false);}
   };
   const localImageIds = new Set(draft?.sections.flatMap(section => section.items.flatMap(item =>
     (item.supplements?.images ?? []).map(image => image.imageId))) ?? []);
@@ -515,16 +509,16 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       <StepHeader number={2} title="核对经历，把你的能力补充完整"
         description={`Agent 已按模块整理内容，只有主动勾选的内容会用于作品。原 PDF 与草稿保留至 ${expiresAt ? new Date(expiresAt).toLocaleString("zh-CN") : "上传 30 天后"} 自动删除。`} />
       <div className="proof-status-row">
-        <p role="status">{saveStatus==='saving'?'正在保存…':saveStatus==='dirty'?'待自动保存':saveStatus==='offline'?'保存失败：修改保存在本机，可重试':saveStatus==='invalid'?'链接地址无效，请修改后保存':saveStatus==='conflict'?'其他页面已更新：本机修改已保留':savedAt ? `已保存 ${savedAt}` : "尚未保存"}
+        <p role="status">{saveStatus==='saving'?'正在保存…':saveStatus==='dirty'?'待自动保存':saveStatus==='offline'?'保存失败：修改保存在本机，可重试':saveStatus==='invalid'?'链接地址无效，请修改后保存':saveStatus==='conflict'?'其他页面已更新：本机修改已保留':saveFeedback || (savedAt ? `已保存 ${savedAt}` : draft ? "草稿已保存" : "正在读取草稿…")}
           {pendingSections > 0 ? ` · 待确认 ${pendingSections} 个模块` : ""}</p>
-        <ProofButton disabled={busy || !draft} onClick={() => void refreshPendingImages()}>管理未保存图片</ProofButton>
+        <ProofButton disabled={busy || !draft || imagesLoading} aria-expanded={imagesOpen} aria-controls="pending-resume-images" onClick={() => void refreshPendingImages()}>管理未保存图片</ProofButton>
         <ProofButton disabled={busy || !draft} onClick={() => void save()}>保存草稿</ProofButton>
-        <ProofButton disabled={busy || !draft} onClick={()=>setHistoryOpen(value=>!value)}>版本历史</ProofButton>
         <ProofButton disabled={busy || !draft || !!candidateTaskId} onClick={()=>setDialog({kind:'reparseCandidate'})}>重新解析原 PDF</ProofButton>
         {ocrAvailable&&<ProofButton disabled={busy || !draft || !!candidateTaskId}
           onClick={()=>void createCandidate(true)}>对无文字页尝试本机 OCR</ProofButton>}
         <ProofButton disabled={busy || !draft} onClick={() => setDialog({ kind: "reparse" })}>创建新草稿副本</ProofButton>
       </div>
+      {error && <p role="alert" className="proof-inline-error">{error}</p>}
       {candidate&&<section className="proof-card" aria-label="重解析候选">
         <h2>重解析候选</h2>
         <p role="status">{candidate.mode==='fillEmpty'?'仅补充空白字段':'覆盖当前内容'} · {candidate.status} {candidate.progress??0}%</p>
@@ -551,26 +545,17 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
         <ProofButton onClick={downloadLocalDelta}>下载差异</ProofButton>
         <ProofButton onClick={()=>{if(cacheScopeRef.current)void removeLocalDelta(cacheScopeRef.current,resumeId).catch(()=>{});setRecoverableDelta(null);}}>丢弃本机副本</ProofButton>
       </section>}
-      {historyOpen&&<section className="proof-card" aria-label="简历版本历史">
-        <h2>简历版本历史</h2>
-        <p>当前版本与最近 10 个已保存版本；恢复会创建新版本。</p>
-        <ul>{versions.map(version=><li key={version.revision}>
-          版本 {version.revision} · {new Date(version.createdAt).toLocaleString('zh-CN')}
-          {version.revision!==draft?.revision&&<ProofButton onClick={()=>void previewVersion(version.revision)}>查看版本 {version.revision}</ProofButton>}
-        </li>)}</ul>
-        {historyPreview&&<div aria-label={`版本 ${historyPreview.revision} 预览`}>
-          <h3>版本 {historyPreview.revision}</h3>
-          {historyPreview.sections.filter(section=>section.items.length).map(section=><p key={section.kind}>
-            {labels[section.kind]}：{section.items.map(item=>item.title||item.details.slice(0,40)).join('、')}
-          </p>)}
-          <ProofButton disabled={busy} onClick={()=>void restoreHistory()}>恢复版本 {historyPreview.revision}</ProofButton>
-        </div>}
-      </section>}
-      {draft && recoverableImages.length > 0 && <section className="proof-card" aria-label="未保存图片">
+      {draft && imagesOpen && <section id="pending-resume-images" className="proof-card" aria-label="未保存图片">
         <h2>未保存图片</h2>
+        <ProofButton variant="quiet" onClick={() => setImagesOpen(false)}>关闭未保存图片</ProofButton>
+        {imagesLoading && <p role="status">正在读取未保存图片…</p>}
+        {imagesError && <p role="alert">{imagesError}</p>}
+        {!imagesLoading && !imagesError && recoverableImages.length === 0 && <p>暂无未保存图片。</p>}
+        {recoverableImages.length > 0 && <>
         <p>这些上传尚未进入已保存草稿，仍会占用图片额度。可恢复到条目或删除；请保留其他编辑页面仍在使用的图片。</p>
         <div className="resume-image-grid">{recoverableImages.map((image, index) => {
-          const targetId = recoveryTargets[image.imageId] ?? image.itemId ?? "";
+          const preferred = recoveryTargets[image.imageId] ?? image.itemId;
+          const targetId = draft.sections.some(section => section.items.some(item => item.itemId === preferred)) ? preferred! : "";
           return <article key={image.imageId}>
             <img src={resumeApi.imageUrl(resumeId, image.imageId)} alt={`未保存图片 ${index + 1}`} />
             <label className="proof-field"><span>恢复到条目 {index + 1}</span>
@@ -583,6 +568,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
             <ProofButton onClick={() => void discardPendingImage(image.imageId)}>删除未保存图片 {index + 1}</ProofButton>
           </article>;
         })}</div>
+        </>}
       </section>}
       {draft && <div className="proof-confirm-layout">
         <ModuleChecklist entries={[...draft.sections].sort((a,b)=>a.order-b.order).map((section) => ({ kind: section.kind,
@@ -640,7 +626,6 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       {draft && (!hasName || !hasContact) && <p className="proof-confirm-hint" id="resume-confirm-hint">
         请在基本信息中勾选姓名，以及邮箱或电话，再继续。<a href="#resume-basicInfo">返回基本信息 ↑</a>
       </p>}
-      {error && <p role="alert" className="proof-inline-error">{error}</p>}
       <div className="proof-actions">
         <ProofButton variant="primary" disabled={busy || !draft}
           aria-describedby={draft && (!hasName || !hasContact) ? "resume-confirm-hint" : undefined}

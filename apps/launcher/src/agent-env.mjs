@@ -14,7 +14,7 @@ export function readAgentEnvFile(path = '.env.agent') {
 export function applyAgentEnvFile(env, file) {
   Object.assign(env, file);
   for (const key of Object.keys(env)) {
-    if (key.startsWith('ALIPAY_') || key.startsWith('PAYMENT_') || key.startsWith('GITHUB_PAGES_')) delete env[key];
+    if (key === 'DATABASE_URL' || key === 'DATABASE_SCHEMA' || key === 'TEST_DATABASE_URL' || key.startsWith('POSTGRES_') || key.startsWith('ALIPAY_') || key.startsWith('PAYMENT_') || key.startsWith('GITHUB_PAGES_')) delete env[key];
   }
   return env;
 }

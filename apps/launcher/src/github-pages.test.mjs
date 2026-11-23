@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { openDatabase } from "../../web/src/server/database.mjs";
+import { openTestDatabase as openDatabase } from "./postgres-test-db.mjs";
 import { createPaymentService } from "../../web/src/server/service.mjs";
 import { createRequestHandler, dispatchWebRequest } from "../../web/src/server/http.mjs";
 import { githubPagesConfig } from "../../web/src/server/github-pages.mjs";
@@ -95,8 +95,8 @@ function fakeGitHub() {
 }
 
 async function fixture(t) {
-  const db = openDatabase(":memory:");
-  t.after(() => db.close());
+  const db = await openDatabase();
+  t.after(async () => await db.close());
   let time = 1_000_000;
   const remote = fakeGitHub();
   const gateway = { verifyNotify: () => true, pagePay: async () => "<form></form>" };
@@ -169,7 +169,7 @@ test("paid project publishes only after the expected GH build and HTML are publi
   assert.equal((await owner(callback)).status, 400);
   assert.equal((await outsider(`/api/github-pages/${task.id}`)).status, 404);
   assert.equal((await outsider(path)).status, 404);
-  assert.equal(db.prepare("SELECT oauth_state_hash,oauth_verifier FROM github_deployments").get().oauth_verifier, null);
+  assert.equal((await db.prepare("SELECT oauth_state_hash,oauth_verifier FROM github_deployments").get()).oauth_verifier, null);
   assert.match(remote.files.get("index.html").toString(), /<!doctype html>/);
   assert.doesNotMatch(remote.files.get("index.html").toString(), /synthetic-token|synthetic-secret/);
   remote.build = { commit: "wrong-commit", status: "built" };
@@ -182,9 +182,9 @@ test("paid project publishes only after the expected GH build and HTML are publi
   remote.site = remote.files.get("index.html");
   assert.equal((await status(task.id)).siteUrl, siteUrl);
   assert.equal((await (await start()).json()).authorizationUrl, null);
-  assert.equal(db.prepare("SELECT count(*) AS count FROM shares").get().count, 0);
-  assert.equal(db.prepare("SELECT count(*) AS count FROM orders").get().count, 1);
-  assert.equal(db.prepare("SELECT status FROM orders WHERE out_trade_no=?").get(order.outTradeNo).status, "PAID");
+  assert.equal((await db.prepare("SELECT count(*) AS count FROM shares").get()).count, 0);
+  assert.equal((await db.prepare("SELECT count(*) AS count FROM orders").get()).count, 1);
+  assert.equal((await db.prepare("SELECT status FROM orders WHERE out_trade_no=?").get(order.outTradeNo)).status, "PAID");
 });
 
 test("a waiting project recovers from a Pages build 404 using the current GitHub deployment", async t => {

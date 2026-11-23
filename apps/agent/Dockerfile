@@ -7,7 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY apps/agent /app/apps/agent
 RUN pip install --no-cache-dir uv==0.11.12 && \
     uv sync --project /app/apps/agent --frozen --no-dev --no-editable && \
-    mkdir -p /app/checkpoints && chown -R 10001:10001 /app/checkpoints && \
     rm -rf /root/.cache/uv
 USER 10001:10001
 ENV AGENT_HOST=0.0.0.0 AGENT_PORT=8788

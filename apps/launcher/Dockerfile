@@ -11,6 +11,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/launcher ./apps/launcher
 COPY --from=build /app/apps/web ./apps/web
 COPY --from=build /app/packages ./packages
+COPY --from=build /app/scripts ./scripts
 RUN mkdir -p /app/data && chown -R node:node /app
 USER node
 EXPOSE 8787

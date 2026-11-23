@@ -6,7 +6,7 @@
 浏览器客户端（Next.js Client Components）：PDF 上传 → 十模块核对 → 固定模板选择
   ↓ 私有 PDF 上传与解析任务；确认后提交 resumeId/revision + 角色/templateId + 可选照片资产 ID
 Next.js Route Handlers（apps/web/src/app/api & src/server）
-  ├─ 会话 / CSRF / 解析与生成队列 / 私有 PDF 和资产（SQLite via packages/storage）
+  ├─ 会话 / CSRF / 解析与生成队列 / 私有 PDF 和资产（PostgreSQL via packages/storage）
   ├─ ↕ 服务令牌 + 有效任务租约（/_internal/agent/*）
   │    Python Agent（apps/agent）：简历解析图 → OpenAI 文本模型；生成图 → 可选图像 API
   │      ↓ DesignConfig + 成图资产 ID
@@ -20,7 +20,7 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 | `apps/agent` | 唯一生成任务消费者；独立 Python Skill 注册表；通过私有 HTTP 读写本任务，不访问支付卷 |
 | `packages/contracts` | TypeScript 类型、Node 校验、版本化 JSON Schema 和跨语言黄金样例 |
 | `packages/skills` | 浏览器注册表、TS 评分映射、公共风格目录与仅服务端可用的固定资源校验 |
-| `packages/storage` | SQLite 迁移、确认 brief 清洗、任务租约、重试取消和资产存储 |
+| `packages/storage` | PostgreSQL 迁移、确认 brief 清洗、任务租约、重试取消和资产存储 |
 
 所有作品集生成任务（含无照片作品）均经过 Python LangGraph 图执行。付款、分享和下载属于确定性服务端业务，不能作为 Agent 可调用的自由工具。
 
@@ -42,11 +42,13 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 ## 私有任务协议 v1
 
+Agent 以有界长轮询领取生成与解析任务。PostgreSQL 在入队事务提交后发送通知，Web 监听队列事件并唤醒等待中的请求。等待最多 20 秒，每 10 秒补查一次队列来发现漏接通知、到期重试或过期租约。领取时通过 `FOR UPDATE SKIP LOCKED` 跳过其他事务持有的行锁。
+
 前缀为 `/_internal/agent`（在 Next.js 中通过 `next.config.mjs` rewrites 映射到 `/api/_internal/agent/*` Route Handler），只接受 `Authorization: Bearer AGENT_SERVICE_TOKEN`，采用常数时间比较。服务令牌为 32–512 字符且不含空白；反向代理不得向公网转发此路径。
 
 | 方法与相对路径 | 输入 / 输出 |
 | --- | --- |
-| `POST /lease` | `{workerId,supportsPresentationHighlights?}` → `204` 或任务：`id, leaseToken, workflowVersion, brief, config, portraitAssetId, styleId, outputAssetId` |
+| `POST /lease` | `{workerId,waitMs?,supportsPresentationHighlights?}` → `204` 或任务：`id, leaseToken, workflowVersion, brief, config, portraitAssetId, styleId, outputAssetId` |
 | `POST /heartbeat` | `{workerId}` → `{ok:true}`，更新 worker 就绪心跳 |
 | `POST /tasks/:id/heartbeat` | `{leaseToken}` → `{ok,cancelRequested}`，续租并检查取消 |
 | `GET /tasks/:id/output` | `x-agent-lease` → `{assetId,exists}`，查询可复用成图 |
@@ -65,13 +67,13 @@ Next.js Route Handlers（apps/web/src/app/api & src/server）
 
 排队任务可立即取消，运行中任务标记取消并尽力终止外部请求。已发出的供应商调用可能计费，取消不承诺退款。限流和暂不可用有限重试，超时不自动重试以降低重复计费风险。
 
-当前为单机 SQLite WAL、私有本地资产和 Python 独立 SQLite checkpoint。多主机部署前需迁移共享任务数据库、对象存储及 checkpoint 适配器，不跨主机共享 SQLite 文件。持久化与健康检查见[部署说明](deployment.md)。
+当前为单机 Compose，Web 业务和 Python checkpoint 使用同一 PostgreSQL 实例上的独立数据库及账号。原 PDF、照片和会话密钥仍保存在 Web 应用文件卷。多主机部署还需要共享私有资产、会话密钥及相应的清理协调。持久化与健康检查见[部署说明](deployment.md)。
 
 ## 简历图片与作品资产
 
 补充图片上传保存在私有 `resume_images`，按真实格式与尺寸校验：PNG/JPEG/WebP、1–8000 像素、单张 5 MiB、每条 6 张、整份 24 张且合计 50 MiB。原 PDF、来源块、草稿与这批图片沿用上传起 30 天期限。取消未保存的图片或保存时移除原引用会释放对应图片；未保存上传可通过属主的 `GET /api/resumes/:id/images` 列表恢复或逐张删除，避免刷新后占满额度；不在保存时批量清除另一编辑页面的未提交图片，且删除时再次拒绝已保存引用。孤立上传最迟随原简历到期清除。
 
-生成入队在同一事务中复制已选图片到 `showcase_media` 并写 `generation_media`；生成 brief/config/checkpoint 仅含 ID。无肖像 v3 生成成功后，以任务为幂等来源创建未付款项目并关联 `project_media`。浏览器恢复成功任务时读取项目当前配置与权益，交接后清除旧任务指针，避免覆盖后续编辑。Wibi 肖像继续仅供本机演示，不自动保存为可付费交付项目。
+生成入队在同一事务中复制已选图片到 `showcase_media` 并写 `generation_media`；生成 brief/config/checkpoint 仅含 ID。无肖像生成完成时复用同会话、同简历且展示配置一致的项目，首次创建时关联 `project_media`。另存同一作品的肖像版本时沿用已有项目和支付权益。浏览器恢复成功任务时读取项目当前配置与权益，交接后清除旧任务指针，避免覆盖后续编辑。Wibi 肖像继续仅供本机演示，不自动保存为可付费交付项目。
 
 作品图片按项目生命周期保留，删除原简历不影响作品。属主通过 `/api/showcase-media/:id` 预览；分享通过 `/api/shares/:token/media/:id` 读取，并校验令牌、付款、项目和快照引用。旧分享快照可保留更新前的图片；撤销、过期、删项目后即时拒绝。导出的单文件 HTML 内嵌作品图片，不依赖私有 PDF 路由。未形成项目的复制品最多保留 30 天；清理为有界批次，有效运行租约在到期边界完成前受保护，废弃排队任务到期转失败。项目删除或旧分享失效后，按引用关系释放无主作品图片。
 

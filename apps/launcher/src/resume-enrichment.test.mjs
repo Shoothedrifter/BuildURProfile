@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {openDatabase} from '../../../packages/storage/src/database.mjs';
+import { openTestDatabase as openDatabase } from './postgres-test-db.mjs';
 import {createGenerationService} from '../../../packages/storage/src/generations.mjs';
 import {createResumeParseQueue} from '../../../packages/storage/src/resumes/queue.mjs';
 import {normalizeResumeDraft} from '../../../packages/contracts/src/resume-draft.ts';
@@ -11,14 +11,14 @@ const fixture=JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtu
 const source=JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/resume-source.v1.json',import.meta.url)));
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=','base64');
 const answers={'e-presence':2,'e-type':2,'k-pace':2,'k-cards':2,'p-tone':1,'p-strength':2,'s-browse':2,'s-control':2};
-function setup(t){
- const db=openDatabase(':memory:'),root=mkdtempSync(join(tmpdir(),'enrichment-'));let time=Date.parse(source.uploadedAt);
- t.after(()=>{db.close();rmSync(root,{recursive:true,force:true});});
- for(const owner of ['owner','other'])db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(owner,time,time+365*86400000);
+async function setup(t){
+ const db=await openDatabase(),root=mkdtempSync(join(tmpdir(),'enrichment-'));let time=Date.parse(source.uploadedAt);
+ t.after(async ()=>{await db.close();rmSync(root,{recursive:true,force:true});});
+ for(const owner of ['owner','other'])await db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(owner,time,time+365*86400000);
  const draft=structuredClone(fixture);draft.revision=1;
- db.prepare('INSERT INTO resume_files(id,owner_session_id,file_name,size,page_count,uploaded_at,expires_at) VALUES(?,?,?,?,?,?,?)').run(draft.fileId,'owner','synthetic.pdf',100,1,time,time+30*86400000);
- db.prepare("INSERT INTO resumes(id,file_id,owner_session_id,status,draft_json,created_at,updated_at) VALUES(?,?,'owner','SUCCEEDED',?,?,?)").run(draft.resumeId,draft.fileId,JSON.stringify(draft),time,time);
- for(const b of source.blocks)db.prepare('INSERT INTO resume_blocks VALUES(?,?,?)').run(draft.resumeId,b.blockId,JSON.stringify(b));
+ await db.prepare('INSERT INTO resume_files(id,owner_session_id,file_name,size,page_count,uploaded_at,expires_at) VALUES(?,?,?,?,?,?,?)').run(draft.fileId,'owner','synthetic.pdf',100,1,time,time+30*86400000);
+ await db.prepare("INSERT INTO resumes(id,file_id,owner_session_id,status,draft_json,created_at,updated_at) VALUES(?,?,'owner','SUCCEEDED',?,?,?)").run(draft.resumeId,draft.fileId,JSON.stringify(draft),time,time);
+ for(const b of source.blocks)await db.prepare('INSERT INTO resume_blocks VALUES(?,?,?)').run(draft.resumeId,b.blockId,JSON.stringify(b));
  const queue=createResumeParseQueue({db,repository:{},now:()=>time});
  const service=createGenerationService({db,assetRoot:root,now:()=>time});
  const input={resumeId:draft.resumeId,revision:1,role:'frontend-creative-developer',answers,idempotencyKey:'request1'};
@@ -31,46 +31,46 @@ function addSyntheticProject(draft){
  draft.sections.find(section=>section.kind==='projects').items=[item];
  return item;
 }
-test('new confirmed generation carries user module order in v4 brief',t=>{
- const s=setup(t),draft=normalizeResumeDraft(s.draft);
+test('new confirmed generation carries user module order in v4 brief',async (t)=>{
+ const s=await setup(t),draft=normalizeResumeDraft(s.draft);
  const projects=draft.sections.find(section=>section.kind==='projects');
  projects.visible=true;
  projects.items=[{...draft.sections[0].items[0],itemId:'project-one',order:0,title:'项目甲',details:'正文',facts:[],included:true}];
  [projects,...draft.sections.filter(section=>section.kind!=='projects')].forEach((section,index)=>{section.order=index;});
- s.db.prepare('UPDATE resumes SET draft_json=? WHERE id=?').run(JSON.stringify(draft),draft.resumeId);
- const task=s.service.enqueueResume('owner',s.input);
- const row=s.db.prepare('SELECT brief_json,workflow_version FROM generations WHERE id=?').get(task.id);
+ await s.db.prepare('UPDATE resumes SET draft_json=? WHERE id=?').run(JSON.stringify(draft),draft.resumeId);
+ const task=await s.service.enqueueResume('owner',s.input);
+ const row=await s.db.prepare('SELECT brief_json,workflow_version FROM generations WHERE id=?').get(task.id);
  assert.equal(row.workflow_version,'python-agent-v4');
  const resume=JSON.parse(row.brief_json).content.resume;
  assert.equal(resume.version,'resume-v3');
  assert.deepEqual(resume.sections.slice(0,2).map(section=>section.kind),['projects','basicInfo']);
  assert.doesNotMatch(row.brief_json,/sourceBlockIds|editedFields|confidence/);
 });
-test('template generation binds the selected template without hidden assessment answers',t=>{
- const s=setup(t);
+test('template generation binds the selected template without hidden assessment answers',async (t)=>{
+ const s=await setup(t);
  const input={resumeId:s.input.resumeId,revision:1,role:s.input.role,templateId:'cyber-creator-v1',idempotencyKey:'template-request'};
- const task=s.service.enqueueResume('owner',input);
- const row=s.db.prepare('SELECT brief_json,workflow_version FROM generations WHERE id=?').get(task.id);
+ const task=await s.service.enqueueResume('owner',input);
+ const row=await s.db.prepare('SELECT brief_json,workflow_version FROM generations WHERE id=?').get(task.id);
  assert.equal(row.workflow_version,'python-agent-v6');
  const brief=JSON.parse(row.brief_json);
  assert.equal(brief.templateId,'cyber-creator-v1');
  assert.equal(brief.answers,undefined);
- assert.throws(()=>s.service.enqueueResume('owner',{...input,templateId:'warm-v1'}),e=>e.status===409);
- assert.throws(()=>s.service.enqueueResume('owner',{...input,revision:2}),e=>e.status===409);
- assert.throws(()=>s.service.enqueueResume('other',{...input,idempotencyKey:'other'}));
+ await assert.rejects(async ()=>await s.service.enqueueResume('owner',{...input,templateId:'warm-v1'}),e=>e.status===409);
+ await assert.rejects(async ()=>await s.service.enqueueResume('owner',{...input,revision:2}),e=>e.status===409);
+ await assert.rejects(async ()=>await s.service.enqueueResume('other',{...input,idempotencyKey:'other'}));
 });
-test('Pixel World queues a confirmed revision exactly once', t => {
- const s = setup(t), item = addSyntheticProject(s.draft);
- const imageId = s.queue.saveImage('owner', s.draft.resumeId, 'image/png', png, item.itemId).imageId;
+test('Pixel World queues a confirmed revision exactly once', async (t) => {
+ const s = await setup(t), item = addSyntheticProject(s.draft);
+ const imageId = (await s.queue.saveImage('owner', s.draft.resumeId, 'image/png', png, item.itemId)).imageId;
  item.supplements.images = [{imageId, caption:'确认图片'}];
- const revision = s.queue.patch('owner', s.draft.resumeId, { revision: 1, draft: s.draft }).revision;
+ const revision = (await s.queue.patch('owner', s.draft.resumeId, { revision: 1, draft: s.draft })).revision;
  const input = { resumeId:s.draft.resumeId, revision, role:s.input.role, templateId:'pixel-world-v1', idempotencyKey:'pixel' };
- const task = s.service.enqueueResume('owner', input);
- assert.equal(s.service.enqueueResume('owner', input).id, task.id);
- assert.throws(() => s.service.enqueueResume('owner', {...input, revision:revision + 1}), {status:409});
- assert.throws(() => s.service.enqueueResume('owner', {...input, templateId:'warm-v1'}), {status:409});
- assert.throws(() => s.service.enqueueResume('other', input), {status:404});
- const lease = s.service.leaseNext({ supportsPixelWorld:true });
+ const task = await s.service.enqueueResume('owner', input);
+ assert.equal((await s.service.enqueueResume('owner', input)).id, task.id);
+ await assert.rejects(async () => await s.service.enqueueResume('owner', {...input, revision:revision + 1}), {status:409});
+ await assert.rejects(async () => await s.service.enqueueResume('owner', {...input, templateId:'warm-v1'}), {status:409});
+ await assert.rejects(async () => await s.service.enqueueResume('other', input), {status:404});
+ const lease = await s.service.leaseNext({ supportsPixelWorld:true });
  assert.equal(lease.workflow_version, 'python-agent-v7');
  const content = JSON.parse(lease.brief_json).content;
  const project = content.resume.sections.find(section => section.kind === 'projects').items[0];
@@ -78,108 +78,109 @@ test('Pixel World queues a confirmed revision exactly once', t => {
  assert.deepEqual(project.supplement.images, [{imageId, caption:'确认图片'}]);
  const base = JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/agent-golden.v1.json', import.meta.url))).expected.config;
  const config = { ...base, templateId:input.templateId, content };
- assert.equal(s.service.complete(task.id, {leaseToken:lease.lease_token, config}), true);
- assert.equal(s.service.complete(task.id, {leaseToken:lease.lease_token, config}), false);
- assert.ok(s.service.getTask('owner', task.id).projectId);
- assert.equal(s.db.prepare('SELECT count(*) n FROM projects').get().n, 1);
- assert.equal(s.db.prepare('SELECT count(*) n FROM entitlements').get().n, 0);
- assert.deepEqual(s.service.readShowcaseMedia('owner', imageId).bytes, png);
+ assert.equal(await s.service.complete(task.id, {leaseToken:lease.lease_token, config}), true);
+ assert.equal(await s.service.complete(task.id, {leaseToken:lease.lease_token, config}), false);
+ assert.ok((await s.service.getTask('owner', task.id)).projectId);
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM projects').get()).n, 1);
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM entitlements').get()).n, 0);
+ assert.deepEqual((await s.service.readShowcaseMedia('owner', imageId)).bytes, png);
 });
 
-test('server projects exact revision, materializes only selected media atomically and isolates owners',t=>{
- const s=setup(t),item=addSyntheticProject(s.draft),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
+test('server projects exact revision, materializes only selected media atomically and isolates owners',async (t)=>{
+ const s=await setup(t),item=addSyntheticProject(s.draft),id=(await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId)).imageId;
  item.supplements={text:'说明',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图'}]};
- const saved=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});s.input.revision=saved.revision;
- assert.throws(()=>s.service.enqueueResume('other',s.input));
- assert.throws(()=>s.service.enqueueResume('owner',{...s.input,revision:1}));
- const task=s.service.enqueueResume('owner',s.input);assert.equal(s.service.enqueueResume('owner',s.input).id,task.id);
- const row=s.db.prepare('SELECT * FROM generations WHERE id=?').get(task.id);
+ const saved=await s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});s.input.revision=saved.revision;
+ await assert.rejects(async ()=>await s.service.enqueueResume('other',s.input));
+ await assert.rejects(async ()=>await s.service.enqueueResume('owner',{...s.input,revision:1}));
+ const task=await s.service.enqueueResume('owner',s.input);assert.equal((await s.service.enqueueResume('owner',s.input)).id,task.id);
+ const row=await s.db.prepare('SELECT * FROM generations WHERE id=?').get(task.id);
  assert.equal(row.workflow_version,'python-agent-v4');assert.doesNotMatch(row.brief_json,/sourceBlockIds|confidence|秘密电话/);
- assert.equal(s.db.prepare('SELECT count(*) n FROM showcase_media').get().n,1);
- assert.deepEqual(s.service.readShowcaseMedia('owner',id).bytes,png);
- assert.throws(()=>s.service.readShowcaseMedia('other',id));
- s.db.prepare('DELETE FROM resume_files WHERE id=?').run(s.draft.fileId);
- assert.deepEqual(s.service.readShowcaseMedia('owner',id).bytes,png);
- s.service.cancel('owner',task.id);s.advance();s.service.cleanupResumeMedia();
- assert.equal(s.db.prepare('SELECT count(*) n FROM showcase_media').get().n,0);
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM showcase_media').get()).n,1);
+ assert.deepEqual((await s.service.readShowcaseMedia('owner',id)).bytes,png);
+ await assert.rejects(async ()=>await s.service.readShowcaseMedia('other',id));
+ await s.db.prepare('DELETE FROM resume_files WHERE id=?').run(s.draft.fileId);
+ assert.deepEqual((await s.service.readShowcaseMedia('owner',id)).bytes,png);
+ await s.service.cancel('owner',task.id);s.advance();await s.service.cleanupResumeMedia();
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM showcase_media').get()).n,0);
 });
-test('invalid bytes, per-item limits, review and foreign image references fail without copies',t=>{
- const s=setup(t),item=addSyntheticProject(s.draft);
- assert.throws(()=>s.queue.saveImage('owner',s.draft.resumeId,'image/png',Buffer.from('fake'),item.itemId));
- for(let i=0;i<6;i++)s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId);
- assert.throws(()=>s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId));
- item.needsReview=true;s.db.prepare('UPDATE resumes SET draft_json=?').run(JSON.stringify(s.draft));
- assert.throws(()=>s.service.enqueueResume('owner',s.input),/核对/);
- item.needsReview=false;item.supplements={text:'',links:[],images:[{imageId:'not_owned',caption:''}]};s.db.prepare('UPDATE resumes SET draft_json=?').run(JSON.stringify(s.draft));
- assert.throws(()=>s.service.enqueueResume('owner',s.input));
- assert.equal(s.db.prepare('SELECT count(*) n FROM generations').get().n,0);
- assert.equal(s.db.prepare('SELECT count(*) n FROM showcase_media').get().n,0);
+test('invalid bytes, per-item limits, review and foreign image references fail without copies',async (t)=>{
+ const s=await setup(t),item=addSyntheticProject(s.draft);
+ await assert.rejects(async ()=>await s.queue.saveImage('owner',s.draft.resumeId,'image/png',Buffer.from('fake'),item.itemId));
+ for(let i=0;i<6;i++)await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId);
+ await assert.rejects(async ()=>await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId));
+ item.needsReview=true;await s.db.prepare('UPDATE resumes SET draft_json=?').run(JSON.stringify(s.draft));
+ await assert.rejects(async ()=>await s.service.enqueueResume('owner',s.input),/核对/);
+ item.needsReview=false;item.supplements={text:'',links:[],images:[{imageId:'not_owned',caption:''}]};await s.db.prepare('UPDATE resumes SET draft_json=?').run(JSON.stringify(s.draft));
+ await assert.rejects(async ()=>await s.service.enqueueResume('owner',s.input));
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM generations').get()).n,0);
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM showcase_media').get()).n,0);
 });
 
 test('successful v3 task creates exactly one unpaid project and retains media beyond PDF expiry',async t=>{
- const s=setup(t),item=addSyntheticProject(s.draft),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
+ const s=await setup(t),item=addSyntheticProject(s.draft),id=(await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId)).imageId;
  item.supplements={text:'正文补充',links:[{label:'主页',url:'https://example.test'}],images:[{imageId:id,caption:'图片说明'}]};
- s.input.revision=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft}).revision;
- const task=s.service.enqueueResume('owner',s.input), leased=s.service.leaseNext();
+ s.input.revision=(await s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft})).revision;
+ const task=await s.service.enqueueResume('owner',s.input), leased=await s.service.leaseNext();
  const base=JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/agent-golden.v1.json',import.meta.url))).expected.config;
  const config={...base,content:JSON.parse(leased.brief_json).content};
- assert.equal(s.service.complete(task.id,{leaseToken:leased.lease_token,config}),true);
- const result=s.service.getTask('owner',task.id);assert.ok(result.projectId);
+ assert.equal(await s.service.complete(task.id,{leaseToken:leased.lease_token,config}),true);
+ const result=await s.service.getTask('owner',task.id);assert.ok(result.projectId);
  assert.equal(result.resumeId,s.draft.resumeId);
- assert.equal(s.service.enqueueResume('owner',s.input).projectId,result.projectId);
- assert.equal(s.db.prepare('SELECT count(*) n FROM projects').get().n,1);
- assert.equal(s.db.prepare('SELECT count(*) n FROM entitlements').get().n,0);
+ assert.equal((await s.service.enqueueResume('owner',s.input)).projectId,result.projectId);
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM projects').get()).n,1);
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM entitlements').get()).n,0);
  const {createPaymentService}=await import('../../web/src/server/service.mjs');
  const payments=createPaymentService(s.db,{gateway:null,paymentConfig:null,now:()=>Date.parse(source.uploadedAt)});
- assert.equal(payments.listProjects('owner')[0].resumeId,s.draft.resumeId);
- assert.equal(payments.createProject('owner',base,s.draft.resumeId).resumeId,s.draft.resumeId);
- assert.equal(payments.createProject('other',base,s.draft.resumeId).resumeId,undefined);
- s.db.prepare('DELETE FROM resume_files WHERE id=?').run(s.draft.fileId);s.advance();s.service.cleanupResumeMedia();
- assert.equal(payments.getProject('owner',result.projectId).resumeId,undefined);
- assert.deepEqual(s.service.readShowcaseMedia('owner',id).bytes,png);
+ assert.equal((await payments.listProjects('owner'))[0].resumeId,s.draft.resumeId);
+ assert.equal((await payments.createProject('owner',base,s.draft.resumeId)).resumeId,s.draft.resumeId);
+ assert.equal((await payments.createProject('other',base,s.draft.resumeId)).resumeId,undefined);
+ await s.db.prepare('DELETE FROM resume_files WHERE id=?').run(s.draft.fileId);s.advance();await s.service.cleanupResumeMedia();
+ assert.equal((await payments.getProject('owner',result.projectId)).resumeId,undefined);
+ assert.deepEqual((await s.service.readShowcaseMedia('owner',id)).bytes,png);
  const {buildStaticZip}=await import('../../web/src/server/export.mjs');
- const zip=buildStaticZip(result.config,key=>s.service.readShowcaseMedia('owner',key));
+ const media = await s.service.readShowcaseMedia('owner', id);
+ const zip=buildStaticZip(result.config, () => media);
  const entries=[];let at=0;while(zip.readUInt32LE(at)===0x04034b50){const size=zip.readUInt32LE(at+18),n=zip.readUInt16LE(at+26),extra=zip.readUInt16LE(at+28);entries.push({name:zip.subarray(at+30,at+30+n).toString(),body:zip.subarray(at+30+n+extra,at+30+n+extra+size)});at+=30+n+extra+size;}
  assert.equal(entries.length,2);assert.deepEqual(entries[1].body,png);
  assert.match(entries[0].body.toString(),/正文补充/);assert.match(entries[0].body.toString(),/图片说明/);assert.doesNotMatch(entries[0].body.toString(),/\/api\/resumes|sourceBlockIds/);
- payments.deleteProject('owner',result.projectId);
- assert.throws(()=>s.service.readShowcaseMedia('owner',id));
+ await payments.deleteProject('owner',result.projectId);
+ await assert.rejects(async ()=>await s.service.readShowcaseMedia('owner',id));
 });
 
-test('history protects saved images until pruning while unsaved uploads can be cancelled',t=>{
- const s=setup(t),item=s.draft.sections[0].items[0];
- const a=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
- s.queue.deleteImage('owner',s.draft.resumeId,a);
- assert.throws(()=>s.queue.readImage('owner',s.draft.resumeId,a));
- const b=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
+test('history protects saved images until pruning while unsaved uploads can be cancelled',async (t)=>{
+ const s=await setup(t),item=s.draft.sections[0].items[0];
+ const a=(await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId)).imageId;
+ await s.queue.deleteImage('owner',s.draft.resumeId,a);
+ await assert.rejects(async ()=>await s.queue.readImage('owner',s.draft.resumeId,a));
+ const b=(await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId)).imageId;
  item.supplements={text:'',links:[],images:[{imageId:b,caption:''}]};
- const saved=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});
- assert.throws(()=>s.queue.deleteImage('owner',s.draft.resumeId,b));
+ const saved=await s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});
+ await assert.rejects(async ()=>await s.queue.deleteImage('owner',s.draft.resumeId,b));
  saved.draft.sections[0].items[0].supplements.images=[];
- let latest=s.queue.patch('owner',s.draft.resumeId,{revision:saved.revision,draft:saved.draft});
- assert.equal(s.queue.readImage('owner',s.draft.resumeId,b).contentType,'image/png');
- assert.throws(()=>s.queue.deleteImage('owner',s.draft.resumeId,b));
+ let latest=await s.queue.patch('owner',s.draft.resumeId,{revision:saved.revision,draft:saved.draft});
+ assert.equal((await s.queue.readImage('owner',s.draft.resumeId,b)).contentType,'image/png');
+ await assert.rejects(async ()=>await s.queue.deleteImage('owner',s.draft.resumeId,b));
  for(let index=0;index<10;index++){
   latest.draft.sections[0].items[0].title=`修订 ${index}`;
-  latest=s.queue.patch('owner',s.draft.resumeId,{revision:latest.revision,draft:latest.draft});
+  latest=await s.queue.patch('owner',s.draft.resumeId,{revision:latest.revision,draft:latest.draft});
  }
- assert.throws(()=>s.queue.readImage('owner',s.draft.resumeId,b));
+ await assert.rejects(async ()=>await s.queue.readImage('owner',s.draft.resumeId,b));
 });
-test('upload budget checks total bytes/count and selected copies reject corrupt legacy image bytes',t=>{
- const s=setup(t),id=s.draft.resumeId,project=addSyntheticProject(s.draft);
+test('upload budget checks total bytes/count and selected copies reject corrupt legacy image bytes',async (t)=>{
+ const s=await setup(t),id=s.draft.resumeId,project=addSyntheticProject(s.draft);
  const large=Buffer.concat([png,Buffer.alloc(5*1024*1024-png.length)]);
- assert.throws(()=>s.queue.saveImage('owner',id,'image/png',Buffer.concat([large,Buffer.from('x')])));
- for(let i=0;i<10;i++)s.queue.saveImage('owner',id,'image/png',large);
- assert.throws(()=>s.queue.saveImage('owner',id,'image/png',png));
- s.db.prepare('DELETE FROM resume_images').run();
- for(let i=0;i<24;i++)s.queue.saveImage('owner',id,'image/png',png);
- assert.throws(()=>s.queue.saveImage('owner',id,'image/png',png));
- s.db.prepare('DELETE FROM resume_images').run();
- s.db.prepare('INSERT INTO resume_images(id,resume_id,content_type,data,created_at) VALUES(?,?,?,?,0)').run('old_bad',id,'image/png',Buffer.from('bad'));
+ await assert.rejects(async ()=>await s.queue.saveImage('owner',id,'image/png',Buffer.concat([large,Buffer.from('x')])));
+ for(let i=0;i<10;i++)await s.queue.saveImage('owner',id,'image/png',large);
+ await assert.rejects(async ()=>await s.queue.saveImage('owner',id,'image/png',png));
+ await s.db.prepare('DELETE FROM resume_images').run();
+ for(let i=0;i<24;i++)await s.queue.saveImage('owner',id,'image/png',png);
+ await assert.rejects(async ()=>await s.queue.saveImage('owner',id,'image/png',png));
+ await s.db.prepare('DELETE FROM resume_images').run();
+ await s.db.prepare('INSERT INTO resume_images(id,resume_id,content_type,data,created_at) VALUES(?,?,?,?,0)').run('old_bad',id,'image/png',Buffer.from('bad'));
  project.supplements={text:'',links:[],images:[{imageId:'old_bad',caption:''}]};
- s.db.prepare('UPDATE resumes SET draft_json=?').run(JSON.stringify(s.draft));
- assert.throws(()=>s.service.enqueueResume('owner',s.input));
- assert.equal(s.db.prepare('SELECT count(*) n FROM generations').get().n,0);
+ await s.db.prepare('UPDATE resumes SET draft_json=?').run(JSON.stringify(s.draft));
+ await assert.rejects(async ()=>await s.service.enqueueResume('owner',s.input));
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM generations').get()).n,0);
 });
 
 test('HTTP synthetic flow retains PDF comparison and enforces signed share media and portable export',async t=>{
@@ -189,8 +190,8 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  const {createAlipayGateway}=await import('../../web/src/server/gateway.mjs');
  const {generateKeyPairSync,sign}=await import('node:crypto');
  const {pdf}=await import('./test-fixtures/resume-pdf.mjs');
- const db=openDatabase(':memory:'),root=mkdtempSync(join(tmpdir(),'enrichment-flow-'));let time=Date.now();
- t.after(()=>{db.close();rmSync(root,{recursive:true,force:true});});
+ const db=await openDatabase(),root=mkdtempSync(join(tmpdir(),'enrichment-flow-'));let time=Date.now();
+ t.after(async ()=>{await db.close();rmSync(root,{recursive:true,force:true});});
  const keys=generateKeyPairSync('rsa',{modulusLength:2048,publicKeyEncoding:{type:'spki',format:'pem'},privateKeyEncoding:{type:'pkcs8',format:'pem'}});
  const merchant={mode:'sandbox',priceFen:199,appId:'synthetic-app',sellerId:'synthetic-seller',sellerEmail:null,privateKey:keys.privateKey,alipayPublicKey:keys.publicKey,gateway:'https://example.test',publicBaseUrl:'http://test'};
  const gateway=createAlipayGateway(merchant);gateway.pagePay=async()=>'<form>synthetic checkout</form>';
@@ -205,7 +206,7 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  const upload=await request('/api/resumes/upload','POST',pdf(),{'content-type':'application/pdf','x-file-name':'synthetic.pdf'});assert.equal(upload.status,201);
  const file=await upload.json();
  const parsed=await(await request('/api/resumes/parse','POST',{fileId:file.fileId,idempotencyKey:'parse-request'})).json();
- const lease=repository.queue.lease('fake_parser');
+ const lease=await repository.queue.lease('fake_parser');
  const parsedSource={...structuredClone(source),fileId:file.fileId,uploadedAt:lease.uploadedAt,expiresAt:lease.expiresAt};
  const parsedDraft={...structuredClone(fixture),resumeId:parsed.resumeId,fileId:file.fileId,revision:1};
  const projectSection=parsedDraft.sections.find(section=>section.kind==='projects');
@@ -229,7 +230,7 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
    .filter(section=>['awards','campusExperience'].includes(section.kind))
    .map(section=>section.items[0].presentationHighlights);
  for(const s of parsedDraft.sections) for(const i of s.items)i.included=false;
- repository.queue.complete(lease.id,lease.leaseToken,parsedSource,parsedDraft);
+ await repository.queue.complete(lease.id,lease.leaseToken,parsedSource,parsedDraft);
  const original=await request(`/api/resumes/${parsed.resumeId}/source`);assert.equal(original.status,200);assert.deepEqual(Buffer.from(await original.arrayBuffer()),pdf());
  const imageResponse=await request(`/api/resumes/${parsed.resumeId}/images`,'POST',png,{'content-type':'image/png','x-resume-item':projectItem.itemId});assert.equal(imageResponse.status,201);const {imageId}=await imageResponse.json();
  const i=projectItem;i.included=true;i.needsReview=false;i.supplements={text:'合成补充正文',links:[{label:'合成主页',url:'https://example.test/work'}],images:[{imageId,caption:'合成图片说明'}]};
@@ -243,14 +244,14 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  const completion=await request(`/api/_internal/agent/tasks/${worker.id}/complete`,'POST',{leaseToken:worker.leaseToken,config:{...base,content:worker.brief.content}},agentHeaders,true);assert.equal(completion.status,200);
  const result=await(await request(`/api/generations/${queued.id}`)).json();assert.ok(result.projectId);
  assert.deepEqual(highlightStates(result.config),[[],[publicMetric]]);
- const project=payments.getProject(db.prepare('SELECT owner_session_id FROM projects WHERE id=?').get(result.projectId).owner_session_id,result.projectId);assert.equal(project.paid,false);
- const owner=db.prepare('SELECT owner_session_id FROM projects WHERE id=?').get(project.id).owner_session_id;
- assert.throws(()=>payments.publish(owner,project.id));
+ const project=await payments.getProject((await db.prepare('SELECT owner_session_id FROM projects WHERE id=?').get(result.projectId)).owner_session_id,result.projectId);assert.equal(project.paid,false);
+ const owner=(await db.prepare('SELECT owner_session_id FROM projects WHERE id=?').get(project.id)).owner_session_id;
+ await assert.rejects(async ()=>await payments.publish(owner,project.id));
  const order=await payments.checkout(owner,project.id,'share');
  const notice={out_trade_no:order.outTradeNo,total_amount:'1.99',app_id:merchant.appId,seller_id:merchant.sellerId,trade_status:'TRADE_SUCCESS',trade_no:'synthetic-trade'};
  const canonical=Object.keys(notice).sort().map(k=>`${k}=${notice[k]}`).join('&');
  await payments.notify({...notice,sign_type:'RSA2',sign:sign('sha256',Buffer.from(canonical),keys.privateKey).toString('base64')});
- const share=payments.publish(owner,project.id);
+ const share=await payments.publish(owner,project.id);
  const publicShare=await request(`/api/shares/${share.token}`,'GET',undefined,{},true);
  assert.equal(publicShare.status,200);
  assert.deepEqual(highlightStates((await publicShare.json()).config),highlightStates(result.config));
@@ -258,53 +259,74 @@ test('HTTP synthetic flow retains PDF comparison and enforces signed share media
  assert.equal((await request(`/api/shares/${share.token}/media/not_referenced`,'GET',undefined,{},true)).status,404);
  // Updating the current config must not break the already published snapshot.
  const withoutImage=structuredClone(result.config);withoutImage.content.resume.sections.find(section=>section.kind==='projects').items[0].supplement.images=[];
- payments.updateProject(owner,project.id,withoutImage);
+ await payments.updateProject(owner,project.id,withoutImage);
  assert.equal((await request(`/api/shares/${share.token}/media/${imageId}`,'GET',undefined,{},true)).status,200);
- payments.updateProject(owner,project.id,result.config);
+ await payments.updateProject(owner,project.id,result.config);
  assert.equal((await request(`/api/resumes/${parsed.resumeId}`,'DELETE')).status,200);
  assert.equal((await request(`/api/showcase-media/${imageId}`)).status,200);
  assert.equal((await request(`/api/resumes/${parsed.resumeId}/source`)).status,404);
- const download=payments.issueDownload(owner,project.id);
+ const download=await payments.issueDownload(owner,project.id);
  const exported=await request(`/api/downloads/${download.token}`);assert.equal(exported.status,200);
  const html=await exported.text();
  assert.match(html,/合成补充正文/);
  const exportedConfig=JSON.parse(html.match(/<script type="application\/json" id="buildurprofile-config">([\s\S]*?)<\/script>/)[1]);
  assert.deepEqual(highlightStates(exportedConfig),highlightStates(result.config));
- payments.revokeShare(owner,project.id,share.token);
+ await payments.revokeShare(owner,project.id,share.token);
  assert.equal((await request(`/api/shares/${share.token}/media/${imageId}`,'GET',undefined,{},true)).status,404);
- const newer=payments.publish(owner,project.id);time+=8*86400000;
+ const newer=await payments.publish(owner,project.id);time+=8*86400000;
  assert.equal((await request(`/api/shares/${newer.token}/media/${imageId}`,'GET',undefined,{},true)).status,404);
- payments.deleteProject(owner,project.id);
+ await payments.deleteProject(owner,project.id);
  assert.equal((await request(`/api/showcase-media/${imageId}`)).status,404);
  assert.equal((await request(`/api/shares/${newer.token}/media/${imageId}`,'GET',undefined,{},true)).status,404);
  assert.equal((await(await request(`/api/generations/${queued.id}`)).json()).status,'EXPIRED');
 });
 
-test('expired abandoned queued copies are collected and malformed generation requests return 400',t=>{
- const s=setup(t),id=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png).imageId;
+test('expired abandoned queued copies are collected and malformed generation requests return 400',async (t)=>{
+ const s=await setup(t),id=(await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png)).imageId;
  s.draft.sections[0].items[0].supplements={text:'',links:[],images:[{imageId:id,caption:''}]};
- s.input.revision=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft}).revision;
- assert.throws(()=>s.service.enqueueResume('owner',{...s.input,idempotencyKey:undefined}),e=>e.status===400);
- const task=s.service.enqueueResume('owner',s.input);
- s.advance();s.service.cleanupResumeMedia();
- assert.equal(s.service.getTask('owner',task.id).status,'FAILED');
- assert.equal(s.db.prepare('SELECT count(*) n FROM showcase_media').get().n,0);
+ s.input.revision=(await s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft})).revision;
+ await assert.rejects(async ()=>await s.service.enqueueResume('owner',{...s.input,idempotencyKey:undefined}),e=>e.status===400);
+ const task=await s.service.enqueueResume('owner',s.input);
+ s.advance();await s.service.cleanupResumeMedia();
+ assert.equal((await s.service.getTask('owner',task.id)).status,'FAILED');
+ assert.equal((await s.db.prepare('SELECT count(*) n FROM showcase_media').get()).n,0);
 });
 
-test('unsaved uploads can be recovered after reload without deleting another editor uploads',t=>{
- const s=setup(t),item=s.draft.sections[0].items[0];
- const ids=Array.from({length:6},()=>s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId);
- assert.equal(s.queue.pendingImages('owner',s.draft.resumeId).images.length,6);
- assert.throws(()=>s.queue.pendingImages('other',s.draft.resumeId));
- const saved=s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});
+test('unsaved uploads can be recovered after reload without deleting another editor uploads',async (t)=>{
+ const s=await setup(t),item=s.draft.sections[0].items[0];
+ const ids=await Promise.all(Array.from({length:6},async ()=>(await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId)).imageId));
+ assert.equal((await s.queue.pendingImages('owner',s.draft.resumeId)).images.length,6);
+ await assert.rejects(async ()=>await s.queue.pendingImages('other',s.draft.resumeId));
+ const saved=await s.queue.patch('owner',s.draft.resumeId,{revision:1,draft:s.draft});
  // Saving an unchanged draft cannot blindly purge uploads from another active editor.
- assert.equal(s.queue.pendingImages('owner',s.draft.resumeId).images.length,6);
- s.queue.deleteImage('owner',s.draft.resumeId,ids[0]);
- assert.equal(s.queue.pendingImages('owner',s.draft.resumeId).images.length,5);
- const replacement=s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId).imageId;
+ assert.equal((await s.queue.pendingImages('owner',s.draft.resumeId)).images.length,6);
+ await s.queue.deleteImage('owner',s.draft.resumeId,ids[0]);
+ assert.equal((await s.queue.pendingImages('owner',s.draft.resumeId)).images.length,5);
+ const replacement=(await s.queue.saveImage('owner',s.draft.resumeId,'image/png',png,item.itemId)).imageId;
  saved.draft.sections[0].items[0].supplements={text:'',links:[],images:[{imageId:replacement,caption:''}]};
- s.queue.patch('owner',s.draft.resumeId,{revision:saved.revision,draft:saved.draft});
- assert.equal(s.queue.pendingImages('owner',s.draft.resumeId).images.length,5);
- assert.throws(()=>s.queue.deleteImage('owner',s.draft.resumeId,replacement));
- assert.deepEqual(Buffer.from(s.queue.readImage('owner',s.draft.resumeId,ids[1]).bytes),png);
+ await s.queue.patch('owner',s.draft.resumeId,{revision:saved.revision,draft:saved.draft});
+ assert.equal((await s.queue.pendingImages('owner',s.draft.resumeId)).images.length,5);
+ await assert.rejects(async ()=>await s.queue.deleteImage('owner',s.draft.resumeId,replacement));
+ assert.deepEqual(Buffer.from((await s.queue.readImage('owner',s.draft.resumeId,ids[1])).bytes),png);
+});
+
+test('reuses the project for a repeat generation and for saving the equivalent portrait', async t => {
+  const s = await setup(t);
+  const time = Date.parse(source.uploadedAt);
+  const {createPaymentService} = await import('../../web/src/server/service.mjs');
+  const payments = createPaymentService(s.db, {gateway:null,paymentConfig:null,now:()=>time});
+  const base = JSON.parse(readFileSync(new URL('../../../packages/contracts/fixtures/agent-golden.v1.json',import.meta.url))).expected.config;
+  async function generate(key) {
+    const queued = await s.service.enqueueResume('owner', {...s.input,idempotencyKey:key});
+    const lease = await s.service.leaseNext();
+    assert.equal(lease.id,queued.id);
+    await s.service.complete(queued.id,{leaseToken:lease.lease_token,config:{...base,content:JSON.parse(lease.brief_json).content}});
+    return s.service.getTask('owner',queued.id);
+  }
+  const first = await generate('first');
+  assert.equal((await generate('repeat')).projectId, first.projectId);
+  const portrait = { ...first.config, heroArtwork:{assetUrl:'data:image/png;base64,'+png.toString('base64'),styleId:'lofi-print-anime',alt:'合成头像'} };
+  assert.equal((await payments.createProject('owner',portrait,s.draft.resumeId)).id,first.projectId);
+  assert.deepEqual((await payments.listProjects('owner')).map(project=>project.id),[first.projectId]);
+  assert.equal((await payments.getProject('owner',first.projectId)).config.heroArtwork.assetUrl,portrait.heroArtwork.assetUrl);
 });

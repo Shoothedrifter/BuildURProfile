@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import socket
 import uuid
 from contextlib import suppress
@@ -46,7 +47,6 @@ async def process_task(task: AgentTask, client: NodeAgentClient, provider: Any,
         while True:
             await asyncio.sleep(15)
             try:
-                await client.touch_worker(worker_id)
                 await client.check_cancel(task)
             except (CancelRequested, LeaseLost) as error:
                 reason.append(error)
@@ -117,7 +117,6 @@ async def process_resume_task(task: ResumeParseTask, client: NodeAgentClient, mo
         while True:
             await asyncio.sleep(15)
             try:
-                await client.touch_worker(worker_id)
                 status = await client.heartbeat_resume(task)
                 if status.get("cancelRequested"):
                     raise CancelRequested("Resume parsing was cancelled")
@@ -178,53 +177,77 @@ async def process_resume_task(task: ResumeParseTask, client: NodeAgentClient, mo
                 await heart
 
 
+async def worker_heartbeat(client: NodeAgentClient, worker_id: str) -> None:
+    while True:
+        try:
+            await client.touch_worker(worker_id)
+        except Exception:
+            log.warning("agent heartbeat failed code=WEB_UNAVAILABLE")
+        await asyncio.sleep(15)
+
+
+async def consume_tasks(client, worker_id, lease, process, poll_seconds):
+    heartbeat = asyncio.create_task(worker_heartbeat(client, worker_id))
+    loop = asyncio.get_running_loop()
+    retry_seconds = 1.0
+    try:
+        while True:
+            started = loop.time()
+            try:
+                task = await lease()
+                if task:
+                    await process(task)
+                retry_seconds = 1.0
+                if not task:
+                    # Legacy Web replies immediately to an empty lease request.
+                    await asyncio.sleep(max(0, poll_seconds - (loop.time() - started)))
+            except Exception:
+                log.warning("agent queue request failed code=WEB_UNAVAILABLE")
+                await asyncio.sleep(retry_seconds * random.uniform(0.8, 1.2))
+                retry_seconds = min(retry_seconds * 2, 15.0)
+    finally:
+        heartbeat.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat
+
+
 async def worker_loop(client: NodeAgentClient, provider: Any, checkpointer: Any,
                       *, registry: SkillRegistry | None = None,
-                      worker_id: str | None = None, poll_seconds: float = 2.0, pixel_provider: Any = None,
+                      worker_id: str | None = None, poll_seconds: float = 2.0, wait_ms: int = 20_000, pixel_provider: Any = None,
                       pixel_vision: Any = None, pixel_detailed_vision: Any = None,
                       pixel_layered_hair_vision: Any = None) -> None:
     registry = registry or default_registry()
     worker_id = worker_id or f"agent_{socket.gethostname().split('.')[0]}_{uuid.uuid4().hex[:8]}"
     if len(worker_id) > 100 or not all(c.isalnum() or c in "_-" for c in worker_id):
         raise ValueError("Invalid AGENT_WORKER_ID")
-    while True:
-        try:
-            await client.touch_worker(worker_id)
-            task = await client.lease(worker_id, supports_pixel_layer_avatar=pixel_vision is not None,
-                                      supports_pixel_detailed_avatar=pixel_detailed_vision is not None,
-                                      supports_pixel_layered_hair_avatar=pixel_layered_hair_vision is not None)
-            if task:
-                await process_task(task, client, provider, registry, checkpointer, worker_id,
-                                   pixel_provider=pixel_provider, pixel_vision=pixel_vision,
-                                   pixel_detailed_vision=pixel_detailed_vision,
-                                   pixel_layered_hair_vision=pixel_layered_hair_vision)
-                continue
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("agent poll failed")
-        await asyncio.sleep(poll_seconds)
+    async def lease():
+        return await client.lease(worker_id, wait_ms=wait_ms,
+            supports_pixel_layer_avatar=pixel_vision is not None,
+            supports_pixel_detailed_avatar=pixel_detailed_vision is not None,
+            supports_pixel_layered_hair_avatar=pixel_layered_hair_vision is not None)
+
+    async def process(task):
+        await process_task(task, client, provider, registry, checkpointer, worker_id,
+                           pixel_provider=pixel_provider, pixel_vision=pixel_vision,
+                           pixel_detailed_vision=pixel_detailed_vision,
+                           pixel_layered_hair_vision=pixel_layered_hair_vision)
+
+    await consume_tasks(client, worker_id, lease, process, poll_seconds)
 
 
 async def resume_worker_loop(client: NodeAgentClient, checkpointer: Any,
                              *, registry: SkillRegistry | None = None,
-                             worker_id: str | None = None, poll_seconds: float = 2.0,
+                             worker_id: str | None = None, poll_seconds: float = 2.0, wait_ms: int = 20_000,
                              text_model: Any = None) -> None:
     registry = registry or default_registry()
     text_model = text_model or build_text_model()
     worker_id = worker_id or f"resume_{socket.gethostname().split('.')[0]}_{uuid.uuid4().hex[:8]}"
     if len(worker_id) > 100 or not all(c.isalnum() or c in "_-" for c in worker_id):
         raise ValueError("Invalid AGENT_WORKER_ID")
-    while True:
-        try:
-            await client.touch_worker(worker_id)
-            task = await client.lease_resume(worker_id)
-            if task:
-                await process_resume_task(task, client, text_model, registry, checkpointer,
-                                          worker_id)
-                continue
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.warning("resume poll failed code=UNKNOWN")
-        await asyncio.sleep(poll_seconds)
+    async def lease():
+        return await client.lease_resume(worker_id, wait_ms=wait_ms)
+
+    async def process(task):
+        await process_resume_task(task, client, text_model, registry, checkpointer, worker_id)
+
+    await consume_tasks(client, worker_id, lease, process, poll_seconds)

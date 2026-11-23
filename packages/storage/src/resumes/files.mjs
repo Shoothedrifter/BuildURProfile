@@ -25,7 +25,7 @@ export function createResumeFileStore(root) {
  mkdirSync(root,{recursive:true,mode:0o700});chmodSync(root,0o700);
  const path=id=>{if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Invalid file ID');return join(root,`${id}.pdf`);};
  let scan=null;
- function reconcile(hasFile, now, limit=25) {
+ async function reconcile(hasFile, now, limit=25) {
   // Retain a directory cursor so each sweep examines only a bounded number of
   // entries, without materializing the directory or starving later entries.
   scan ??= opendirSync(root);
@@ -38,7 +38,7 @@ export function createResumeFileStore(root) {
    try {
     // A grace period avoids racing another process between rename and INSERT.
     if(statSync(target).mtimeMs>now-3600000)continue;
-    if(match[2]||!hasFile(match[1]))rmSync(target,{force:true});
+    if(match[2]||!await hasFile(match[1]))rmSync(target,{force:true});
    }catch(error){if(error.code!=='ENOENT')throw error;}
   }
  }

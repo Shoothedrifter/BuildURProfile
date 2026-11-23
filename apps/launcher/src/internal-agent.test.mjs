@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDatabase } from "../../../packages/storage/src/database.mjs";
+import { openTestDatabase as openDatabase } from "./postgres-test-db.mjs";
 import { createGenerationService } from "../../../packages/storage/src/generations.mjs";
 import { styleToConfig } from "../../../packages/skills/src/mapping.ts";
 import { createPaymentHttpServer, createRequestHandler, dispatchWebRequest } from "../../web/src/server/http.mjs";
@@ -34,10 +34,10 @@ function agentRequests(db, generationService) {
 
 test("internal Agent bridge requires token and leases only the versioned public brief", async () => {
   const root = mkdtempSync(join(tmpdir(), "burp-agent-bridge-"));
-  const db = openDatabase(join(root, "app.sqlite"));
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
   const generationService = createGenerationService({ db, assetRoot: join(root, "assets"), allowPortraits: false });
-  const task = generationService.enqueue("owner", { brief, idempotencyKey: "bridge-no-photo" });
+  const task = await generationService.enqueue("owner", { brief, idempotencyKey: "bridge-no-photo" });
   const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: false,
     agentToken: token, secret: Buffer.alloc(32, 7) });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -64,31 +64,31 @@ test("internal Agent bridge requires token and leases only the versioned public 
     const completed = await post(base, `/_internal/agent/tasks/${task.id}/complete`, {
       leaseToken: leased.leaseToken, config: config() });
     assert.equal(completed.status, 200);
-    assert.equal(generationService.getTask("owner", task.id).status, "SUCCEEDED");
+    assert.equal((await generationService.getTask("owner", task.id)).status, "SUCCEEDED");
     assert.equal((await post(base, "/_internal/agent/lease", { workerId: "python-1" })).status, 204);
-    const cancelling = generationService.enqueue("owner", { brief, idempotencyKey: "bridge-cancel" });
+    const cancelling = await generationService.enqueue("owner", { brief, idempotencyKey: "bridge-cancel" });
     const secondLease = await (await post(base, "/_internal/agent/lease", { workerId: "python-1" })).json();
     assert.equal(secondLease.id, cancelling.id);
-    generationService.cancel("owner", cancelling.id);
+    await generationService.cancel("owner", cancelling.id);
     const cancellationHeartbeat = await post(base, `/_internal/agent/tasks/${cancelling.id}/heartbeat`,
       { leaseToken: secondLease.leaseToken });
     assert.equal((await cancellationHeartbeat.json()).cancelRequested, true);
     assert.equal((await post(base, `/_internal/agent/tasks/${cancelling.id}/ack-cancel`,
       { leaseToken: secondLease.leaseToken })).status, 200);
-    assert.equal(generationService.getTask("owner", cancelling.id).status, "CANCELLED");
+    assert.equal((await generationService.getTask("owner", cancelling.id)).status, "CANCELLED");
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    db.close(); rmSync(root, { recursive: true, force: true });
+    await db.close(); rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("internal Agent bridge leases a queued v5 template generation", async () => {
   const root = mkdtempSync(join(tmpdir(), "burp-v5-bridge-"));
-  const db = openDatabase(join(root, "app.sqlite"));
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
   const generationService = createGenerationService({ db, assetRoot: join(root, "assets"), allowPortraits: false });
   const fixture = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
-  const task = generationService.enqueue("owner", { config: { ...fixture.expected.config, templateId: "cyber-creator-v1" }, idempotencyKey: "v5-lease" });
+  const task = await generationService.enqueue("owner", { config: { ...fixture.expected.config, templateId: "cyber-creator-v1" }, idempotencyKey: "v5-lease" });
   const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: false,
     agentToken: token, secret: Buffer.alloc(32, 7) });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -98,39 +98,39 @@ test("internal Agent bridge leases a queued v5 template generation", async () =>
     const leased = await response.json();
     assert.equal(leased.id, task.id);
     assert.equal(leased.workflowVersion, "python-agent-v6");
-    assert.equal(generationService.getTask("owner", task.id).status, "RUNNING");
+    assert.equal((await generationService.getTask("owner", task.id)).status, "RUNNING");
   } finally {
     await new Promise(resolve => server.close(resolve));
-    db.close(); rmSync(root, { recursive: true, force: true });
+    await db.close(); rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("Pixel World lease skips workers without support", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-bridge-"));
-  const db = openDatabase(":memory:");
+  const db = await openDatabase();
   const time = Date.now();
   let now = time;
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 100_000);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, time + 100_000);
   const generationService = createGenerationService({ db, assetRoot: root, now: () => now, leaseMs: 500 });
   const { input } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
   for (const section of input.content.resume.sections) for (const item of section.items) item.supplement.images = [];
-  const pixel = generationService.enqueue("owner", {
+  const pixel = await generationService.enqueue("owner", {
     brief: { role: input.role, content: input.content, templateId: "pixel-world-v1" }, idempotencyKey: "pixel"
   });
   now++;
-  const cyber = generationService.enqueue("owner", {
+  const cyber = await generationService.enqueue("owner", {
     brief: { role: input.role, content: input.content, templateId: "cyber-creator-v1" }, idempotencyKey: "cyber"
   });
   const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: false,
     agentToken: token, secret: Buffer.alloc(32, 7) });
-  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
   await new Promise((resolve, reject) => server.once("error", reject).listen(0, "127.0.0.1", resolve));
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
     const legacy = { workerId: "old", supportsPresentationHighlights: true };
     assert.equal((await (await post(base, "/_internal/agent/lease", legacy)).json()).id, cyber.id);
     assert.equal((await post(base, "/_internal/agent/lease", legacy)).status, 204);
-    assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(pixel.id).attempt_count, 0);
+    assert.equal((await db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(pixel.id)).attempt_count, 0);
     const lease = await (await post(base, "/_internal/agent/lease", { ...legacy, supportsPixelWorld: true })).json();
     assert.equal(lease.id, pixel.id);
     assert.equal(lease.workflowVersion, "python-agent-v7");
@@ -143,41 +143,41 @@ test("Pixel World lease skips workers without support", async (t) => {
 
 test("Pixel World workers lease only their advertised avatar versions", async t => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-layer-bridge-"));
-  const db = openDatabase(":memory:");
-  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  const db = await openDatabase();
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
   let now = Date.now();
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 100_000);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 100_000);
   const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => now });
   const { input, expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
   const config = { ...expected.config, templateId: "pixel-world-v1" };
   for (const section of config.content.resume.sections) for (const item of section.items) item.supplement.images = [];
-  const photo = service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
-  const currentAvatar = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "current" });
+  const photo = await service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
+  const currentAvatar = await service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "current" });
   now++;
-  const detailedAvatar = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "detailed" });
-  db.prepare("UPDATE generations SET workflow_version='python-agent-v9' WHERE id=?").run(detailedAvatar.id);
+  const detailedAvatar = await service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "detailed" });
+  await db.prepare("UPDATE generations SET workflow_version='python-agent-v9' WHERE id=?").run(detailedAvatar.id);
   now++;
-  const layeredAvatar = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "layered" });
-  db.prepare("UPDATE generations SET workflow_version='python-agent-v8' WHERE id=?").run(layeredAvatar.id);
+  const layeredAvatar = await service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "layered" });
+  await db.prepare("UPDATE generations SET workflow_version='python-agent-v8' WHERE id=?").run(layeredAvatar.id);
   now++;
-  const baseWork = service.enqueue("owner", { brief: { role: input.role, content: config.content, templateId: config.templateId }, idempotencyKey: "base" });
+  const baseWork = await service.enqueue("owner", { brief: { role: input.role, content: config.content, templateId: config.templateId }, idempotencyKey: "base" });
   const request = agentRequests(db, service);
   const worker = { workerId: "pixel", supportsPixelWorld: true, supportsPresentationHighlights: true };
   const baseLease = await (await request("lease", worker)).json();
   assert.equal(baseLease.id, baseWork.id);
   assert.equal(baseLease.workflowVersion, "python-agent-v7");
   assert.equal((await request("lease", worker)).status, 204);
-  assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(detailedAvatar.id).attempt_count, 0);
-  assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(layeredAvatar.id).attempt_count, 0);
+  assert.equal((await db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(detailedAvatar.id)).attempt_count, 0);
+  assert.equal((await db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(layeredAvatar.id)).attempt_count, 0);
   assert.equal((await request(`tasks/${baseWork.id}/complete`, { leaseToken: baseLease.leaseToken, config })).status, 200);
-  assert.ok(service.getTask("owner", baseWork.id).projectId);
+  assert.ok((await service.getTask("owner", baseWork.id)).projectId);
 
   const layeredLease = await (await request("lease", { ...worker, supportsPixelLayerAvatar: true })).json();
   assert.equal(layeredLease.id, layeredAvatar.id);
   assert.equal(layeredLease.workflowVersion, "python-agent-v8");
   assert.equal((await request("lease", { ...worker, supportsPixelLayerAvatar: true })).status, 204);
   assert.equal((await request("lease", { ...worker, supportsPixelDetailedAvatar: "true" })).status, 204);
-  assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(detailedAvatar.id).attempt_count, 0);
+  assert.equal((await db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(detailedAvatar.id)).attempt_count, 0);
   const detailedLease = await (await request("lease", { ...worker, supportsPixelDetailedAvatar: true })).json();
   assert.equal(detailedLease.id, detailedAvatar.id);
   assert.equal(detailedLease.workflowVersion, "python-agent-v9");
@@ -185,7 +185,7 @@ test("Pixel World workers lease only their advertised avatar versions", async t 
   assert.equal((await request("lease", olderWorker)).status, 204);
   assert.equal((await request("lease", { ...olderWorker, supportsPixelLayeredHairAvatar: "true" })).status, 204);
   assert.equal((await request("lease", { workerId: worker.workerId, supportsPixelLayeredHairAvatar: true })).status, 204);
-  assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(currentAvatar.id).attempt_count, 0);
+  assert.equal((await db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(currentAvatar.id)).attempt_count, 0);
   const currentResponse = await request("lease", { ...worker, supportsPixelLayeredHairAvatar: true });
   assert.equal(currentResponse.status, 200);
   const currentLease = await currentResponse.json();
@@ -207,15 +207,15 @@ test("Pixel World workers lease only their advertised avatar versions", async t 
     assert.equal((await request(complete, { leaseToken, config: { ...config, templateId: "minimal-v1" } })).status, 400);
     assert.equal((await request(complete, { leaseToken, config: { ...config, marquee: { ...config.marquee, speed: config.marquee.speed + 1 } } })).status, 400);
     assert.equal((await request(complete, { leaseToken, config })).status, 200);
-    const result = service.getTask("owner", id);
+    const result = await service.getTask("owner", id);
     assert.deepEqual(result.config, avatarLease.config);
     assert.deepEqual(result.heroArtwork, { assetUrl: `/api/hero-assets/${assetId}`, styleId: "pixel-halfbody-v1", alt: "个人像素头像" });
     assert.equal(result.projectId, undefined);
   }
-  assert.equal(db.prepare("SELECT count(*) n FROM projects").get().n, 1);
+  assert.equal((await db.prepare("SELECT count(*) n FROM projects").get()).n, 1);
   now += 7 * 24 * 60 * 60 * 1000;
   for (const { id } of avatarLeases) {
-    const expired = service.getTask("owner", id);
+    const expired = await service.getTask("owner", id);
     assert.equal(expired.status, "EXPIRED");
     assert.equal(expired.heroArtwork, undefined);
     assert.match(expired.error, /候选头像已过期.*重新选择照片/);
@@ -224,14 +224,14 @@ test("Pixel World workers lease only their advertised avatar versions", async t 
 
 test("the current Pixel World avatar publishes actionable failures without rescheduling", async t => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-layer-errors-"));
-  const db = openDatabase(":memory:");
-  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  const db = await openDatabase();
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
   let now = Date.now();
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 100_000);
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", now, now + 100_000);
   const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => now });
   const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
   const config = { ...expected.config, templateId: "pixel-world-v1" };
-  const photo = service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
+  const photo = await service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
   const request = agentRequests(db, service);
   const cases = {
     PIXEL_PHOTO_INVALID: /照片格式或内容无效/,
@@ -243,7 +243,7 @@ test("the current Pixel World avatar publishes actionable failures without resch
     PIXEL_PHOTO_EXPIRED: /源照片已过期.*重新选择照片/
   };
   for (const [errorCode, message] of Object.entries(cases)) {
-    const task = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: errorCode });
+    const task = await service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: errorCode });
     if (errorCode === "PIXEL_PHOTO_EXPIRED") now += 24 * 60 * 60 * 1000;
     const lease = await (await request("lease", { workerId: "pixel", supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true })).json();
     assert.equal(lease.id, task.id);
@@ -252,7 +252,7 @@ test("the current Pixel World avatar publishes actionable failures without resch
       assert.equal((await request(`tasks/${task.id}/portrait`, undefined, headers)).status, 404);
     }
     assert.equal((await request(`tasks/${task.id}/fail`, { leaseToken: lease.leaseToken, errorCode, retryable: true })).status, 200);
-    const result = service.getTask("owner", task.id);
+    const result = await service.getTask("owner", task.id);
     assert.equal(result.status, "FAILED");
     assert.match(result.error, message);
   }
@@ -260,8 +260,8 @@ test("the current Pixel World avatar publishes actionable failures without resch
 
 test("generation leases leave explicit highlight states for capable workers", async () => {
   const root = mkdtempSync(join(tmpdir(), "burp-highlights-bridge-"));
-  const db = openDatabase(join(root, "app.sqlite"));
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
   const generationService = createGenerationService({ db, assetRoot: join(root, "assets"), allowPortraits: false });
   const { input, expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
   const content = input.content;
@@ -269,10 +269,10 @@ test("generation leases leave explicit highlight states for capable workers", as
   const award = { kind: "awards", order: 9, items: [{ itemId: "award", order: 0, title: "竞赛",
     details: "共获竞赛奖项4项", facts: [], supplement: { text: "", links: [], images: [] }, presentationHighlights: [] }] };
   content.resume.sections.push(award);
-  const newer = generationService.enqueue("owner", {
+  const newer = await generationService.enqueue("owner", {
     brief: { role: input.role, content, templateId: "cyber-creator-v1" }, idempotencyKey: "highlights"
   });
-  const older = generationService.enqueue("owner", { brief, idempotencyKey: "legacy-brief" });
+  const older = await generationService.enqueue("owner", { brief, idempotencyKey: "legacy-brief" });
   const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: false,
     agentToken: token, secret: Buffer.alloc(32, 7) });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -281,7 +281,7 @@ test("generation leases leave explicit highlight states for capable workers", as
     const legacyLease = await post(base, "/_internal/agent/lease", { workerId: "legacy" });
     assert.equal((await legacyLease.json()).id, older.id);
     assert.equal((await post(base, "/_internal/agent/lease", { workerId: "legacy" })).status, 204);
-    assert.equal(db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(newer.id).attempt_count, 0);
+    assert.equal((await db.prepare("SELECT attempt_count FROM generations WHERE id=?").get(newer.id)).attempt_count, 0);
     const lease = await (await post(base, "/_internal/agent/lease", {
       workerId: "new", supportsPresentationHighlights: true
     })).json();
@@ -291,25 +291,25 @@ test("generation leases leave explicit highlight states for capable workers", as
       leaseToken: lease.leaseToken, config: { ...expected.config, templateId: "cyber-creator-v1", content: lease.brief.content }
     });
     assert.equal(completed.status, 200);
-    assert.deepEqual(generationService.getTask("owner", newer.id).config.content.resume.sections.at(-1).items[0].presentationHighlights, []);
+    assert.deepEqual((await generationService.getTask("owner", newer.id)).config.content.resume.sections.at(-1).items[0].presentationHighlights, []);
   } finally {
     await new Promise(resolve => server.close(resolve));
-    db.close(); rmSync(root, { recursive: true, force: true });
+    await db.close(); rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("queued v7 Pixel World photo tasks retain the leased recipe and asset endpoints", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "burp-pixel-assets-"));
-  const db = openDatabase(":memory:");
+  const db = await openDatabase();
   const now = Date.now();
-  for (const owner of ["owner", "other"]) db.prepare("INSERT INTO sessions VALUES(?,?,?)").run(owner, now, now + 100_000);
+  for (const owner of ["owner", "other"]) await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run(owner, now, now + 100_000);
   const service = createGenerationService({ db, assetRoot: root, minPixels: 1 });
   const { expected } = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8"));
   const config = { ...expected.config, templateId: "pixel-world-v1" };
-  const photo = service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
-  const task = service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "pixel-photo" });
-  db.prepare("UPDATE generations SET workflow_version='python-agent-v7' WHERE id=?").run(task.id);
-  t.after(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
+  const photo = await service.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
+  const task = await service.enqueue("owner", { config, portraitAssetId: photo.id, idempotencyKey: "pixel-photo" });
+  await db.prepare("UPDATE generations SET workflow_version='python-agent-v7' WHERE id=?").run(task.id);
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
   const request = agentRequests(db, service);
   const lease = await (await request("lease", { workerId: "pixel", supportsPixelWorld: true })).json();
   assert.equal(lease.workflowVersion, "python-agent-v7");
@@ -325,21 +325,21 @@ test("queued v7 Pixel World photo tasks retain the leased recipe and asset endpo
   assert.equal(output.status, 200);
   const { assetId } = await output.json();
   assert.equal((await request(`${path}/complete`, { leaseToken: lease.leaseToken, config })).status, 200);
-  assert.equal(service.getTask("owner", task.id).heroArtwork.assetUrl, `/api/hero-assets/${assetId}`);
-  assert.deepEqual(service.readArtworkAsset("owner", assetId).bytes, png);
-  assert.throws(() => service.readArtworkAsset("other", assetId), { status: 404 });
-  assert.equal(db.prepare("SELECT count(*) n FROM projects").get().n, 0);
+  assert.equal((await service.getTask("owner", task.id)).heroArtwork.assetUrl, `/api/hero-assets/${assetId}`);
+  assert.deepEqual((await service.readArtworkAsset("owner", assetId)).bytes, png);
+  await assert.rejects(async () => await service.readArtworkAsset("other", assetId), { status: 404 });
+  assert.equal((await db.prepare("SELECT count(*) n FROM projects").get()).n, 0);
 });
 
 test("internal Agent bridge streams only leased portrait and fences output and recipe", async () => {
   const root = mkdtempSync(join(tmpdir(), "burp-agent-bridge-photo-"));
   const reference = join(root, "reference.png");
   writeFileSync(reference, png);
-  const db = openDatabase(join(root, "app.sqlite"));
-  db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
+  const db = await openDatabase();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 100_000);
   const generationService = createGenerationService({ db, assetRoot: join(root, "assets"), minPixels: 1 });
-  const photo = generationService.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
-  const task = generationService.enqueue("owner", { brief, idempotencyKey: "bridge-photo",
+  const photo = await generationService.savePortrait("owner", `data:image/png;base64,${png.toString("base64")}`);
+  const task = await generationService.enqueue("owner", { brief, idempotencyKey: "bridge-photo",
     portraitAssetId: photo.id, styleId: "lofi-print-anime" });
   const server = createPaymentHttpServer({ db, service: {}, generationService, portraitEnabled: true,
     agentToken: token, secret: Buffer.alloc(32, 8), agentStyleLoader: (id) => ({ id, version: "test-v1",
@@ -364,7 +364,7 @@ test("internal Agent bridge streams only leased portrait and fences output and r
       ...headers, "content-type": "image/png" }, body: png });
     assert.equal(output.status, 200);
     const { assetId } = await output.json();
-    assert.equal(generationService.existingOutput(task.id), assetId);
+    assert.equal(await generationService.existingOutput(task.id), assetId);
     const outputStatus = await (await fetch(`${base}${path}/output`, { headers })).json();
     assert.deepEqual(outputStatus, { assetId, exists: true });
     assert.equal((await fetch(`${base}${path}/cutout`, { method: "POST", headers: {
@@ -374,12 +374,12 @@ test("internal Agent bridge streams only leased portrait and fences output and r
       ...headers, "content-type": "image/png" }, body: png });
     assert.equal(cutout.status, 200);
     const { assetId: cutoutId } = await cutout.json();
-    assert.equal(generationService.readArtworkAsset("owner", cutoutId).mime, "image/png");
+    assert.equal((await generationService.readArtworkAsset("owner", cutoutId)).mime, "image/png");
     assert.equal((await post(base, `${path}/complete`, { leaseToken: leased.leaseToken, config: config() })).status, 200);
-    assert.equal(generationService.getTask("owner", task.id).heroArtwork.cutoutAssetUrl, `/api/hero-assets/${cutoutId}`);
+    assert.equal((await generationService.getTask("owner", task.id)).heroArtwork.cutoutAssetUrl, `/api/hero-assets/${cutoutId}`);
     assert.equal((await fetch(`${base}${path}/portrait`, { headers })).status, 409);
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    db.close(); rmSync(root, { recursive: true, force: true });
+    await db.close(); rmSync(root, { recursive: true, force: true });
   }
 });

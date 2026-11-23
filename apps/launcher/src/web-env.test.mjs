@@ -8,6 +8,9 @@ const sampleEnv = {
   PATH: '/usr/bin',
   NODE_ENV: 'development',
   AGENT_SERVICE_TOKEN: 'token-value',
+  DATABASE_URL: 'web-url',
+  AGENT_CHECKPOINT_DATABASE_URL: 'agent-url',
+  POSTGRES_ADMIN_PASSWORD: 'docker-only',
   SERVER_HOST: '127.0.0.1',
   OPENAI_API_KEY: 'sk-1',
   OPENAI_IMAGE_MODEL: 'gpt-image-1',
@@ -47,6 +50,9 @@ test('sanitizeWebEnv 保留清洗清单之外的变量且不修改入参', () =>
   assert.equal(webEnv.PATH, '/usr/bin');
   assert.equal(webEnv.NODE_ENV, 'development');
   assert.equal(webEnv.AGENT_SERVICE_TOKEN, 'token-value');
+  assert.equal(webEnv.DATABASE_URL, 'web-url');
+  assert.equal(webEnv.AGENT_CHECKPOINT_DATABASE_URL, undefined);
+  assert.equal(webEnv.POSTGRES_ADMIN_PASSWORD, undefined);
   assert.equal(webEnv.SERVER_HOST, '127.0.0.1');
   // 纯函数：调用方传入的对象（尤其是展开自 process.env 的副本）不被就地修改
   assert.deepEqual(

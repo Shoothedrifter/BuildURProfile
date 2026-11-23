@@ -75,14 +75,14 @@ export function reconcileCandidateSource(existing,candidate,draft,taskId) {
     ...(v2?{version:'resume-source-v2',extractionVersion:'pdf-layout-v2'}:{}),blocks:[...oldBlocks,...newBlocks]}};
 }
 
-export function recordDeletedItems(db,resumeId,previous,next) {
+export async function recordDeletedItems(db,resumeId,previous,next) {
   const nextIds=new Set(next.sections.flatMap(section=>section.items.map(item=>item.itemId)));
-  const insert=db.prepare('INSERT OR REPLACE INTO resume_deleted_items(resume_id,item_id,kind,source_ids_json) VALUES(?,?,?,?)');
+  const insert=db.prepare('INSERT INTO resume_deleted_items(resume_id,item_id,kind,source_ids_json) VALUES(?,?,?,?) ON CONFLICT(resume_id,item_id) DO UPDATE SET kind=excluded.kind,source_ids_json=excluded.source_ids_json');
   for(const section of previous.sections)for(const item of section.items)
     if(!nextIds.has(item.itemId)&&item.sourceBlockIds.length)
-      insert.run(resumeId,item.itemId,section.kind,JSON.stringify(item.sourceBlockIds));
+      await insert.run(resumeId,item.itemId,section.kind,JSON.stringify(item.sourceBlockIds));
   for(const itemId of nextIds)
-    db.prepare('DELETE FROM resume_deleted_items WHERE resume_id=? AND item_id=?').run(resumeId,itemId);
+    await db.prepare('DELETE FROM resume_deleted_items WHERE resume_id=? AND item_id=?').run(resumeId,itemId);
 }
 
 export function overwriteDraft(current,candidate) {

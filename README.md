@@ -9,14 +9,14 @@
 | `apps/web` | Next.js（App Router）全栈应用：浏览器 PDF 解析、编辑展示、API Route Handlers 与服务端业务 |
 | `apps/launcher` | 启动编排、服务端契约测试（支付/生成/内部桥接）与 Docker 部署入口 |
 | `apps/agent` | Python LangGraph、Skills 和图像服务适配器 |
-| `packages` | 共享合同、TS Skills、资源校验与 SQLite 持久化 |
+| `packages` | 共享合同、TS Skills、资源校验与 PostgreSQL 持久化 |
 | `scripts` | Python Agent 辅助启动、风格资源安装和 Schema 导出工具 |
 | `deploy` | 部署环境变量样例 |
 | `docs` | 按模块组织的说明、跨模块规约与历史归档 |
 
 ## 本机启动
 
-需要 Node.js 22.12+（推荐 24+）、Python 3.11+ 和 uv 0.11.x。在仓库根目录运行：
+需要 Node.js 22.12+（推荐 24+）、Python 3.11+ 和 uv 0.11.x。先按[迁移指南](docs/shared/postgresql-migration.md#本机开发与迁移演练)配置 PostgreSQL，再从仓库根目录启动。
 
 ```sh
 npm ci

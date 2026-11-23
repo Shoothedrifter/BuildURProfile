@@ -1,3 +1,4 @@
+import { leaseWaitMs } from "../queue-notifications.mjs";
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { resumeError } from '../../../../../packages/storage/src/resumes/files.mjs';
 import { planFromPdf, planFromPages } from '../resume-plan.mjs';
@@ -7,6 +8,7 @@ export async function handleInternalResumeAgentRoutes({
   parts,
   repository,
   agentToken,
+  queueNotifications,
   bodyJson,
   sendJson
 }) {
@@ -14,11 +16,13 @@ export async function handleInternalResumeAgentRoutes({
   const supplied = req.headers.authorization;
   const hash = value => createHash('sha256').update(value).digest();
   if (typeof supplied !== 'string' || !timingSafeEqual(hash(supplied), hash('Bearer ' + agentToken))) throw resumeError(403, 'AGENT_AUTH_FAILED');
-  repository.cleanup();
   const queue = repository.queue;
   if (parts.length === 4 && parts[3] === 'lease' && req.method === 'POST') {
-    const input = await bodyJson(req, 4096),
-      task = queue.lease(input?.workerId, { supportsPresentationHighlights: input?.supportsPresentationHighlights === true });
+    const input = await bodyJson(req, 4096);
+    const take = () => queue.lease(input?.workerId, { supportsPresentationHighlights: input?.supportsPresentationHighlights === true });
+    const task = queueNotifications
+      ? await queueNotifications.claim("resume_parse_tasks", leaseWaitMs(input?.waitMs), req.signal, take)
+      : await take();
     if (!task) {
       res.writeHead(204, {
         'cache-control': 'no-store'
@@ -31,7 +35,7 @@ export async function handleInternalResumeAgentRoutes({
   const id = parts[3],
     action = parts[4];
   if (req.method === 'GET' && action === 'source') {
-    const bytes = queue.source(id, req.headers['x-agent-lease']);
+    const bytes = await queue.source(id, req.headers['x-agent-lease']);
     res.writeHead(200, {
       'content-type': 'application/pdf',
       'content-length': bytes.length,
@@ -42,12 +46,12 @@ export async function handleInternalResumeAgentRoutes({
     return true;
   }
   if (req.method === 'GET' && action === 'plan') {
-    const bytes = queue.source(id, req.headers['x-agent-lease']);
+    const bytes = await queue.source(id, req.headers['x-agent-lease']);
     sendJson(res, 200, await planFromPdf(bytes));
     return true;
   }
   if (req.method === 'POST' && action === 'plan') {
-    queue.source(id, req.headers['x-agent-lease']);
+    await queue.source(id, req.headers['x-agent-lease']);
     const input = await bodyJson(req, 250_000);
     if (!Array.isArray(input?.pages) || input.pages.length < 1 || input.pages.length > 20
         || input.pages.some(page => typeof page !== 'string' || page.length > 200_000)
@@ -58,10 +62,10 @@ export async function handleInternalResumeAgentRoutes({
   if (req.method !== 'POST' || !['heartbeat', 'complete', 'fail', 'ack-cancel'].includes(action)) return false;
   const input = await bodyJson(req, action === 'complete' ? 80 * 1024 * 1024 : 4096);
   let result;
-  if (action === 'heartbeat') result = queue.heartbeat(id, input?.leaseToken, input ?? {});
-  if (action === 'complete') result = queue.complete(id, input?.leaseToken, input?.source, input?.draft);
-  if (action === 'fail') result = queue.fail(id, input?.leaseToken, input?.errorCode, input?.retryable);
-  if (action === 'ack-cancel') result = queue.ackCancel(id, input?.leaseToken);
+  if (action === 'heartbeat') result = await queue.heartbeat(id, input?.leaseToken, input ?? {});
+  if (action === 'complete') result = await queue.complete(id, input?.leaseToken, input?.source, input?.draft);
+  if (action === 'fail') result = await queue.fail(id, input?.leaseToken, input?.errorCode, input?.retryable);
+  if (action === 'ack-cancel') result = await queue.ackCancel(id, input?.leaseToken);
   sendJson(res, 200, result);
   return true;
 }
