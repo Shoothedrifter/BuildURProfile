@@ -7,7 +7,7 @@ import { interactionIntensity, withInteractionIntensity } from "../lib/interacti
 import { projectPresentation } from "../lib/presentation";
 
 type Update = (current: DesignConfig) => DesignConfig;
-type Props = { config: DesignConfig; onChange: (update: Update) => void; isTouch: boolean };
+type Props = { config: DesignConfig; onChange: (update: Update) => void; isTouch: boolean; contentOnly?: boolean };
 type ProfileKey = keyof ResumeContent["profile"];
 type ExpertiseKey = "eyebrow" | "headline" | "summary";
 type ProjectKey = "index" | "title" | "category" | "year" | "description" | "tags" | "link";
@@ -67,7 +67,7 @@ function PanelGroup({ title, children }: { title: string; children: ReactNode })
   return <details className="editor-group" open><summary>{title}<span aria-hidden="true">＋</span></summary><div className="editor-group-body">{children}</div></details>;
 }
 
-function LegacyEditorPanel({ config, onChange, isTouch }: Props) {
+function LegacyEditorPanel({ config, onChange, isTouch, contentOnly }: Props) {
   const [imageError, setImageError] = useState("");
   const items = marqueeItems(config);
   const legacyResume = config.content.resume?.version === "resume-v1" ? config.content.resume : undefined;
@@ -156,8 +156,8 @@ function LegacyEditorPanel({ config, onChange, isTouch }: Props) {
     ...current, content: { ...current.content, projects: current.content.projects.map((project, projectIndex) => projectIndex === index ? { ...project, image } : project) }
   }));
   return <aside className="editor-panel" aria-label="编辑面板">
-    <div className="editor-heading"><span>LIVE EDITOR / 01</span><h2>编辑你的展示</h2><p>修改后实时更新预览；导出的配置和网站使用同一份内容。</p></div>
-    <div className="editor-intensity"><div><label htmlFor="interaction-intensity">交互强度</label><output htmlFor="interaction-intensity">{interactionIntensity(config)}%</output></div><input id="interaction-intensity" type="range" min="0" max="100" step="1" value={interactionIntensity(config)} onChange={(event) => { const value = Number(event.currentTarget.value) / 100; onChange((current) => withInteractionIntensity(current, value, isTouch)); }} /><small>K / S 同步调整 · 当前跑马灯 {config.marquee.speed} px/s · 卡片缩放 {config.stackedCards.scaleStep}</small>{isTouch && <small>触屏设备使用卡片手动切换与跑马灯恒定滚动。</small>}</div>
+    {!contentOnly && <><div className="editor-heading"><h2>编辑你的展示</h2><p>修改后实时更新预览。</p></div>
+      <InteractionSettings config={config} onChange={onChange} isTouch={isTouch} /></>}
     <PanelGroup title="个人信息与介绍">
       <TextField label="展示姓名" value={config.content.profile.name} onChange={(value) => editProfile("name", value)} />
       <TextField label="展示方向" value={config.content.profile.role} onChange={(value) => editProfile("role", value)} />
@@ -219,6 +219,18 @@ function LegacyEditorPanel({ config, onChange, isTouch }: Props) {
 }
 
 
+export function InteractionSettings({ config, onChange, isTouch }: Props) {
+  const intensity = interactionIntensity(config);
+  return <div className="editor-intensity">
+    <div><label htmlFor="interaction-intensity">交互强度</label><output htmlFor="interaction-intensity">{intensity}%</output></div>
+    <input id="interaction-intensity" type="range" min="0" max="100" value={intensity} onChange={(event) => {
+      const value = Number(event.currentTarget.value) / 100;
+      onChange((current) => withInteractionIntensity(current, value, isTouch));
+    }} />
+    {isTouch && <small>触屏设备使用卡片手动切换与跑马灯恒定滚动。</small>}
+  </div>;
+}
+
 export function EditorPanel(props: Props) {
   const {config,onChange,isTouch}=props;
   const resume=config.content.resume;
@@ -230,9 +242,8 @@ export function EditorPanel(props: Props) {
     return {...current, content, marquee: {...current.marquee, items: skillShortLabels(content.expertise.skills)}};
   });
   return <aside className="editor-panel" aria-label="编辑面板">
-    <div className="editor-heading"><span>LIVE EDITOR / 01</span><h2>编辑你的展示</h2><p>修改确认内容，保留条目及补充图片；交付时保存到同一作品草稿。</p></div>
-    <label className="editor-field">交互强度<input type="range" min="0" max="100" value={interactionIntensity(config)} onChange={e=>{const value=Number(e.target.value)/100;onChange(current=>withInteractionIntensity(current,value,isTouch));}}/></label>
-    {isTouch && <p className="editor-hint">触屏设备使用手动切换。</p>}
+    {!props.contentOnly && <><div className="editor-heading"><h2>编辑你的展示</h2><p>修改后实时更新预览。</p></div>
+      <InteractionSettings config={config} onChange={onChange} isTouch={isTouch} /></>}
     {resume.sections.map(s=><PanelGroup key={s.kind} title={RESUME_LABELS[RESUME_KINDS.indexOf(s.kind)]}>{s.items.map(i=><div key={i.itemId} className="editor-item">
       {!['basicInfo','jobIntent'].includes(s.kind) && <><TextField label="标题" value={i.title} onChange={value=>editItem(i.itemId,item=>({...item,title:value}))}/><TextField label="内容" value={i.details} multiline onChange={value=>editItem(i.itemId,item=>({...item,details:value}))}/></>}
       {i.facts.map(f=><TextField key={f.key} label={f.label} value={f.value} onChange={value=>editItem(i.itemId,item=>({...item,facts:item.facts.map(fact=>fact.key===f.key?{...fact,value}:fact)}))}/>)}

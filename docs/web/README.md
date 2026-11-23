@@ -4,14 +4,16 @@
 
 ## 用户流程与边界
 
-PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块和条目 → Agent 对齐来源并逐条排版 → `/editor/:resumeId` 对照原 PDF 核对、排序和补充内容 → `/style/:resumeId` 选择职业和固定模板 → 提交 `resumeId/revision/role/templateId` → Python Agent 生成配置 → 编辑与预览 → 免费导出个人作品集网页或付费发布分享。像素世界风使用 `python-agent-v7`，其他固定模板使用 `python-agent-v6`。新流程无需填写测评答案。
+PDF → 首页 `/#upload` 私有上传 → Web 复用浏览器解析算法固定模块和条目 → Agent 对齐来源并逐条排版 → `/editor/:resumeId` 对照原 PDF 核对、排序和补充内容 → `/style/:resumeId` 选择职业和固定模板 → 提交 `resumeId/revision/role/templateId` → Python Agent 生成配置 → 编辑与预览 → 免费导出个人作品集网页或付费发布分享。像素世界风使用 `python-agent-v7`，其他固定模板使用 `python-agent-v6`。新流程无需填写测评答案。
+
+首页导航可直达功能演示、风格样例、上传和试玩工作台。试玩使用合成简历，可调整首屏、模块和五套模板，草稿保存在当前浏览器。正式上传、草稿和交付由当前会话管理。旧 `/upload` 地址重定向至首页上传区。
 
 - 新流程的原 PDF、来源块、私有草稿和最近 10 版历史从上传起在受会话保护的服务端保留 30 天，可提前删除；Agent 仅向当前配置的 OpenAI 或智谱 GLM 文本供应商发送逐条格式化必需的文字。扫描件普通解析失败后可主动选择本机 OCR；混合 PDF 成功解析后可对无文字页创建独立 OCR 候选，核对后补空应用。OCR 所需的系统组件见[部署说明](../shared/deployment.md)。
 - 首页保留明确标注的“浏览器解析（兼容）”入口；该旧路径的 PDF 与候选内容仍只留在浏览器内存。新流程模型失败时不会回退到旧路径并假称 AI 解析成功。
 - 确认页覆盖基本信息、求职意向、自我评价、教育、实习/工作、项目、奖项、校园、技能和其他内容。新版 Agent 流程按模块决定普通内容条目展示；基本信息仅供核对网站姓名与联系字段，不生成独立展示分区；工作与校园经历分别核对。旧浏览器兼容入口产出带来源、页码和展示选择的 `ResumeCandidateV2`，工作与校园经历是两个独立数组。个人细节与期待薪资默认关闭。新流程确认后生成 `resume-v3` 展示内容，旧入口保留 `resume-v1` 兼容；来源页码和原文不会进入生成 brief。
 - **产品本体 vs. 交付产物**：`apps/web` 是生成器产品本体（全栈应用），不部署到 GitHub Pages；用户生成的**个人作品集页面（Showcase）**才是最终交付产物。
 
-配置 GitHub OAuth 后，可在作品页选择「部署到 GitHub Pages」。填写新仓库名称并确认公开，使用当前项目的付费分享资格，再到 GitHub 授权。发布完成后可打开网站或仓库，关闭对话框后可从部署记录继续查询。站点由用户在 GitHub 上管理。 [部署配置](../shared/deployment.md#github-pages-授权与验收)
+配置 GitHub OAuth 后，解锁并发布分享链接的项目可在「正式链接已创建」面板中选择「部署到 GitHub Pages」。填写新仓库名称并确认公开，使用当前项目的付费分享资格，再到 GitHub 授权。发布完成后可打开网站或仓库，关闭对话框后可从部署记录继续查询。站点由用户在 GitHub 上管理。 [部署配置](../shared/deployment.md#github-pages-授权与验收)
 - 肖像是可选内容；照片在主动提交前只留在浏览器。提交时须说明会交给图像供应商处理。
 
 ## 代码入口
@@ -20,20 +22,20 @@ PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块�
 | --- | --- |
 | `src/app/layout.tsx`、`src/app/page.tsx` | Next.js 根布局与主页入口 |
 | `src/app/payment/return/page.tsx` | 支付宝同步跳转返回恢复路由 |
-| `src/app/upload/page.tsx`、`src/app/editor/[resumeId]/page.tsx`、`src/app/style/[resumeId]/page.tsx` | Agent 上传、十模块核对与风格选择 |
+| `src/components/ResumeUpload.tsx`、`src/app/editor/[resumeId]/page.tsx`、`src/app/style/[resumeId]/page.tsx` | 首页 Agent 上传、十模块核对与风格选择 |
 | `src/app/api/[[...slug]]/route.ts` | 统一 API 与内部 Agent 协议 Route Handler |
 | `src/app/healthz/route.ts`、`src/app/readyz/route.ts` | 健康与 Agent 就绪探针路由 |
 | `src/server/` | 服务端核心实现（配置、会话/CSRF、项目与支付服务、生成与内部桥接路由、作品集单文件 HTML 导出） |
 | `src/App.tsx` | 页面阶段、字段确认、异步任务与支付返回后的动作恢复 |
-| `src/components/BuilderExperience.tsx`、`BuilderChrome.tsx` | 六屏制作流程、暖色描边导航、进度、资料模块和交付状态 |
-| `src/styles.css` | 首页、制作流程、作品展示及兼容页面的容器宽度、栅格和响应式断点 |
+| `src/components/BuilderExperience.tsx`、`BuilderChrome.tsx` | 制作流程、共用导航和进度、正式预览工作台与交付面板 |
+| `src/styles.css`、`src/components/workflow-ui.css` | 共用样式和工作流样式，包含容器宽度、栅格和响应式断点 |
 | `src/ShowcasePage.tsx`、`src/components/CyberCreatorPage.tsx`、`src/components/PixelWorldPage.tsx`、`src/components/PixelWorldProjects.tsx`、`src/components/PixelAvatarEditor.tsx` | 按显式模板标识分流的作品页、旧骨架、跑马灯、堆叠卡片、像素世界章节与作品档案/详情、本机像素头像候选编辑 |
 | `src/lib/pdf.ts`、`src/lib/resume.ts` | 本地 PDF 提取与规则解析 |
 | `src/lib/*Api.ts` | 带会话与 CSRF 的同源服务端请求 |
 | `src/lib/presentation.ts`、`src/lib/resumePresentation.ts` | 项目、技能和经历的保守展示规则 |
 | `src/demo/`、`src/fixtures/` | 公开视觉样例与合成回归样例 |
 
-编辑后的展示配置用于预览和后续交付。远程编辑图片需通过浏览器 CORS 读取并嵌入为 Data URL，才能用于作品集发布与导出。
+结果工作台左侧展示可缩放的站点，右侧提供「内容」「样式」「设置」。可打开当前快照到新标签页、保存项目草稿或返回核对详细资料。更换模板通过风格页显式重新生成。点击发布后，右侧面板继续处理公开确认、权益、支付宝查单和分享链接。免费导出按钮直接下载单文件 HTML。远程编辑图片需通过浏览器 CORS 读取并嵌入为 Data URL，才能用于作品集发布与导出。
 
 “我的项目”支持二次确认后删除：已打开的项目删除成功后返回首页，现有分享和未使用的下载链接失效；待核实支付订单的项目会显示服务端拒绝原因。
 
@@ -41,7 +43,7 @@ PDF → `/upload` 私有上传 → Web 复用浏览器解析算法固定模块�
 
 ## 页面宽度与响应式布局
 
-`src/styles.css` 将首页、上传、解析与补充、头像与网站风格、生成结果、预览编辑、交付、兼容制作页及作品展示页的桌面外层容器统一放宽到最多 `1600px`。具体内容仍受页面内边距与文字区域样式约束，不把长段正文强制铺满整行。解析页的左右辅助栏分别为 `260px`、`240px`，中栏使用剩余空间；头像与风格页的左侧预览约占可用栅格的 65%，右侧设置保留至少 `360px`。结果页也优先给作品预览留宽度。`1100px` 以下沿用现有折叠规则，`760px` 以下为单栏与移动端布局。
+桌面主要页面的外层内容宽度上限为 `1600px`，具体内容受内边距和各栏宽度约束。核对页给核对清单分配 `170–245px`、给 PDF 分配 `240–340px`，正文使用剩余空间。`1100px` 以下 PDF 移至两列下方，`760px` 以下为单栏。风格页左侧样张约占可用栅格的 65%，右侧设置保留至少 `360px`，`800px` 以下为单栏。结果工作台右栏宽 `330–380px`，`960px` 以下预览和编辑面板依次排列。
 
 ## 开发与验证
 

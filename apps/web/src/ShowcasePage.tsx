@@ -47,18 +47,18 @@ function AdditionalModule({ title, entries, id }: { title: string; entries: read
   </section>;
 }
 
-export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, staticDecorations = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}`, defaultPortraitUrl }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; staticDecorations?: boolean; resolveResumeImage?: ResumeImageResolver; defaultPortraitUrl?: string }) {
+export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, staticDecorations = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}`, defaultPortraitUrl, samplePreview = false }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; staticDecorations?: boolean; resolveResumeImage?: ResumeImageResolver; defaultPortraitUrl?: string; samplePreview?: boolean }) {
   if ((config as DesignConfigV4).templateId === "pixel-world-v1" && config.content.resume?.version === "resume-v3") {
     return <PixelWorldPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash}
-      staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} />;
+      staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} loadFont={!samplePreview} />;
   }
   if ((config as DesignConfigV4).templateId === "cyber-creator-v1" && config.content.resume?.version === "resume-v3") {
-    return <CyberCreatorPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} />;
+    return <CyberCreatorPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} previewHeadline={samplePreview ? config.content.profile.intro : undefined} />;
   }
-  return <LegacyShowcasePage config={config} allowSkinSwitch={allowSkinSwitch} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} resolveResumeImage={resolveResumeImage} />;
+  return <LegacyShowcasePage config={config} allowSkinSwitch={allowSkinSwitch} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} resolveResumeImage={resolveResumeImage} previewHeadline={samplePreview ? config.content.profile.intro : undefined} />;
 }
 
-function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}` }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; resolveResumeImage?: ResumeImageResolver }) {
+function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}`, previewHeadline }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; resolveResumeImage?: ResumeImageResolver; previewHeadline?: string }) {
   const [skin, setSkin] = useState<SkinId>(config.skin);
   const [touchDetected, setTouchDetected] = useState(touchInput);
   const touchMode = touchDowngraded || touchDetected;
@@ -70,6 +70,7 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
   const hasContact = Boolean(config.content.profile.email.trim() || phone);
   const content = enriched ? resumeDisplayContent(enriched) as DesignConfig["content"] : config.content;
   const { profile, expertise, projects, workExperience = [], campusExperience = [], education = [] } = content;
+  const heroIntro = previewHeadline ?? profile.intro;
   const visibleProjects = projects.filter((project) => {
     const item = enriched?.sections.find(s => s.kind === 'projects')?.items.find(i => i.itemId === project.id);
     return project.title.trim() || project.description.trim() || item && (item.facts.some(f => f.value.trim()) || item.supplement.text.trim() || item.supplement.links.length || item.supplement.images.length);
@@ -142,7 +143,7 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
             <div className="cyber-intro">
               <p className="hero-eyebrow"><span className="hero-eyebrow-line" /> CYBER / PROFILE</p>
               <h1 id="hero-title" aria-label={profile.name}><span>{firstName}</span>{restOfName && <span className="hero-last">{restOfName}</span>}</h1>
-              {profile.intro.trim() && <p className="cyber-tagline">{profile.intro}</p>}
+              {heroIntro.trim() && <p className="cyber-tagline">{heroIntro}</p>}
               <div className="cyber-hero-links">
                 {visibleProjects.length > 0 && <a href="#work">查看项目 <span aria-hidden="true">↗</span></a>}
                 {hasContact && <a href={fixedTemplate ? "#contact" : `mailto:${profile.email}`}>联系我 <span aria-hidden="true">↗</span></a>}
@@ -160,7 +161,7 @@ function LegacyShowcasePage({ config, allowSkinSwitch = false, preserveShareHash
               <h1 id="hero-title" aria-label={profile.name}><span>{firstName}</span>{restOfName && <span className="hero-last">{restOfName}</span>}</h1>
             </div>
             {artwork && <figure className="hero-artwork"><img src={artwork.assetUrl} alt={artwork.alt} /><figcaption>{artwork.styleId.replaceAll("-", " ")}</figcaption></figure>}
-            <div className={config.heroArtwork && !profile.intro ? "hero-aside hero-aside--empty" : "hero-aside"}><div className="hero-stamp" aria-hidden="true"><span>WORK<br />IN<br />MOTION</span><span className="stamp-arrow">↗</span></div>{profile.intro && <p>{profile.intro}</p>}</div>
+            <div className={config.heroArtwork && !heroIntro ? "hero-aside hero-aside--empty" : "hero-aside"}><div className="hero-stamp" aria-hidden="true"><span>WORK<br />IN<br />MOTION</span><span className="stamp-arrow">↗</span></div>{heroIntro && <p>{heroIntro}</p>}</div>
           </div>}
           <div className="hero-bottom"><div className="hero-identity">{(profile.role.trim() || profile.location.trim()) && <p>{profile.role}{profile.role.trim() && profile.location.trim() && <br />}{profile.location.trim() && <span>{profile.location}</span>}</p>}{profile.availability.trim() && <p className="hero-availability">{profile.availability}</p>}</div><div className="hero-links">{!isCyber && visibleProjects.length > 0 && <a className="hero-project-link" href="#work">查看项目 ↗</a>}<a className="scroll-hint" href={exploreTarget}>EXPLORE <span>↓</span></a></div></div>
         </section>

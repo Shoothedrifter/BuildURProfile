@@ -17,6 +17,7 @@ type Props = {
   preserveShareHash?: boolean;
   staticDecorations?: boolean;
   defaultPortraitUrl?: string;
+  loadFont?: boolean;
 };
 
 function PixelEntry({ item, resolveImage, Title = "h4" }: { item: ResumeDisplayItem; resolveImage: ResumeImageResolver; Title?: "h3" | "h4" }) {
@@ -73,7 +74,7 @@ function plainClick(event: MouseEvent<HTMLAnchorElement>) {
 }
 
 export function PixelWorldPage({ config, resolveResumeImage, preserveShareHash = false,
-  staticDecorations = false, defaultPortraitUrl = pixelDefaultPortrait }: Props) {
+  staticDecorations = false, defaultPortraitUrl = pixelDefaultPortrait, loadFont = true }: Props) {
   const { name, role, intro, about, projects, experience, email, phone, phoneNumber } = useMemo(() => pixelWorldPresentation(config), [config]);
   const hasAbout = about.length > 0;
   const hasWorks = projects.length > 0;
@@ -113,13 +114,13 @@ export function PixelWorldPage({ config, resolveResumeImage, preserveShareHash =
   }, []);
 
   useEffect(() => {
-    if (mode === "export") return;
+    if (mode === "export" || !loadFont) return;
     // 预览与分享模式按需加载像素字体子集；离线导出由导出器内嵌 data URI。
     const style = document.createElement("style");
     style.textContent = pixelFontFaceCss(pixelFontRequestHref(name));
     document.head.appendChild(style);
     return () => { style.remove(); };
-  }, [mode, name]);
+  }, [mode, name, loadFont]);
 
   useEffect(() => {
     if (mode === "preview") return;
@@ -148,15 +149,19 @@ export function PixelWorldPage({ config, resolveResumeImage, preserveShareHash =
   }, [mode, chapters, goToChapter]);
 
   useEffect(() => {
+    const pane = root.current?.closest<HTMLElement>("[data-showcase-scroll]");
     const sections = Array.from(root.current?.querySelectorAll<HTMLElement>("[data-pixel-chapter]") ?? []).reverse();
     let frame = 0;
     function update() {
       frame = 0;
-      const readingLine = Math.min(180, window.innerHeight * 0.24);
+      const top = pane?.getBoundingClientRect().top ?? 0;
+      const height = pane?.clientHeight ?? window.innerHeight;
+      const readingLine = top + Math.min(180, height * 0.24);
       let visible = sections.find(section => section.getBoundingClientRect().top <= readingLine);
       const last = sections[0];
-      if (last && Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight &&
-          last.getBoundingClientRect().top < window.innerHeight) visible = last;
+      const scrollTop = pane?.scrollTop ?? window.scrollY;
+      const scrollHeight = pane?.scrollHeight ?? document.documentElement.scrollHeight;
+      if (last && Math.ceil(scrollTop + height) >= scrollHeight && last.getBoundingClientRect().top < top + height) visible = last;
       if (visible?.dataset.pixelChapter) setCurrentChapter(visible.dataset.pixelChapter as PixelChapter);
     }
     function scheduleUpdate() {

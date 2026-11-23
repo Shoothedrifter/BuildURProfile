@@ -65,21 +65,24 @@ export function CyberWorkTimeline({ items, resolveResumeImage, animate }: {
     const list = listRef.current;
     if (!animate || !sweep || !list) return;
 
+    const pane = list.closest<HTMLElement>("[data-showcase-scroll]");
+    const scrollTarget = pane ?? window;
     const entries = Array.from(list.children);
     let frame = 0;
     let current: Element | undefined;
     const update = () => {
       frame = 0;
-      const height = window.innerHeight;
-      const sweepTop = sweep.getBoundingClientRect().top;
+      const top = pane?.getBoundingClientRect().top ?? 0;
+      const height = pane?.clientHeight ?? window.innerHeight;
+      const sweepTop = sweep.getBoundingClientRect().top - top;
       const progress = Math.max(0, Math.min(1, (height * .86 - sweepTop) / (height * .52)));
       const bounds = list.getBoundingClientRect();
       let next: Element | undefined;
-      if (bounds.bottom > 0 && bounds.top < height) {
-        const readingLine = height * .52;
+      if (bounds.bottom > top && bounds.top < top + height) {
+        const readingLine = top + height * .52;
         for (const entry of entries) {
           const rect = entry.getBoundingClientRect();
-          if (rect.bottom <= 0 || rect.top >= height) continue;
+          if (rect.bottom <= top || rect.top >= top + height) continue;
           if (!next || rect.top <= readingLine) next = entry;
           if (rect.top > readingLine) break;
         }
@@ -95,7 +98,7 @@ export function CyberWorkTimeline({ items, resolveResumeImage, animate }: {
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : null;
     observer?.observe(list);
-    window.addEventListener("scroll", schedule, { passive: true });
+    scrollTarget.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
     schedule();
 
@@ -103,7 +106,7 @@ export function CyberWorkTimeline({ items, resolveResumeImage, animate }: {
       current?.removeAttribute("data-current");
       sweep.style.removeProperty("--work-sweep-progress");
       observer?.disconnect();
-      window.removeEventListener("scroll", schedule);
+      scrollTarget.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       if (frame) window.cancelAnimationFrame(frame);
     };

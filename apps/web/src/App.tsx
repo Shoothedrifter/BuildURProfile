@@ -35,6 +35,11 @@ function touchInput(): boolean {
     (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) || false);
 }
 
+function hasExplicitHomeTarget(): boolean {
+  const hash = window.location.hash;
+  return hash.startsWith("#share=") || /^#(?:intro|write|design|check|upload|editor|process)$/.test(hash);
+}
+
 function shareToken(): string | null {
   if (typeof window === "undefined") return null;
   const match = /^#share=([A-Za-z0-9_-]{43})$/.exec(window.location.hash);
@@ -60,6 +65,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
 }) {
   const avatarDemo = isAvatarDemoEnabled();
   const [shareView, setShareView] = useState<{ requested: boolean; config: DesignConfig | null; loading: boolean }>({ requested: false, config: null, loading: false });
+  const [restoredDelivery, setRestoredDelivery] = useState(false);
+  const [savedConfig, setSavedConfig] = useState<DesignConfig | null>(null);
   const [phase, setPhase] = useState<WorkflowPhase>(initialPhase);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState("");
@@ -95,13 +102,14 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
 
   useEffect(() => {
     if (window.location.pathname === "/payment/return" || window.location.pathname.startsWith("/style/") ||
+      hasExplicitHomeTarget() ||
       new URLSearchParams(window.location.search).has("github_deployment")) return;
     let active = true;
     const version = generationVersion.current;
     void generationApi.resumeGeneration((status) => {
       if (active && version === generationVersion.current) setProgress(agentStatusText(status));
     }).then((result) => {
-      if (!active || version !== generationVersion.current || !result) return;
+      if (!active || version !== generationVersion.current || !result || hasExplicitHomeTarget()) return;
       if (!isRenderableConfig(result.config)) {
         setProgress("");
         setError("恢复的作品配置不完整，请重新生成。");
@@ -188,6 +196,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
         return;
       }
       setPaymentIntent(project.pendingAction);
+      setRestoredDelivery(project.pendingAction === "share");
+      setQuotedAmountYuan(project.pendingAmountFen ? (project.pendingAmountFen / 100).toFixed(2) : null);
       setPhase("delivery");
       if (queryError) {
         setResultError(`${queryError}。作品草稿已保留，请重试原操作。`);
@@ -502,16 +512,36 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
 
   const saveProject = async (): Promise<OwnedProject> => {
     if (!generated) throw new Error("请先生成作品。");
+    const version = generationVersion.current;
     const published = toPublishedConfig(await inlineConfigImages(generated));
     const current = projectId ? await paymentApi.project(projectId) : null;
     const project = current
-      ? JSON.stringify(current.config) === JSON.stringify(published) ? current : await paymentApi.updateProject(projectId!, published)
+      ? JSON.stringify(current.config) === JSON.stringify(published) ? current : await paymentApi.updateProject(current.id, published)
       : resultResumeId ? await paymentApi.createProject(published, resultResumeId) : await paymentApi.createProject(published);
-    setProjectId(project.id);
-    setProjectPaid(project.paid);
-    setResultResumeId(project.resumeId ?? null);
-    setProjects(await paymentApi.projects());
+    if (version === generationVersion.current) {
+      setProjectId(project.id);
+      setProjectPaid(project.paid);
+      setResultResumeId(project.resumeId ?? null);
+      setSavedConfig(generated);
+    }
+    void paymentApi.projects().then(setProjects).catch(() => {});
     return project;
+  };
+
+  const saveDraft = async () => {
+    if (!generated || exporting) return;
+    const version = generationVersion.current;
+    setExporting(true);
+    setResultError("");
+    try {
+      await saveProject();
+    } catch (cause) {
+      if (version === generationVersion.current) {
+        setResultError(cause instanceof Error ? cause.message : "草稿保存失败，请重试。");
+      }
+    } finally {
+      setExporting(false);
+    }
   };
 
   const syncShares = async (id: string) => {
@@ -553,8 +583,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     if (!generated || exporting) return;
     if (action === "share") {
       setPaymentIntent(action);
+      if (!confirmed) setRestoredDelivery(false);
       setPhase("delivery");
-      window.scrollTo({ top: 0, behavior: "instant" });
       if (!confirmed) return;
     }
     setExporting(true);
@@ -582,7 +612,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   };
 
   const startPayment = async () => {
-    if (!projectId || !paymentIntent) return;
+    if (!projectId || !paymentIntent || exporting) return;
     setExporting(true);
     setResultError("");
     try {
@@ -650,6 +680,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     setProjectId(project.id);
     setProjectPaid(project.paid);
     setGenerated(project.config);
+    setSavedConfig(project.config);
+    setRestoredDelivery(false);
     setResultResumeId(project.resumeId ?? null);
     setPaymentIntent(null);
     setShare(null);
@@ -775,6 +807,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     offer={offer}
     quotedAmountYuan={quotedAmountYuan}
     paymentIntent={paymentIntent}
+    restoredDelivery={restoredDelivery}
+    draftSaved={Boolean(generated && generated === savedConfig)}
     shareSnapshot={shareSnapshot}
     resultError={resultError}
     exporting={exporting}
@@ -797,6 +831,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     onGenerate={() => void generate()}
     onRunAvatarGeneration={() => { if (generated) void runAvatarGeneration(generated, true); }}
     onEditGenerated={editGenerated}
+    onSaveDraft={() => void saveDraft()}
     onRequestDelivery={(action) => void requestDelivery(action)}
     onGitHubPages={offer?.githubPagesEnabled ? () => setGitHubDialog({ paymentReturn: false, deployment: null }) : undefined}
     githubPagesDialog={githubDialog && generated && <GitHubPagesDialog
@@ -817,6 +852,10 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     onRemoveShare={() => void removeShare()}
     onRemoveSavedShare={(id) => void removeSavedShare(id)}
     onRestartQuiz={() => {
+      if (resultResumeId && styleResumeId !== resultResumeId) {
+        window.location.assign(`/style/${encodeURIComponent(resultResumeId)}`);
+        return;
+      }
       setError("");
       setPhase("quiz");
       window.scrollTo({ top: 0, behavior: "instant" });

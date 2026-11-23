@@ -8,6 +8,8 @@ export function observeCyberProjectStack(stack: HTMLElement): () => void {
   const cards = Array.from(stack.querySelectorAll<HTMLElement>(":scope > .cyber-project-card"));
   if (cards.length < 2) return () => {};
 
+  const pane = stack.closest<HTMLElement>("[data-showcase-scroll]");
+  const scrollTarget = pane ?? window;
   const tops = cards.map((_, index) => TOP + Math.min(index, 4) * REVEAL);
   let stacked = false;
   let scrollFrame = 0;
@@ -17,7 +19,8 @@ export function observeCyberProjectStack(stack: HTMLElement): () => void {
     scrollFrame = 0;
     if (!stacked) return;
     const bounds = stack.getBoundingClientRect();
-    if (bounds.bottom < 0 || bounds.top > window.innerHeight) return;
+    const viewport = pane?.getBoundingClientRect();
+    if (bounds.bottom < (viewport?.top ?? 0) || bounds.top > (viewport?.bottom ?? window.innerHeight)) return;
 
     const positions = cards.map(card => card.getBoundingClientRect().top);
     cards.slice(0, -1).forEach((card, index) => {
@@ -34,7 +37,7 @@ export function observeCyberProjectStack(stack: HTMLElement): () => void {
     const heights = cards.map(card => card.offsetHeight);
     stacked = window.innerWidth >= MIN_VIEWPORT_WIDTH
       && stack.clientWidth >= MIN_STACK_WIDTH
-      && heights.every((height, index) => height > 0 && height + tops[index] + 24 <= window.innerHeight)
+      && heights.every((height, index) => height > 0 && height + tops[index] + 24 <= (pane?.clientHeight ?? window.innerHeight))
       && !stack.querySelector("details[open], :focus-visible");
     stack.toggleAttribute("data-stacked", stacked);
     if (!stacked) {
@@ -75,7 +78,7 @@ export function observeCyberProjectStack(stack: HTMLElement): () => void {
   stack.addEventListener("focusin", onFocusIn);
   stack.addEventListener("focusout", onFocusOut);
   window.addEventListener("resize", updateLayout);
-  window.addEventListener("scroll", scheduleDepth, { passive: true });
+  scrollTarget.addEventListener("scroll", scheduleDepth, { passive: true });
   updateLayout();
 
   return () => {
@@ -84,7 +87,7 @@ export function observeCyberProjectStack(stack: HTMLElement): () => void {
     stack.removeEventListener("focusin", onFocusIn);
     stack.removeEventListener("focusout", onFocusOut);
     window.removeEventListener("resize", updateLayout);
-    window.removeEventListener("scroll", scheduleDepth);
+    scrollTarget.removeEventListener("scroll", scheduleDepth);
     window.cancelAnimationFrame(scrollFrame);
     window.cancelAnimationFrame(focusFrame);
     stack.removeAttribute("data-stacked");

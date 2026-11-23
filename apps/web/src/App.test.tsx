@@ -88,6 +88,7 @@ async function reachPixelAvatar() {
   render(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
   fireEvent.click(await screen.findByRole("button", { name: /像素世界风/ }));
   fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+  fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
   return {
     preview: within(await screen.findByTestId("pixel-world-page")),
     input: await screen.findByLabelText("选择个人像素头像照片")
@@ -104,6 +105,7 @@ async function choosePixelPhoto(input: HTMLElement, name = "synthetic.png") {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   sessionStorage.clear();
   vi.stubGlobal("scrollTo", vi.fn());
   vi.mocked(extractPdfText).mockClear();
@@ -122,7 +124,11 @@ beforeEach(() => {
   vi.mocked(generationApi.clearSavedGeneration).mockClear();
   vi.mocked(generationApi.cancelSavedGeneration).mockClear();
   vi.mocked(preparePortrait).mockReset().mockResolvedValue("data:image/jpeg;base64,cG9ydHJhaXQ=");
-  vi.mocked(paymentApi.createProject).mockClear();
+  const project = { id: "project-1", config: rawConfig as DesignConfig, revision: 1, paid: false, pendingAction: null, pendingAmountFen: null };
+  vi.mocked(paymentApi.createProject).mockReset().mockResolvedValue(project);
+  vi.mocked(paymentApi.project).mockReset().mockResolvedValue(project);
+  vi.mocked(paymentApi.updateProject).mockReset().mockResolvedValue({ ...project, revision: 2 });
+  vi.mocked(paymentApi.checkout).mockClear();
   vi.mocked(paymentApi.projects).mockReset().mockResolvedValue([]);
   vi.mocked(paymentApi.deleteProject).mockReset().mockResolvedValue({ ok: true });
   vi.mocked(paymentApi.publish).mockClear();
@@ -214,7 +220,9 @@ describe("showcase builder", () => {
       const [, , signal] = vi.mocked(generationApi.generatePixelAvatar).mock.calls[0];
       if (action === "switch photo") await choosePixelPhoto(input, "new-photo.png");
       if (action === "restore default") fireEvent.click(screen.getByRole("button", { name: "恢复默认角色" }));
-      if (action === "leave the result") fireEvent.click(screen.getByRole("button", { name: "更换模板" }));
+      if (action === "leave the result") {
+        fireEvent.click(within(screen.getByRole("navigation", { name: "生成进度" })).getByRole("button", { name: /头像与风格/ }));
+      }
       expect(signal.aborted).toBe(true);
       await act(async () => finish(pixelArtwork));
       expect(screen.queryByRole("button", { name: "使用此头像" })).toBeNull();
@@ -310,7 +318,7 @@ describe("showcase builder", () => {
       expect(within(showcase).getByRole("img", { name: "原图片说明" })).toHaveAttribute("src", "/api/showcase-media/image_synthetic");
       fireEvent.change(screen.getByRole("textbox", { name: "图片说明 1" }), { target: { value: "修改后的图片说明" } });
       expect(within(showcase).getByRole("img", { name: "修改后的图片说明" })).toHaveAttribute("src", "/api/showcase-media/image_synthetic");
-      fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+      fireEvent.click(screen.getByRole("button", { name: /发布并获取链接/ }));
       fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
       await waitFor(() => expect(paymentApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
         templateId: "cyber-creator-v1",
@@ -334,7 +342,7 @@ describe("showcase builder", () => {
       expect(serverHtml).toContain("正在读取已确认的简历草稿");
       expect(serverHtml).not.toContain("launch-hero-title");
       render(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
-      expect(screen.queryByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: /你的经历.*值得被看见/ })).not.toBeInTheDocument();
       expect(screen.getByText("正在读取已确认的简历草稿…")).toBeInTheDocument();
       await act(async () => {});
       expect(await screen.findByRole("heading", { name: "04 头像与网站风格" })).toBeInTheDocument();
@@ -393,7 +401,7 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     await waitFor(() => expect(paymentApi.deleteProject).toHaveBeenCalledWith("saved-project"));
     expect(await screen.findByText(/还没有保存的作品/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /你的经历.*值得被看见/ })).toBeInTheDocument();
   });
 
   it("returns to the restored project's resume instead of the resume in the current style URL", async () => {
@@ -420,6 +428,7 @@ describe("showcase builder", () => {
     fireEvent.click(await screen.findByRole("button", { name: "我的项目，共 1 个" }));
     fireEvent.click(screen.getByRole("button", { name: /继续编辑/ }));
     expect(screen.queryByText("返回编辑详细内容")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "样式" }));
     expect(screen.getByText(/简历草稿不可用/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
   });
@@ -465,23 +474,37 @@ describe("showcase builder", () => {
     fireEvent.click(screen.getByRole("button", { name: /荣誉奖项/ }));
     expect(screen.getByRole("textbox", { name: /荣誉奖项 2/ })).toHaveValue("运营技术专栏");
   });
-  it("starts on the Figma launch page and keeps real samples and projects available", async () => {
+  it("starts on the scrolling launch page and keeps real samples and projects available", async () => {
     render(<App />);
-    expect(screen.getByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "开始生成" })).toHaveAttribute("href", "/upload");
-    fireEvent.click(screen.getByRole("button", { name: "查看体验设计作品集样例" }));
+    expect(screen.getByRole("heading", { name: /你的经历.*值得被看见/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /开始制作/ })).toHaveAttribute("href", "#upload");
+    fireEvent.click(screen.getByRole("button", { name: /查看完整作品集样例/ }));
     expect(await screen.findByRole("heading", { name: /Alex Morgan/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /返回生成器/ }));
     fireEvent.click(screen.getByRole("button", { name: "我的项目，共 0 个" }));
     expect(screen.getByRole("dialog", { name: "我的项目" })).toBeInTheDocument();
   });
 
-  it("returns from legacy parsing to a clean Figma launch page", () => {
+  it.each([
+    ["#upload", "从你的经历开始制作作品集"],
+    ["#editor", "作品集预览与编辑"]
+  ])("keeps the direct %s target available despite a previously started generation", (hash, section) => {
+    window.history.replaceState(null, "", "/" + hash);
+    try {
+      render(<App />);
+      expect(screen.getByRole("region", { name: section })).toBeInTheDocument();
+      expect(generationApi.resumeGeneration).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("returns from legacy parsing to a clean launch page", () => {
     render(<App />);
     openUpload();
     expect(screen.getByRole("heading", { name: "从你的简历开始" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "← 返回首页" }));
-    expect(screen.getByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /你的经历.*值得被看见/ })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "生成进度" })).not.toBeInTheDocument();
   });
 
@@ -499,7 +522,7 @@ describe("showcase builder", () => {
 
       openUpload();
       fireEvent.click(screen.getByRole("button", { name: "产品介绍" }));
-      await waitFor(() => expect(visitedIds).toEqual(["process", "about"]));
+      await waitFor(() => expect(visitedIds).toEqual(["process", "write"]));
     } finally {
       Reflect.deleteProperty(Element.prototype, "scrollIntoView");
     }
@@ -547,7 +570,7 @@ describe("showcase builder", () => {
   it("opens the advanced configuration without losing the live preview", async () => {
     render(<App />);
     await reachResult();
-    expect(screen.getByRole("button", { name: /下一步：前往分享与付费/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /发布并获取链接/ })).toBeInTheDocument();
     fireEvent.click(screen.getByText("高级参数 / 调试信息 →"));
     expect(screen.getByTestId("design-config-json")).toBeVisible();
     expect(screen.getByRole("heading", { name: "05 网站预览与轻量编辑" })).toBeInTheDocument();
@@ -610,6 +633,7 @@ describe("showcase builder", () => {
     render(<App />);
     await screen.findByAltText("旧肖像");
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
+    fireEvent.click(screen.getByRole("tab", { name: "设置" }));
     fireEvent.click(screen.getByText("更换照片 →"));
     fireEvent.change(screen.getByLabelText("选择个人肖像照片"), { target: { files: [new File(["portrait"], "new.png", { type: "image/png" })] } });
     await screen.findByText("new.png");
@@ -675,11 +699,25 @@ describe("showcase builder", () => {
     expect(within(page).getByLabelText("赛博科技立体视觉")).toBeInTheDocument();
   });
 
+  it("saves the live draft without opening the payment flow", async () => {
+    render(<App />);
+    await reachResult();
+    fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Saved Person" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
+    expect(await screen.findByText("草稿已保存")).toBeInTheDocument();
+    expect(paymentApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.objectContaining({ profile: expect.objectContaining({ name: "Saved Person" }) })
+    }));
+    expect(paymentApi.checkout).not.toHaveBeenCalled();
+    expect(paymentApi.publish).not.toHaveBeenCalled();
+  });
+
   it("asks for public-share confirmation before creating or publishing a project", async () => {
     render(<App />);
     await reachResult();
-    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
-    expect(screen.getByRole("heading", { name: "准备好公开分享了吗？" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /发布并获取链接/ }));
+    expect(within(screen.getByRole("complementary", { name: "分享与付费" })).getByRole("heading", { name: "准备好公开分享了吗？" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "作品预览画布" })).toContainElement(screen.getByTestId("showcase-page"));
     expect(paymentApi.createProject).not.toHaveBeenCalled();
     expect(paymentApi.publish).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "暂不分享，返回预览" }));
@@ -838,6 +876,7 @@ describe("showcase builder", () => {
       content: expect.not.objectContaining({ sourceRefs: expect.anything() })
     }), undefined, expect.any(Function));
 
+    fireEvent.click(screen.getByRole("tab", { name: "样式" }));
     fireEvent.click(screen.getByRole("button", { name: /更换模板/ }));
     answerAll(4);
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
@@ -854,12 +893,13 @@ describe("showcase builder", () => {
     const before = JSON.parse((await screen.findByTestId("design-config-json")).textContent ?? "") as DesignConfig;
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "Edited Person" } });
     expect(screen.getByRole("heading", { name: "Edited Person" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "设置" }));
     fireEvent.change(screen.getByRole("slider", { name: "交互强度" }), { target: { value: "92" } });
     const after = JSON.parse(screen.getByTestId("design-config-json").textContent ?? "") as DesignConfig;
     expect(after.content.profile.name).toBe("Edited Person");
     expect(after.marquee.speed).toBeGreaterThan(before.marquee.speed);
     expect(after.stackedCards.scaleStep).toBeGreaterThan(before.stackedCards.scaleStep);
-    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(screen.getByRole("button", { name: /发布并获取链接/ }));
     fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await waitFor(() => expect(paymentApi.createProject).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.objectContaining({ profile: expect.objectContaining({ name: "Edited Person" }) }),
@@ -894,6 +934,36 @@ describe("showcase builder", () => {
     }
   });
 
+  it("shows the GitHub Pages action only after the project is unlocked and published", async () => {
+    vi.mocked(paymentApi.offer).mockResolvedValueOnce({
+      configured: true, mode: "sandbox", priceFen: 199, priceYuan: "1.99",
+      service: "正式托管分享", shareDays: 7, githubPagesEnabled: true
+    });
+    vi.mocked(paymentApi.createProject).mockResolvedValueOnce({
+      id: "paid-project", config: rawConfig as DesignConfig, revision: 1,
+      paid: true, pendingAction: null, pendingAmountFen: null
+    });
+    let finishPublish!: (share: Awaited<ReturnType<typeof paymentApi.publish>>) => void;
+    vi.mocked(paymentApi.publish).mockImplementationOnce(() => new Promise(resolve => { finishPublish = resolve; }));
+
+    const deploymentButton = () => screen.queryByRole("button", { name: "部署到 GitHub Pages" });
+    render(<App />);
+    await reachResult();
+    expect(deploymentButton()).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /发布并获取链接/ }));
+    expect(deploymentButton()).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
+    await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("paid-project"));
+    expect(deploymentButton()).not.toBeInTheDocument();
+
+    await act(async () => finishPublish({
+      token: "a".repeat(43), url: "/#share=" + "a".repeat(43), expiresAt: Date.now() + 60_000
+    }));
+    expect(deploymentButton()).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "返回预览，继续编辑" }));
+    expect(deploymentButton()).not.toBeInTheDocument();
+  });
+
   it("uses one paid project for publishing and free HTML delivery without another checkout", async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     const paid = { id: "paid-project", config: rawConfig as DesignConfig, revision: 1,
@@ -903,17 +973,18 @@ describe("showcase builder", () => {
     vi.mocked(paymentApi.updateProject).mockResolvedValue(paid);
     render(<App />);
     await reachResult();
-    fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /发布并获取链接/ }));
     fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledWith("paid-project"));
     fireEvent.click(screen.getByRole("button", { name: /导出文件/ }));
     await waitFor(() => expect(paymentApi.export).toHaveBeenCalledWith("paid-project"));
     expect(paymentApi.checkout).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "样式" }));
     fireEvent.click(screen.getByRole("button", { name: /更换模板/ }));
     answerAll(4);
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /发布并获取链接/ }));
     fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await waitFor(() => expect(paymentApi.publish).toHaveBeenCalledTimes(2));
     expect(paymentApi.createProject).toHaveBeenCalledTimes(1);
@@ -963,15 +1034,17 @@ describe("showcase builder", () => {
   it("saves edits made after opening the payment panel before starting checkout", async () => {
     render(<App />);
     await reachResult();
-    fireEvent.click(await screen.findByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /发布并获取链接/ }));
     fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await screen.findByRole("heading", { name: "解锁当前项目" });
     fireEvent.click(screen.getByRole("button", { name: /返回预览，继续编辑/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "展示姓名" }), { target: { value: "支付前改名" } });
-    fireEvent.click(screen.getByRole("button", { name: /发布并分享/ }));
+    fireEvent.click(screen.getByRole("button", { name: /发布并获取链接/ }));
     fireEvent.click(screen.getByRole("button", { name: "确认并发布" }));
     await screen.findByRole("heading", { name: "解锁当前项目" });
-    fireEvent.click(screen.getByRole("button", { name: /前往支付宝沙箱收银台/ }));
+    const checkout = screen.getByRole("button", { name: /前往支付宝沙箱收银台/ });
+    await waitFor(() => expect(checkout).toBeEnabled());
+    fireEvent.click(checkout);
     await waitFor(() => expect(paymentApi.updateProject).toHaveBeenCalledWith("project-1",
       expect.objectContaining({ content: expect.objectContaining({
         profile: expect.objectContaining({ name: "支付前改名" })

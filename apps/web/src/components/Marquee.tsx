@@ -1,5 +1,5 @@
 import type { MarqueeConfig, MarqueeItem } from "../../../../packages/contracts/src/config";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 export type MarqueeProps = MarqueeConfig & { items: readonly MarqueeItem[] };
@@ -18,6 +18,7 @@ export function Marquee({
   pauseOnHover,
   items
 }: MarqueeProps) {
+  const root = useRef<HTMLDivElement>(null);
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const safeSpeed = Math.max(1, speed);
@@ -26,25 +27,27 @@ export function Marquee({
   const segmentWidth = items.length * (safeTileSize + 16);
 
   useEffect(() => {
-    if (!bindToScroll) return;
+    if (!bindToScroll || !root.current) return;
+    const pane = root.current.closest<HTMLElement>("[data-showcase-scroll]");
+    const target = pane ?? window;
     let frame = 0;
     const update = () => {
       if (pauseOnHover && hoveredRow !== null) return;
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => setScrollOffset(window.scrollY * safeSpeed / 40));
+      frame = requestAnimationFrame(() => setScrollOffset((pane?.scrollTop ?? window.scrollY) * safeSpeed / 40));
     };
     update();
-    window.addEventListener("scroll", update, { passive: true });
+    target.addEventListener("scroll", update, { passive: true });
     return () => {
       cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", update);
+      target.removeEventListener("scroll", update);
     };
-  }, [bindToScroll, safeSpeed, pauseOnHover, hoveredRow]);
+  }, [bindToScroll, safeSpeed, pauseOnHover, hoveredRow, items.length]);
 
   if (items.length === 0) return null;
 
   return (
-    <div className="marquee" role="region" aria-label="Scrolling expertise">
+    <div ref={root} className="marquee" role="region" aria-label="Scrolling expertise">
       {Array.from({ length: rowCount }, (_, rowIndex) => {
         const offset = segmentWidth === 0 ? 0 : scrollOffset % segmentWidth;
         const scrollX = direction === "left" ? -offset : -segmentWidth + offset;

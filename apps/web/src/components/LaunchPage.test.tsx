@@ -1,93 +1,78 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { LaunchPage } from "./LaunchPage";
 
-const renderLaunchPage = (overrides: Partial<React.ComponentProps<typeof LaunchPage>> = {}) => {
-  const props: React.ComponentProps<typeof LaunchPage> = {
-    projectCount: 0,
-    onProjects: vi.fn(),
-    onSample: vi.fn(),
-    onLegacyParse: vi.fn(),
-    ...overrides
-  };
-  return { ...render(<LaunchPage {...props} />), props };
-};
+vi.mock("./ResumeUpload", () => ({ ResumeUpload: () => <section id="upload" /> }));
+vi.mock("./DemoWorkbench", () => ({ DemoWorkbench: () => <section id="editor" /> }));
 
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+function renderLaunchPage() {
+  const actions = { onProjects: vi.fn(), onSample: vi.fn(), onLegacyParse: vi.fn() };
+  return { ...render(<LaunchPage projectCount={2} {...actions} />), actions };
+}
 
 describe("LaunchPage", () => {
-  it("renders the Figma launch information architecture with real destinations", () => {
-    renderLaunchPage();
+  it("links each homepage control to its section and retains the project and compatibility actions", () => {
+    const { container, actions } = renderLaunchPage();
+    expect(screen.getByRole("heading", { name: /你的经历.*值得被看见/ })).toBeInTheDocument();
 
-    expect(screen.getByRole("heading", { name: /把一份 PDF 简历.*变成你的个人网站/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "开始生成" })).toHaveAttribute("href", "/upload");
-    expect(screen.getByRole("link", { name: "上传简历，免费开始" })).toHaveAttribute("href", "/upload");
-
-    ["AI 智能解析", "模块化补充", "挑选网站风格", "一键发布"].forEach((title) => {
-      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
-    });
-    ["体验设计作品集", "创意开发实验室", "我的项目与故事"].forEach((title) => {
-      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
-    });
-    ["1 上传 PDF →", "2 确认内容 →", "3 生成网站"].forEach((step) => {
-      expect(screen.getByText(step)).toBeInTheDocument();
-    });
-
-    ["隐私政策", "服务条款", "联系我们"].forEach((label) => {
-      expect(screen.getByText(label).tagName).not.toBe("A");
-      expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
-    });
-  });
-
-  it("keeps scrolling, samples, projects and legacy parsing as separate actions", () => {
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(Element.prototype, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView
-    });
-    const onProjects = vi.fn();
-    const onSample = vi.fn();
-    const onLegacyParse = vi.fn();
-    renderLaunchPage({ projectCount: 2, onProjects, onSample, onLegacyParse });
-
-    fireEvent.click(screen.getByRole("button", { name: "查看样例" }));
-    fireEvent.click(screen.getByRole("button", { name: "查看样例 ↓" }));
-    expect(scrollIntoView).toHaveBeenCalledTimes(2);
-    expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: "smooth", block: "start" });
-
-    ["查看体验设计作品集样例", "查看创意开发实验室样例", "查看我的项目与故事样例"].forEach((label) => {
-      fireEvent.click(screen.getByRole("button", { name: label }));
-    });
-    expect(onSample).toHaveBeenCalledTimes(3);
-
+    const destinations = [
+      ["开始制作 →", "upload"],
+      ["了解功能", "write"],
+      ["作品集样例", "design"],
+      ["预览与编辑", "editor"],
+      ["返回 BuildURProfile 首页顶部", "intro"]
+    ];
+    for (const [label, anchor] of destinations) {
+      expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", '#' + anchor);
+      expect(container.querySelector('#' + anchor)).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole("button", { name: "查看完整作品集样例" }));
+    expect(actions.onSample).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: "我的项目，共 2 个" }));
-    expect(onProjects).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getAllByRole("button", { name: "使用浏览器解析（兼容）" })[0]);
-    expect(onLegacyParse).toHaveBeenCalledOnce();
-
-    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
-    expect(() => fireEvent.click(screen.getByRole("button", { name: "查看样例" }))).not.toThrow();
+    expect(actions.onProjects).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "使用浏览器解析（兼容）" }));
+    expect(actions.onLegacyParse).toHaveBeenCalledOnce();
   });
 
-  it("uses instant scrolling when the user prefers reduced motion", () => {
-    const scrollIntoView = vi.fn();
-    const scrollTo = vi.fn();
-    Object.defineProperty(Element.prototype, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView
-    });
-    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true }));
-    vi.spyOn(window, "scrollTo").mockImplementation(scrollTo);
+  it("accepts or keeps the sample text and restores both versions on undo", () => {
     renderLaunchPage();
+    const scene = within(screen.getByRole("region", { name: /把经历.*讲清楚/ }));
+    const original = /负责通勤产品的用户研究/;
+    const rewrite = /通过站点访谈与换乘任务测试/;
+    fireEvent.click(scene.getByRole("button", { name: "接受建议" }));
+    expect(scene.queryByText(original)).not.toBeInTheDocument();
+    expect(scene.getByText(rewrite)).toBeInTheDocument();
+    expect(scene.getByRole("status")).toHaveTextContent("已接受建议");
 
-    fireEvent.click(screen.getByRole("button", { name: "查看样例" }));
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "auto", block: "start" });
-    fireEvent.click(screen.getByRole("button", { name: "返回 BuildURProfile 首页顶部" }));
-    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
+    fireEvent.click(scene.getByRole("button", { name: "保留原文" }));
+    expect(scene.getByText(original)).toBeInTheDocument();
+    expect(scene.queryByText(rewrite)).not.toBeInTheDocument();
+    fireEvent.click(scene.getByRole("button", { name: "撤销" }));
+    expect(scene.getByText(original)).toBeInTheDocument();
+    expect(scene.getByText(rewrite)).toBeInTheDocument();
+    expect(scene.getByRole("status")).toHaveTextContent("已撤销选择");
+  });
 
-    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  it("changes the comparison reveal and selects one of the five templates", () => {
+    const { container } = renderLaunchPage();
+    const scene = within(screen.getByRole("region", { name: /同一份经历.*你的表达/ }));
+    expect(scene.getAllByRole("button", { pressed: false })).toHaveLength(4);
+    const pixel = scene.getByRole("button", { name: "像素世界风" });
+    fireEvent.click(pixel);
+    expect(pixel).toHaveAttribute("aria-pressed", "true");
+    expect(container.querySelector('.journey-comparison-overlay .journey-sheet')).toHaveAttribute("data-template", "pixel-world-v1");
+
+    fireEvent.change(scene.getByRole("slider", { name: "样式对比滑杆" }), { target: { value: "30" } });
+    expect(container.querySelector(".journey-divider")).toHaveStyle("left:30%");
+  });
+
+  it("toggles the evidence magnifier's pinned state", () => {
+    renderLaunchPage();
+    const control = screen.getByRole("button", { name: "固定放大镜" });
+    expect(control).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(control);
+    expect(control).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(control);
+    expect(control).toHaveAttribute("aria-pressed", "false");
   });
 });

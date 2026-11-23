@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode, Ref } from "react";
 import type { OwnedProject } from "../lib/paymentApi";
+import "./workflow-ui.css";
 
 export type WorkflowPhase = "landing" | "upload" | "confirm" | "quiz" | "result" | "delivery" | "mock";
 
@@ -19,6 +20,7 @@ export type WorkflowStepTarget = { href?: string; onClick?: () => void };
 
 type ProofButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "quiet";
+  ref?: Ref<HTMLButtonElement>;
 };
 
 export function ProofButton({ variant = "secondary", className = "", type = "button", ...props }: ProofButtonProps) {
@@ -43,7 +45,7 @@ export function WorkflowProgress({ phase, targets = {} }: {
       {progressSteps.map((label, index) => {
         const step = index + 1;
         const target = targets[step];
-        const content = <><span>{step}.</span> {label}</>;
+        const content = <><span className="workflow-step-number" aria-hidden="true">{step}</span> {label}</>;
         return <li key={label} className={step === active ? "is-active" : step < active ? "is-done" : ""} aria-current={step === active ? "step" : undefined}>
           {target?.href ? <a href={target.href}>{content}</a>
             : target?.onClick ? <button type="button" onClick={target.onClick}>{content}</button>
@@ -56,7 +58,7 @@ export function WorkflowProgress({ phase, targets = {} }: {
 
 export function StepHeader({ number, title, description }: { number: number; title: string; description: string }) {
   return <header className="proof-step-heading">
-    <p>BUILD YOUR PROOF / {String(number).padStart(2, "0")}</p>
+    <p>制作流程 / {String(number).padStart(2, "0")}</p>
     <h1>{title}</h1>
     <span>{description}</span>
   </header>;
@@ -142,34 +144,57 @@ export function ProjectsDialog({ open, projects, onClose, onSelect, onDelete }: 
   </div>;
 }
 
-export function BuilderChrome({ children, projectCount, onHome, onProjects, onSample, onSection }: {
+export function WorkflowChrome({ children, navigation, action, progress, onHome, onStart }: {
+  children: ReactNode;
+  navigation?: ReactNode;
+  action: ReactNode;
+  progress?: ReactNode;
+  onHome?: () => void;
+  onStart?: () => void;
+}) {
+  const brand = (width: number, height: number, className?: string) => {
+    const logo = <img src="/logo.png" alt="BuildURProfile" width={width} height={height} />;
+    const label = "返回 BuildURProfile 首页";
+    return onHome
+      ? <button type="button" className={className} onClick={onHome} aria-label={label}>{logo}</button>
+      : <a className={className} href="/" aria-label={label}>{logo}</a>;
+  };
+
+  return <div className="proof-page workflow-ui">
+    <header className={navigation ? "proof-nav workflow-nav" : "proof-nav workflow-nav workflow-nav--compact"}>
+      {brand(104, 54, "proof-brand")}
+      {navigation}
+      <div className="workflow-nav-action">{action}</div>
+    </header>
+    {progress}
+    <main className="proof-main">{children}</main>
+    <footer className="proof-footer workflow-footer">
+      {brand(88, 46, "workflow-footer-brand")}
+      <a href="/#upload" onClick={onStart ? event => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        onStart();
+      } : undefined}>开始制作</a>
+    </footer>
+  </div>;
+}
+
+export function BuilderChrome({ children, projectCount, onHome, onStart, onProjects, onSample, onSection }: {
   children: ReactNode;
   projectCount: number;
   onHome: () => void;
+  onStart?: () => void;
   onProjects: () => void;
   onSample: () => void;
   onSection: (section: "about" | "process") => void;
 }) {
-  return <div className="proof-page">
-    <div className="proof-banner">✦ 让你的经历被看见，让你的能力被体验。</div>
-    <header className="proof-nav">
-      <button type="button" className="proof-brand" onClick={onHome} aria-label="返回 BuildURProfile 首页">
-        <img src="/logo.png" alt="BuildURProfile" width={104} height={54} />
-      </button>
-      <nav aria-label="主导航">
-        <button type="button" onClick={() => onSection("about")}>产品介绍</button>
-        <button type="button" onClick={onSample}>作品集样例</button>
-        <button type="button" onClick={() => onSection("process")}>制作流程</button>
-      </nav>
-      <ProofButton onClick={onProjects} aria-label={`我的项目，共 ${projectCount} 个`}>我的项目</ProofButton>
-    </header>
-    <main className="proof-main">{children}</main>
-    <footer className="proof-footer">
-      <button type="button" onClick={onHome} aria-label="返回 BuildURProfile 首页">
-        <img src="/logo.png" alt="BuildURProfile" width={88} height={46} />
-      </button>
-      <span>让简历成为能力证明。</span>
-      <span>隐私政策 · 服务条款 · 联系我们</span>
-    </footer>
-  </div>;
+  return <WorkflowChrome onHome={onHome} onStart={onStart}
+    navigation={<nav aria-label="主导航">
+      <button type="button" onClick={() => onSection("about")}>产品介绍</button>
+      <button type="button" onClick={onSample}>作品集样例</button>
+      <button type="button" onClick={() => onSection("process")}>制作流程</button>
+    </nav>}
+    action={<ProofButton onClick={onProjects} aria-label={`我的项目，共 ${projectCount} 个`}>我的项目</ProofButton>}>
+    {children}
+  </WorkflowChrome>;
 }

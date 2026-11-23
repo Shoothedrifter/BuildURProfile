@@ -1,0 +1,371 @@
+.workflow-ui.proof-page {
+  --proof-bg: #fff5ef;
+  --proof-surface: #fffdfa;
+  --proof-accent: #ffbe98;
+  --proof-accent-soft: #ffe3d1;
+  --proof-muted: #6c5e54;
+  --proof-radius: 7px;
+  --workflow-orange: #ad4517;
+  --workflow-sticky-offset: 110px;
+  gap: 24px;
+  min-height: 100svh;
+  padding: 16px clamp(16px, 2.5vw, 40px) 24px;
+}
+
+.workflow-ui .workflow-nav {
+  position: sticky;
+  z-index: 20;
+  top: 16px;
+  grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr);
+  min-height: 74px;
+  padding: 10px 22px;
+  background: #fffaf5f5;
+  box-shadow: 3px 3px 0 var(--proof-line);
+}
+
+.workflow-ui .workflow-nav--compact {
+  grid-template-columns: 1fr auto;
+}
+
+.workflow-ui .workflow-nav .proof-brand img {
+  width: 93px;
+  height: auto;
+}
+
+.workflow-ui .workflow-nav-action {
+  justify-self: end;
+}
+
+.workflow-ui .workflow-nav nav {
+  grid-column: 2;
+  grid-row: 1;
+  gap: clamp(12px, 3vw, 36px);
+  overflow: visible;
+  padding: 0;
+}
+
+.workflow-ui .workflow-nav nav button {
+  min-height: 42px;
+  padding: 6px 4px;
+  font-size: 14px;
+}
+
+.workflow-ui .workflow-nav nav button:hover,
+.workflow-ui .workflow-footer a:not(.workflow-footer-brand):hover {
+  color: var(--workflow-orange);
+}
+
+.workflow-ui .workflow-footer {
+  justify-content: space-between;
+  min-height: unset;
+  margin-top: 32px;
+  padding: 20px 0 0;
+  border-top: 1px solid #d8c9c0;
+}
+
+.workflow-ui .workflow-footer-brand img {
+  display: block;
+  width: 80px;
+  height: auto;
+}
+
+.workflow-ui .proof-button {
+  min-height: 42px;
+  padding: 7px 14px;
+  font-size: 14px;
+}
+
+.workflow-ui .proof-button--primary {
+  box-shadow: 3px 3px 0 var(--proof-line);
+}
+
+.workflow-ui .proof-button--quiet {
+  min-height: 36px;
+  padding: 6px 9px;
+}
+
+.workflow-ui .proof-button:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+.workflow-ui :is(.workflow-nav, .workflow-footer, .proof-progress, .proof-confirm-layout, .proof-style-layout) :focus-visible,
+.workflow-ui .proof-button:focus-visible {
+  outline-color: var(--workflow-orange);
+}
+
+.workflow-ui .proof-progress {
+  margin: 0 auto 8px;
+  padding: 0 4px 5px;
+  overflow: visible;
+}
+
+.workflow-ui .proof-progress ol {
+  flex-wrap: wrap;
+  column-gap: 10px;
+  row-gap: 5px;
+}
+
+.workflow-ui .proof-progress li > :is(button, a, .proof-progress-unavailable) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 39px;
+  margin: 0;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.workflow-ui .proof-progress li.is-active > :is(button, a, .proof-progress-unavailable) {
+  border-color: var(--proof-line);
+  background: var(--proof-accent-soft);
+  opacity: 1;
+}
+
+.workflow-ui .workflow-step-number {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  margin: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.workflow-ui .proof-progress li.is-done .workflow-step-number {
+  color: var(--workflow-orange);
+  background: var(--proof-surface);
+}
+
+.workflow-ui .proof-step-heading {
+  gap: 8px;
+  padding: 6px 0 18px;
+}
+
+.workflow-ui .proof-step-heading p {
+  color: var(--workflow-orange);
+  font-size: 12px;
+  letter-spacing: .07em;
+}
+
+.workflow-ui .proof-step-heading h1 {
+  text-wrap: balance;
+  font-size: clamp(28px, 4vw, 48px);
+  line-height: 1.25;
+}
+
+.workflow-ui .proof-step-heading > span {
+  max-width: 82ch;
+  font-size: 15px;
+}
+
+.workflow-ui :is(.proof-confirm-layout, .proof-style-layout) > .proof-card,
+.workflow-ui .proof-module-list > .proof-card {
+  padding: clamp(14px, 1.65vw, 24px);
+}
+
+.workflow-ui :is(.proof-field, .proof-role-select) :is(input:not([type="checkbox"]), textarea, select) {
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid #baada1;
+  border-radius: 5px;
+  background: #fffaf5;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.workflow-ui .proof-field textarea {
+  min-height: 80px;
+}
+
+.workflow-ui :is(.proof-module-switch, .proof-fact-check, .proof-entry-top) input[type="checkbox"] {
+  accent-color: var(--workflow-orange);
+}
+
+.workflow-ui .proof-status-row {
+  margin: 4px 0 18px;
+  padding: 14px;
+  border: 1px solid #d8c9c0;
+  border-radius: var(--proof-radius);
+  background: var(--proof-surface);
+}
+
+.workflow-ui .proof-status-row p[role="status"] {
+  flex: 1 1 240px;
+}
+
+.workflow-ui .proof-confirm-layout {
+  grid-template-columns: clamp(170px, 15vw, 245px) minmax(0, 1fr) clamp(240px, 20vw, 340px);
+  gap: clamp(14px, 1.5vw, 24px);
+}
+
+.workflow-ui :is(.proof-module-nav, .proof-confirm-help, .proof-pdf-panel) {
+  top: var(--workflow-sticky-offset);
+}
+
+.workflow-ui .proof-module-nav h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.workflow-ui .proof-module-nav nav {
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.workflow-ui .proof-module-nav nav button {
+  gap: 4px;
+  min-height: 36px;
+  padding: 5px 7px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.workflow-ui .proof-module-nav nav button:is(.is-active, :hover) {
+  background: var(--proof-accent-soft);
+  text-decoration: none;
+}
+
+.workflow-ui .proof-module-card {
+  scroll-margin-top: var(--workflow-sticky-offset);
+}
+
+.workflow-ui .proof-confirm-entry {
+  border-radius: 5px;
+  background: #fffaf5;
+}
+
+.workflow-ui .proof-entry-source {
+  background: #fff1e6;
+  border-left-color: var(--workflow-orange);
+  overflow-wrap: anywhere;
+}
+
+.workflow-ui .proof-pdf-panel {
+  min-width: 0;
+  padding: 14px;
+  background: var(--proof-surface);
+  box-shadow: var(--proof-shadow);
+}
+
+.workflow-ui .proof-pdf-panel iframe {
+  display: block;
+  height: clamp(260px, calc(100dvh - var(--workflow-sticky-offset) - 64px), 760px);
+}
+
+.workflow-ui .proof-style-layout {
+  grid-template-columns: minmax(0, 1.85fr) minmax(360px, 1fr);
+  gap: 24px;
+  margin-top: 12px;
+}
+
+.workflow-ui .proof-style-preview {
+  background: #fffaf5;
+}
+
+.workflow-ui .proof-style-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.workflow-ui .proof-style-options button {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 76px;
+  padding: 10px;
+  border: 1px solid #473b34;
+  border-radius: 5px;
+}
+
+.workflow-ui .proof-style-options button b {
+  font-size: 14px;
+}
+
+.workflow-ui .proof-style-options button.is-selected {
+  box-shadow: 3px 3px 0 var(--proof-line);
+}
+
+.workflow-ui .proof-style-options button:focus-visible {
+  outline: 3px solid var(--workflow-orange);
+  outline-offset: 3px;
+}
+
+@media (max-width: 1100px) {
+  .workflow-ui .proof-confirm-layout {
+    grid-template-columns: minmax(155px, 205px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 800px) {
+  .workflow-ui .proof-style-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .workflow-ui.proof-page {
+    --workflow-sticky-offset: 12px;
+    gap: 16px;
+    padding: 12px;
+  }
+
+  .workflow-ui .workflow-nav {
+    position: relative;
+    top: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 14px;
+    min-height: 60px;
+    padding: 8px 12px;
+  }
+
+  .workflow-ui .workflow-nav nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .workflow-ui .workflow-nav-action {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .workflow-ui .proof-progress {
+    margin: 0;
+    padding-inline: 0;
+  }
+
+  .workflow-ui .proof-progress ol {
+    column-gap: 3px;
+  }
+
+  .workflow-ui .proof-progress li > :is(button, a, .proof-progress-unavailable) {
+    padding: 5px 6px;
+  }
+
+  .workflow-ui .proof-confirm-layout {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 20px;
+  }
+
+  .workflow-ui .proof-pdf-panel iframe {
+    height: 54svh;
+  }
+
+  .workflow-ui .proof-style-actions .proof-role-select {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-ui .proof-button:active:not(:disabled) {
+    transform: none;
+  }
+}

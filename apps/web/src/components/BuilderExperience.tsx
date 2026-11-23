@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, ReactNode } from "react";
 import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
@@ -9,7 +9,9 @@ import type { Offer, OwnedProject } from "../lib/paymentApi";
 import type { HeroArtwork } from "../lib/generationApi";
 import { TEMPLATE_PORTRAIT_POLICIES } from "../../../../packages/skills/src/avatar-catalog";
 import { ShowcasePage } from "../ShowcasePage";
-import { EditorPanel } from "./EditorPanel";
+import { EditorPanel, InteractionSettings } from "./EditorPanel";
+import { openShowcasePreview } from "../lib/showcasePreview";
+import "./result-ui.css";
 import { PixelAvatarEditor } from "./PixelAvatarEditor";
 import { pixelDefaultPortrait } from "./PixelWorldPage";
 import { LaunchPage } from "./LaunchPage";
@@ -177,6 +179,13 @@ function PortfolioSnapshot({ name, role, intro, project, projectDescription = ""
   </div>;
 }
 
+const resultTabs = [
+  ["content", "内容"],
+  ["style", "样式"],
+  ["settings", "设置"]
+] as const;
+type ResultTab = typeof resultTabs[number][0];
+
 export type BuilderExperienceProps = {
   phase: WorkflowPhase;
   fileName: string;
@@ -200,6 +209,8 @@ export type BuilderExperienceProps = {
   offer: Offer | null;
   quotedAmountYuan: string | null;
   paymentIntent: DeliveryAction | null;
+  restoredDelivery: boolean;
+  draftSaved: boolean;
   shareSnapshot: string;
   resultError: string;
   exporting: boolean;
@@ -222,6 +233,7 @@ export type BuilderExperienceProps = {
   onGenerate: () => void;
   onRunAvatarGeneration: () => void;
   onEditGenerated: (update: (current: DesignConfig) => DesignConfig) => void;
+  onSaveDraft: () => void;
   onRequestDelivery: (action: DeliveryAction) => void;
   onGitHubPages?: () => void;
   githubPagesDialog?: ReactNode;
@@ -240,6 +252,12 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [confirmModule, setConfirmModule] = useState<ConfirmModule>("basic");
   const [publishConfirmed, setPublishConfirmed] = useState(false);
+  const [resultTab, setResultTab] = useState<ResultTab>("content");
+  const [zoom, setZoom] = useState(100);
+  const [previewError, setPreviewError] = useState("");
+  const deliveryHeading = useRef<HTMLHeadingElement>(null);
+  const publishButton = useRef<HTMLButtonElement>(null);
+  const focusPublish = useRef(false);
   const {
     phase, fileName, selectedFile, progress, error, draft, role, generated, isTouch, share, savedShares,
     projects, projectId, projectPaid, offer, quotedAmountYuan, paymentIntent, shareSnapshot, resultError, exporting, photoDataUrl, photoName,
@@ -253,18 +271,39 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   useEffect(() => { setPixelPreview(null); }, [projectId, pixelResult]);
   const portraitPolicy = props.selectedTemplate ? TEMPLATE_PORTRAIT_POLICIES[props.selectedTemplate] : undefined;
   useEffect(() => { if (phase === "result") setPublishConfirmed(false); }, [phase]);
-  useEffect(() => { if (phase === "delivery" && share) setPublishConfirmed(true); }, [phase, share]);
+  useEffect(() => {
+    if (phase === "delivery") {
+      if (props.restoredDelivery) setPublishConfirmed(true);
+      deliveryHeading.current?.focus();
+    }
+    if (phase === "result" && focusPublish.current) {
+      focusPublish.current = false;
+      publishButton.current?.focus();
+    }
+  }, [phase, props.restoredDelivery]);
+  useEffect(() => {
+    setResultTab("content");
+    setZoom(100);
+    setPreviewError("");
+  }, [projectId, generated && "templateId" in generated ? generated.templateId : null]);
 
   const go = (next: WorkflowPhase) => {
     props.onPhaseChange(next);
     window.scrollTo({ top: 0, behavior: "instant" });
   };
-  const goLanding = (section?: "about" | "process") => {
+  const goLanding = (section?: "about" | "process" | "upload") => {
+    const id = section === "about" ? "write" : section;
+    const url = id ? `/#${id}` : "/";
+    if (window.location.pathname !== "/") {
+      window.location.assign(url);
+      return;
+    }
     props.onPhaseChange("landing");
+    window.history.replaceState(null, "", url);
     window.setTimeout(() => {
-      const target = section ? document.getElementById(section) : null;
-      const behavior = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-      if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ behavior });
+      const target = id ? document.getElementById(id) : null;
+      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (target) target.scrollIntoView?.({ behavior: reduceMotion ? "auto" : "smooth" });
       else window.scrollTo({ top: 0, behavior: "instant" });
     }, 0);
   };
@@ -282,11 +321,15 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const previewProjectTitle = draftProjectTitle || props.confirmedContent?.projects[0]?.title || "";
   const previewProjectDescription = draftProjectDetails.join(" ") || props.confirmedContent?.projects[0]?.description || "";
   const stepTargets: Partial<Record<number, WorkflowStepTarget>> = {
-    1: styleResumeId ? { href: "/upload" } : { onClick: () => go("upload") },
+    1: draft || phase === "upload" ? { onClick: () => go("upload") }
+      : { onClick: () => goLanding("upload") },
     ...(editorHref ? { 2: { href: editorHref } }
       : draft ? { 2: { onClick: () => go("confirm") } } : {}),
-    ...((draft || props.hasConfirmedResume) ? { 3: { onClick: () => go("quiz") } } : {}),
-    ...(generated ? { 4: { onClick: () => go("result") }, 5: { onClick: () => go("delivery") } } : {})
+    ...((draft || props.hasConfirmedResume || props.resultResumeId) ? {
+      3: { onClick: phase === "result" || phase === "delivery" ? props.onRestartQuiz : () => go("quiz") }
+    } : {}),
+    ...(generated ? { 4: { onClick: () => go("result") },
+      5: { onClick: () => props.onRequestDelivery("share") } } : {})
   };
 
   if (phase === "mock") {
@@ -310,10 +353,21 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </div>;
   }
 
+  const shareNeedsUpdate = Boolean(share && shareSnapshot !== JSON.stringify(generated));
+  const workbenchConfig = generated && pixelResult && pixelArtwork ? { ...generated, heroArtwork: pixelArtwork } : generated;
+  const activeTemplate = generated && "templateId" in generated ? stylePresets.find(preset => preset.templateId === generated.templateId) : null;
+  const canChangeTemplate = Boolean(draft || props.hasConfirmedResume || props.resultResumeId);
+  const returnToEditor = () => {
+    setPublishConfirmed(false);
+    focusPublish.current = true;
+    props.onPhaseChange("result");
+  };
+
   const progressNumber = phase === "upload" ? 1 : phase === "confirm" ? 2 : phase === "quiz" ? 3 : phase === "result" ? 4 : phase === "delivery" ? 5 : 0;
 
   return <BuilderChrome projectCount={projects.length}
     onHome={() => goLanding()}
+    onStart={() => goLanding("upload")}
     onProjects={() => setProjectsOpen(true)}
     onSample={() => go("mock")}
     onSection={(section) => goLanding(section)}>
@@ -494,142 +548,158 @@ export function BuilderExperience(props: BuilderExperienceProps) {
       </ProofCard>
     </section>}
 
-    {phase === "result" && generated && <section className="proof-step-page">
-      <StepHeader number={5} title="05 网站预览与轻量编辑" description="草稿尚未公开。左侧预览完整网站，右侧调整内容；满意后再确认分享。" />
-      <div className="proof-result-next">
-        <div><p>STEP 5 / DELIVERY</p><strong>作品已生成。{props.onGitHubPages ? "下一步选择分享、部署或导出。" : "下一步选择分享或导出。"}</strong></div>
-        <div className="proof-publish-actions">
-          {props.onGitHubPages && <ProofButton disabled={exporting} onClick={props.onGitHubPages}>部署到 GitHub Pages</ProofButton>}
-          <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>下一步：前往分享与付费 →</ProofButton>
+    {(phase === "result" || phase === "delivery") && generated && workbenchConfig && <section className="proof-step-page result-workbench">
+      <div className="result-heading">
+        <div>
+          <h1>05 网站预览与轻量编辑</h1>
+          <p>左侧预览作品，右侧调整内容与发布。</p>
         </div>
+        {props.draftSaved && <span role="status">草稿已保存</span>}
       </div>
-      {"templateId" in generated && generated.templateId === "cyber-creator-v1" && generated.heroArtwork && !generated.heroArtwork.cutoutAssetUrl &&
-        <p className="proof-note" role="status">透明去背景未完成，当前首屏以带背景海报展示。请联系管理员检查图像服务，再重新生成。</p>}
-      {pixelResult && <PixelAvatarEditor key={projectId ?? "pixel-preview"} config={generated} applied={pixelArtwork}
-        onApply={artwork => setPixelPreview(artwork ? { projectId, artwork } : null)} />}
-      {!pixelResult && avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId))) && <details className="proof-regenerate">
-        <summary>更换照片 →</summary>
-        <AvatarPicker enabled photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}
-          onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
-        <ProofButton variant="primary" disabled={!photoDataUrl || generatingAvatar} onClick={props.onRunAvatarGeneration}>
-          {generatingAvatar ? "正在生成头像…" : "应用新照片 →"}
-        </ProofButton>
-        {progress && <p className="proof-status" role="status">{progress}</p>}
-      </details>}
       <div className="proof-result-layout">
         <div className="proof-preview-column">
-          <div className="proof-preview-toolbar"><span>草稿预览 · 尚未公开</span>
-            {(draft || props.hasConfirmedResume) && <ProofButton variant="quiet" onClick={props.onRestartQuiz}>更换模板</ProofButton>}
+          {"templateId" in generated && generated.templateId === "cyber-creator-v1" && generated.heroArtwork && !generated.heroArtwork.cutoutAssetUrl &&
+            <p className="proof-note" role="status">透明去背景未完成，当前首屏以带背景海报展示。请联系管理员检查图像服务，再重新生成。</p>}
+          <div className="proof-preview-frame result-canvas">
+            <div className="proof-preview-toolbar">
+              <span>{share || deliveryUnlocked ? "作品预览" : "草稿预览 · 尚未公开"}</span>
+              <ProofButton variant="quiet" aria-label="缩小预览" disabled={zoom <= 50}
+                onClick={() => setZoom(value => value - 10)}>−</ProofButton>
+              <ProofButton variant="quiet" aria-label={`重置预览缩放，当前 ${zoom}%`}
+                onClick={() => setZoom(100)}>{zoom}%</ProofButton>
+              <ProofButton variant="quiet" aria-label="放大预览" disabled={zoom >= 140}
+                onClick={() => setZoom(value => value + 10)}>＋</ProofButton>
+            </div>
+            <div className="result-canvas-scroll" data-showcase-scroll tabIndex={0} role="region" aria-label="作品预览画布">
+              <div style={{ zoom: zoom / 100 }}><ShowcasePage config={workbenchConfig} touchDowngraded={isTouch} /></div>
+            </div>
           </div>
-          <div className="proof-preview-frame"><ShowcasePage config={pixelResult && pixelArtwork ? { ...generated, heroArtwork: pixelArtwork } : generated}
-            touchDowngraded={isTouch} /></div>
           <details className="proof-advanced">
             <summary>高级参数 / 调试信息 →</summary>
-            <div className="proof-result-stats"><span>SKIN <strong>{generated.skin}</strong></span><span>SPEED <strong>{generated.marquee.speed} px/s</strong></span><span>PROJECTS <strong>{generated.content.projects.length}</strong></span></div>
             <pre data-testid="design-config-json">{JSON.stringify(generated, null, 2)}</pre>
           </details>
         </div>
-        <div className="proof-editor-column" id="proof-editor">
-          <div className="proof-editor-actions">
+        <aside className="proof-editor-column result-inspector" aria-label={phase === "delivery" ? "分享与付费" : "作品集编辑"}>
+          {phase === "result" ? <>
             <h2>调整你的网站</h2>
-            <p>下方可编辑展示内容与交互强度。修改会立即出现在左侧预览。</p>
-            {editorHref ? <a className="proof-button proof-button--secondary" href={editorHref}>返回编辑详细内容</a>
-              : draft ? <ProofButton onClick={() => go("confirm")}>返回编辑详细内容</ProofButton>
-              : <p className="proof-note">此项目的简历草稿不可用，仍可在下方编辑网站内容。</p>}
-            <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("share")}>发布并获取链接 →</ProofButton>
-          </div>
-          <EditorPanel config={generated} onChange={props.onEditGenerated} isTouch={isTouch} />
-        </div>
+            <div className="result-tabs" role="tablist" aria-label="作品集编辑选项" onKeyDown={(event) => {
+              const index = resultTabs.findIndex(([id]) => id === resultTab);
+              const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+              if (!offset && event.key !== "Home" && event.key !== "End") return;
+              event.preventDefault();
+              const next = event.key === "Home" ? 0 : event.key === "End" ? resultTabs.length - 1
+                : (index + offset + resultTabs.length) % resultTabs.length;
+              setResultTab(resultTabs[next][0]);
+              event.currentTarget.querySelectorAll("button")[next]?.focus();
+            }}>
+              {resultTabs.map(([id, label]) => <button type="button" role="tab" key={id} id={`result-tab-${id}`}
+                aria-selected={resultTab === id} aria-controls="result-tab-panel"
+                tabIndex={resultTab === id ? 0 : -1} onClick={() => setResultTab(id)}>{label}</button>)}
+            </div>
+            <div role="tabpanel" id="result-tab-panel" aria-labelledby={`result-tab-${resultTab}`}>
+              {resultTab === "content" && <EditorPanel config={generated} onChange={props.onEditGenerated} isTouch={isTouch} contentOnly />}
+              {resultTab === "style" && <div className="result-tab-content">
+                <p>当前模板 <strong>{activeTemplate?.label ?? "兼容模板"}</strong></p>
+                {canChangeTemplate ? <ProofButton onClick={props.onRestartQuiz}>更换模板</ProofButton>
+                  : <p className="proof-note">原简历草稿不可用，可以继续编辑当前作品。</p>}
+              </div>}
+              {resultTab === "settings" && <div className="result-tab-content">
+                <InteractionSettings config={generated} onChange={props.onEditGenerated} isTouch={isTouch} />
+                {pixelResult && <PixelAvatarEditor key={projectId ?? "pixel-preview"} config={generated} applied={pixelArtwork}
+                  onApply={artwork => setPixelPreview(artwork ? { projectId, artwork } : null)} />}
+                {!pixelResult && avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId))) && <details className="proof-regenerate">
+                  <summary>更换照片 →</summary>
+                  <AvatarPicker enabled photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}
+                    onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
+                  <ProofButton variant="primary" disabled={!photoDataUrl || generatingAvatar} onClick={props.onRunAvatarGeneration}>
+                    {generatingAvatar ? "正在生成头像…" : "应用新照片 →"}
+                  </ProofButton>
+                  {progress && <p className="proof-status" role="status">{progress}</p>}
+                </details>}
+              </div>}
+            </div>
+            <div className="result-actions">
+              <ProofButton onClick={() => {
+                setPreviewError("");
+                void openShowcasePreview(workbenchConfig).catch((cause: unknown) => {
+                  setPreviewError(cause instanceof Error ? cause.message : "无法打开预览，请重试。");
+                });
+              }}>新标签页预览 ↗</ProofButton>
+              {editorHref ? <a className="proof-button proof-button--secondary" href={editorHref}>返回编辑详细内容</a>
+                : draft ? <ProofButton onClick={() => go("confirm")}>返回编辑详细内容</ProofButton> : null}
+              <ProofButton disabled={exporting} onClick={props.onSaveDraft}>保存草稿</ProofButton>
+              <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("export")}>导出文件</ProofButton>
+              <ProofButton ref={publishButton} variant="primary" disabled={exporting}
+                onClick={() => props.onRequestDelivery("share")}>发布并获取链接 →</ProofButton>
+            </div>
+            {pixelResult && <p className="proof-note">分享和导出将使用默认角色。</p>}
+            {previewError && <p className="proof-inline-error" role="alert">{previewError}</p>}
+          </> : <>
+            <h2 ref={deliveryHeading} tabIndex={-1}>06 分享确认与发布</h2>
+            {pixelResult && <p className="proof-note">分享和导出将使用默认角色。</p>}
+            {!publishConfirmed ? <ProofCard className="proof-unlock-card">
+              <h2>准备好公开分享了吗？</h2>
+              <p>拿到链接的人可以查看你选择公开的资料。分享链接有有效期，也可以提前撤销。</p>
+              <p>当前项目一次付款解锁发布与分享；同一项目更新无需重复付款。</p>
+              <div className="proof-unlock-actions">
+                <ProofButton variant="primary" disabled={exporting} onClick={() => { setPublishConfirmed(true); props.onConfirmPublish(); }}>确认并发布</ProofButton>
+                <ProofButton disabled={exporting} onClick={returnToEditor}>暂不分享，返回预览</ProofButton>
+              </div>
+            </ProofCard> : !deliveryUnlocked && !share &&
+            <ProofCard className="proof-unlock-card">
+              <h2>{projectId ? "解锁当前项目" : "保存当前作品"}</h2>
+              <p>单项目一次付费 · {offer?.shareDays ?? 7} 天分享链接</p>
+              <strong className="proof-price">{quotedAmountYuan || offer?.priceYuan ? `¥${quotedAmountYuan ?? offer?.priceYuan}` : "服务端尚未配置价格"}</strong>
+              <p>{offer?.service || "一次付款解锁当前项目的发布与分享，静态网站导出免费。"}</p>
+              {offer?.mode === "sandbox" && <p className="proof-note">沙箱测试：普通支付宝无法支付沙箱订单，请使用对应沙箱买家账号。</p>}
+              {offer?.configurationError && <p className="proof-inline-error" role="alert">支付配置：{offer.configurationError}</p>}
+              {!projectId && !exporting && <ProofButton onClick={props.onConfirmPublish}>重试保存并检查权益</ProofButton>}
+              <div className="proof-unlock-actions">
+                <ProofButton variant="primary" disabled={!offer?.configured || exporting || !paymentIntent || !projectId} onClick={props.onStartPayment}>
+                  {offer?.mode === "production" ? "支付宝支付并解锁 →" : "前往支付宝沙箱收银台 →"}
+                </ProofButton>
+                <ProofButton disabled={exporting || !paymentIntent || !projectId} onClick={props.onCheckEntitlement}>{exporting ? "正在检查…" : "检查已有权益"}</ProofButton>
+              </div>
+              <span className="proof-microcopy">支付渠道：支付宝 · 服务端确认权益后才能发布分享</span>
+            </ProofCard>}
+            {publishConfirmed && <>
+              {deliveryUnlocked && !share && <ProofCard className="proof-unlock-card">
+                <h3>当前项目已解锁</h3>
+                {exporting ? <p role="status">正在发布分享链接…</p> :
+                  <ProofButton onClick={props.onConfirmPublish}>重试发布分享链接</ProofButton>}
+              </ProofCard>}
+              {share && <ProofCard className="proof-share-card">
+                <div><strong>正式链接已创建</strong><span>有效至 {new Date(share.expiresAt).toLocaleString("zh-CN")}</span></div>
+                <p>任何接收者可免费访问有效链接。到期或撤销后失效。</p>
+                {shareNeedsUpdate && <p className="proof-warning">预览已更新，请重新发布以同步当前版本。</p>}
+                <label className="proof-field"><span>分享链接</span><input readOnly value={share.url} onFocus={(event) => event.currentTarget.select()} /></label>
+                <div className="proof-share-actions">
+                  <a href={share.url} target="_blank" rel="noopener noreferrer">在新标签页打开 →</a>
+                  <ProofButton variant="quiet" onClick={props.onCopyShare}>复制链接</ProofButton>
+                  <ProofButton variant="quiet" onClick={props.onRemoveShare}>撤销链接</ProofButton>
+                  {shareNeedsUpdate && <ProofButton disabled={exporting} onClick={props.onConfirmPublish}>更新分享链接</ProofButton>}
+                </div>
+                {props.onGitHubPages && <ProofButton disabled={exporting} onClick={props.onGitHubPages}>部署到 GitHub Pages</ProofButton>}
+              </ProofCard>}
+              {savedShares.length > 0 && <ProofCard as="section" className="proof-saved-shares">
+                <h2>已发布链接</h2>
+                <ul>{savedShares.map((saved) => <li key={saved.id}><div><strong>{saved.id.slice(0, 12)}…</strong><span>有效至 {new Date(saved.expiresAt).toLocaleString("zh-CN")}</span></div>
+                  <a href={saved.url} target="_blank" rel="noopener noreferrer">打开分享 →</a>
+                  <ProofButton variant="quiet" aria-label={`删除分享 ${saved.id}`} onClick={() => props.onRemoveSavedShare(saved.id)}>删除</ProofButton></li>)}</ul>
+              </ProofCard>}
+              <div className="result-actions">
+                <ProofButton disabled={exporting} onClick={returnToEditor}>返回预览，继续编辑</ProofButton>
+                <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("export")}>导出文件</ProofButton>
+              </div>
+            </>}
+          </>}
+          {error && <p className="proof-inline-error" role="alert">{error}</p>}
+          {resultError && <p className="proof-inline-error" role="alert">{resultError}</p>}
+        </aside>
       </div>
-      {isTouch && <p className="proof-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
-      {error && <p className="proof-inline-error" role="alert">{error}</p>}
-      {resultError && <p className="proof-inline-error" role="alert">{resultError}</p>}
-      <ProofCard className="proof-publish-card">
-        <div><p>FREE PREVIEW / NOT PUBLISHED</p><h2>分享或带走你的作品集</h2><span>发布分享按项目一次付费，单文件 HTML 免费导出。</span></div>
-        {pixelResult && <p>分享和导出将使用默认角色。</p>}
-        <div className="proof-publish-actions">
-          <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>{share ? "更新分享链接 →" : "发布并分享 →"}</ProofButton>
-          <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>{exporting ? "正在准备…" : "导出文件 →"}</ProofButton>
-        </div>
-      </ProofCard>
     </section>}
 
-    {phase === "delivery" && generated && <section className="proof-step-page">
-      <StepHeader number={6} title="06 分享确认与发布" description="发布前确认公开内容。当前项目按一次付款解锁分享，导出免费。" />
-      <div className="proof-delivery-layout">
-        <ProofCard className="proof-delivery-summary">
-          <h2>{publishConfirmed ? "已确认的作品集" : "即将公开的作品集"}</h2>
-          <PortfolioSnapshot name={generated.content.profile.name} role={generated.content.profile.role}
-            intro={generated.content.profile.intro || generated.content.profile.summary}
-            project={generated.content.projects[0]?.title ?? ""} photo={pixelResult ? pixelDefaultPortrait : generated.heroArtwork?.assetUrl}
-            tone={pixelResult ? "pixel" : undefined} />
-          {pixelResult && <p>分享和导出将使用默认角色。</p>}
-          <p>仅已选择展示的资料会进入公开网站。请核对姓名、介绍和项目。</p>
-          <ProofButton onClick={() => go("result")}>返回预览，继续编辑</ProofButton>
-          {deliveryUnlocked && <div className="proof-unlock-actions">
-            <ProofButton disabled={exporting} onClick={() => props.onRequestDelivery("share")}>重新发布分享链接</ProofButton>
-            {props.onGitHubPages && <ProofButton disabled={exporting} onClick={props.onGitHubPages}>部署到 GitHub Pages</ProofButton>}
-            <ProofButton variant="primary" disabled={exporting} onClick={() => props.onRequestDelivery("export")}>导出文件</ProofButton>
-          </div>}
-        </ProofCard>
-        {!publishConfirmed ? <ProofCard className="proof-unlock-card">
-          <h2>准备好公开分享了吗？</h2>
-          <p>拿到链接的人可以查看你选择公开的资料。分享链接有有效期，也可以提前撤销。</p>
-          <p>当前项目一次付款解锁发布与分享；同一项目更新无需重复付款。</p>
-          <div className="proof-unlock-actions">
-            <ProofButton variant="primary" disabled={exporting} onClick={() => { setPublishConfirmed(true); props.onConfirmPublish(); }}>确认并发布</ProofButton>
-            <ProofButton onClick={() => go("result")}>暂不分享，返回预览</ProofButton>
-          </div>
-        </ProofCard> :
-        <ProofCard className="proof-unlock-card">
-          <h2>解锁当前项目</h2>
-          <p>单项目一次付费 · {offer?.shareDays ?? 7} 天分享链接</p>
-          <strong className="proof-price">{quotedAmountYuan || offer?.priceYuan ? `¥${quotedAmountYuan ?? offer?.priceYuan}` : "服务端尚未配置价格"}</strong>
-          <p>{offer?.service || "一次付款解锁当前项目的发布与分享，静态网站导出免费。"}</p>
-          <p>付款前将明确展示实际金额。此权益仅适用于当前项目，不代表解锁全部项目。</p>
-          {offer?.mode === "sandbox" && <p className="proof-note">沙箱测试：普通支付宝无法支付沙箱订单，请使用对应沙箱买家账号。</p>}
-          {offer?.configurationError && <p className="proof-inline-error" role="alert">支付配置：{offer.configurationError}</p>}
-          <div className="proof-unlock-actions">
-            <ProofButton variant="primary" disabled={!offer?.configured || exporting || !paymentIntent} onClick={props.onStartPayment}>
-              {offer?.mode === "production" ? "支付宝支付并解锁 →" : "前往支付宝沙箱收银台 →"}
-            </ProofButton>
-            <ProofButton disabled={exporting || !paymentIntent} onClick={props.onCheckEntitlement}>{exporting ? "正在检查…" : "检查已有权益"}</ProofButton>
-          </div>
-          <span className="proof-microcopy">支付渠道：支付宝 · 服务端确认权益后才能发布分享</span>
-        </ProofCard>}
-      </div>
-      {publishConfirmed && <>
-      <section className="proof-status-section" aria-labelledby="delivery-status-title">
-        <h2 id="delivery-status-title">支付与交付状态</h2>
-        <div className="proof-three-grid">
-          <ProofCard className={!share && !deliveryUnlocked ? "is-current" : ""}><strong>等待支付</strong><p>请在支付宝完成支付。取消付款可返回预览继续编辑。</p></ProofCard>
-          <ProofCard className={exporting ? "is-current" : ""}><strong>已支付 · 正在发布</strong><p>发布失败可重试，无需重复付款。</p></ProofCard>
-          <ProofCard className={share || deliveryUnlocked ? "is-current" : ""}><strong>已解锁 · 交付完成</strong><p>分享链接由服务端权益控制；导出免费。</p></ProofCard>
-        </div>
-      </section>
-      {share && <ProofCard className="proof-share-card">
-        <div><strong>正式链接已创建</strong><span>有效至 {new Date(share.expiresAt).toLocaleString("zh-CN")}</span></div>
-        <p>任何接收者可免费访问有效链接。到期或撤销后失效。</p>
-        {shareSnapshot !== JSON.stringify(generated) && <p className="proof-warning">预览已更新，请重新发布以同步当前版本。</p>}
-        <label className="proof-field"><span>分享链接</span><input readOnly value={share.url} onFocus={(event) => event.currentTarget.select()} /></label>
-        <div className="proof-share-actions">
-          <a href={share.url} target="_blank" rel="noopener noreferrer">在新标签页打开 →</a>
-          <ProofButton variant="quiet" onClick={props.onCopyShare}>复制链接</ProofButton>
-          <ProofButton variant="quiet" onClick={props.onRemoveShare}>撤销链接</ProofButton>
-        </div>
-      </ProofCard>}
-      {savedShares.length > 0 && <ProofCard as="section" className="proof-saved-shares">
-        <h2>已发布链接</h2>
-        <ul>{savedShares.map((saved) => <li key={saved.id}><div><strong>{saved.id.slice(0, 12)}…</strong><span>有效至 {new Date(saved.expiresAt).toLocaleString("zh-CN")}</span></div>
-          <a href={saved.url} target="_blank" rel="noopener noreferrer">打开分享 →</a>
-          <ProofButton variant="quiet" aria-label={`删除分享 ${saved.id}`} onClick={() => props.onRemoveSavedShare(saved.id)}>删除</ProofButton></li>)}</ul>
-      </ProofCard>}
-      </>}
-      {resultError && <p className="proof-inline-error" role="alert">{resultError}</p>}
-      <div className="proof-actions"><ProofButton onClick={() => go("result")}>← 返回预览</ProofButton></div>
-    </section>}
-
-    {error && phase !== "upload" && phase !== "confirm" && phase !== "quiz" && phase !== "result" && <p className="proof-inline-error" role="alert">{error}</p>}
+    {error && phase !== "upload" && phase !== "confirm" && phase !== "quiz" && phase !== "result" && phase !== "delivery" && <p className="proof-inline-error" role="alert">{error}</p>}
     <ProjectsDialog open={projectsOpen} projects={projects} onClose={() => setProjectsOpen(false)}
       onSelect={props.onResumeProject} onDelete={props.onDeleteProject} />
     {props.githubPagesDialog}

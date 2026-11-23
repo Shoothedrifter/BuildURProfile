@@ -16,6 +16,7 @@ type Props = {
   touchDowngraded?: boolean;
   staticDecorations?: boolean;
   defaultPortraitUrl?: string;
+  previewHeadline?: string;
 };
 
 function safeArtwork(value: string | undefined): boolean {
@@ -64,7 +65,7 @@ function ItemContent({ item, resolveResumeImage }: { item: ResumeDisplayItem; re
   </article>;
 }
 
-export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash = false, touchDowngraded = false, staticDecorations = false, defaultPortraitUrl = "/cyber-neutral-print-anime.webp" }: Props) {
+export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash = false, touchDowngraded = false, staticDecorations = false, defaultPortraitUrl = "/cyber-neutral-print-anime.webp", previewHeadline }: Props) {
   const view = buildCyberCreatorPresentation(config);
   const [defaultPortraitFailed, setDefaultPortraitFailed] = useState(false);
   const [staticMode, setStaticMode] = useState(touchDowngraded);
@@ -119,7 +120,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           ? <img src={hasCutout ? config.heroArtwork?.cutoutAssetUrl : config.heroArtwork?.assetUrl} alt={config.heroArtwork?.alt || "用户肖像"}
               onError={hasCutout ? () => setCutoutFailed(true) : undefined} />
           : !defaultPortraitFailed && <img src={defaultPortraitUrl} alt="赛博科技默认中性动漫形象" onError={() => setDefaultPortraitFailed(true)} />}</div>
-        <div className="cyber-hero-bottom"><p>{[profile.role, profile.location].filter(Boolean).join(" · ") || profile.summary || ""}</p>
+        <div className="cyber-hero-bottom"><p>{previewHeadline ?? ([profile.role, profile.location].filter(Boolean).join(" · ") || profile.summary || "")}</p>
           {hasContact && <a href="#contact" className="cyber-contact-button">联系我 ↗</a>}</div>
         <span className="cyber-hero-side">SCROLL TO EXPLORE ↓</span>
       </section>
