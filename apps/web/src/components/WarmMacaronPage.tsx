@@ -29,10 +29,11 @@ function reducedMotionPreference(): boolean {
 }
 
 /** 首屏（关于我）：问候、姓名、岗位、介绍盒、联系入口与外扩描边相框；气泡为纯装饰。 */
-function MacaronHero({ model, defaultPhotoUrl, onOpenContact, nextHref, onNavigate }: {
+function MacaronHero({ model, defaultPhotoUrl, onOpenContact, nextId, nextHref, onNavigate }: {
   model: ReturnType<typeof buildWarmMacaronModel>;
   defaultPhotoUrl?: string;
   onOpenContact?: () => void;
+  nextId?: string;
   nextHref?: string;
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, id: string) => void;
 }) {
@@ -57,8 +58,8 @@ function MacaronHero({ model, defaultPhotoUrl, onOpenContact, nextHref, onNaviga
         {photoSrc && <img src={photoSrc} alt={photoAlt} />}
       </div>
     </div>
-    {nextHref && <a className="macaron-next macaron-next--hero" href={nextHref}
-      onClick={event => onNavigate(event, nextHref.slice(1))}>{MACARON_NEXT_LABEL}</a>}
+    {nextHref && nextId && <a className="macaron-next macaron-next--hero" href={nextHref}
+      onClick={event => onNavigate(event, nextId)}>{MACARON_NEXT_LABEL}</a>}
   </section>;
 }
 
@@ -196,11 +197,12 @@ export function WarmMacaronPage({ config, resolveResumeImage, preserveShareHash 
   const openZoom = (src: string, caption: string) => setZoom({ src, caption });
   const closeZoom = () => setZoom(undefined);
 
-  // 站内锚点统一接管：普通点击不改写地址栏（分享令牌与预览 URL 均保持原样），
-  // 带修饰键的点击回落到浏览器默认行为，离线导出的片段定位不受影响。
+  // 站内锚点统一接管：普通点击经 writeAddress 落地址（分享模式写 ?section= 并保留令牌，
+  // 预览模式不改写地址栏）；带修饰键的点击回落到浏览器默认行为，锚点 href 已按模式携带完整地址。
   function navigate(event: MouseEvent<HTMLAnchorElement>, next: string) {
     if (!plainClick(event)) return;
     event.preventDefault();
+    writeAddress({ sectionId: next });
     goToSection(next);
   }
 
@@ -212,12 +214,12 @@ export function WarmMacaronPage({ config, resolveResumeImage, preserveShareHash 
       }
     }}>
       <div className="macaron-topbar-inner">
-        <a className="macaron-brand" href="#about" onClick={event => navigate(event, "about")}>{hero.name}</a>
+        <a className="macaron-brand" href={addressHref({ sectionId: "about" })} onClick={event => navigate(event, "about")}>{hero.name}</a>
         {navItems.length > 1 && <>
           <button ref={menuButton} type="button" className="macaron-menu-toggle" aria-controls={navId}
             aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}>目录</button>
           <nav className="macaron-chapters" id={navId} aria-label="作品集导航" data-open={menuOpen || undefined}>
-            {navItems.map(item => <a key={item.id} href={`#${item.id}`}
+            {navItems.map(item => <a key={item.id} href={addressHref({ sectionId: item.id })}
               aria-current={activeId === item.id ? "location" : undefined}
               onClick={event => navigate(event, item.id)}>{item.label}</a>)}
           </nav>
@@ -233,7 +235,8 @@ export function WarmMacaronPage({ config, resolveResumeImage, preserveShareHash 
     <main>
       <MacaronHero model={model} defaultPhotoUrl={defaultPhotoUrl}
         onOpenContact={hasContact ? () => setContactOpen(true) : undefined}
-        nextHref={sections[0] ? `#${sections[0].id}` : undefined} onNavigate={navigate} />
+        nextId={sections[0]?.id} nextHref={sections[0] ? addressHref({ sectionId: sections[0].id }) : undefined}
+        onNavigate={navigate} />
 
       {/* 内容区块（教育/工作/项目/展示/技能）整体由 WarmMacaronSections 渲染，
           含分幕外壳与「继续下滑」；灯箱、详情与轮播接管点在这里接线。 */}
@@ -241,7 +244,8 @@ export function WarmMacaronPage({ config, resolveResumeImage, preserveShareHash 
         onOpenImage={openZoom}
         onOpenProject={card => openDetail("project", card)}
         onOpenShowcase={card => openDetail("showcase", card)}
-        onNavigate={navigate} />
+        onNavigate={navigate}
+        actHref={id => addressHref({ sectionId: id })} />
     </main>
 
     {detail?.kind === "project" && <MacaronDetailDialog key={detail.card.itemId} card={detail.card}

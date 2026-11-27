@@ -79,6 +79,32 @@ it("mirrors the rendered sections in the fixed nav", () => {
   ]);
 });
 
+it("carries query params and the share token through navigation anchors in share mode", () => {
+  const history = window.location.href;
+  const token = "x".repeat(43);
+  window.history.replaceState(null, "", `/#share=${token}`);
+  try {
+    render(<WarmMacaronPage config={makeConfig()} resolveResumeImage={resolveImage} preserveShareHash />);
+    // 品牌与固定导航的锚点携带 ?section= 与 #share= 令牌：修饰键/中键回落浏览器默认行为也不丢令牌。
+    expect(screen.getByRole("link", { name: "林予安" })).toHaveAttribute("href", `/#share=${token}`);
+    const nav = screen.getByRole("navigation", { name: "作品集导航" });
+    expect(within(nav).getByRole("link", { name: "项目经历" })).toHaveAttribute("href", `/?section=projects#share=${token}`);
+    // 「继续下滑」锚点同样走查询参数。
+    expect(screen.getAllByRole("link", { name: "继续下滑，探索更多" }).map(link => link.getAttribute("href"))).toEqual([
+      `/?section=skills#share=${token}`,
+      `/?section=workExperience#share=${token}`,
+      `/?section=education#share=${token}`,
+      `/?section=projects#share=${token}`
+    ]);
+    // 普通点击接管导航：写入 ?section= 并保留令牌。
+    fireEvent.click(within(nav).getByRole("link", { name: "项目经历" }));
+    expect(location.search).toBe("?section=projects");
+    expect(location.hash).toBe(`#share=${token}`);
+  } finally {
+    window.history.replaceState(null, "", history);
+  }
+});
+
 it("keeps the page standing with an empty section model", () => {
   render(<WarmMacaronPage config={makeConfig([identity])} resolveResumeImage={resolveImage} />);
   expect(screen.getByRole("heading", { level: 1, name: "林予安" })).toBeVisible();

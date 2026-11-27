@@ -17,6 +17,8 @@ type Props = Readonly<{
   onOpenShowcase?: (card: WarmMacaronCard) => void;
   /** 页面级锚点接管（Task 3 骨架的 navigate 同源）；缺省回落浏览器默认锚点跳转。 */
   onNavigate?: (event: MouseEvent<HTMLAnchorElement>, id: string) => void;
+  /** 区块锚点地址生成器（分享模式携带 ?section= 与 #share= 令牌）；缺省回落纯 #<id> 片段。 */
+  actHref?: (id: string) => string;
 }>;
 
 type CardProps = Readonly<{
@@ -187,7 +189,7 @@ function SectionCards({ section, resolveResumeImage, onOpenImage, onOpenProject,
 }
 
 /** 六大内容区块：按展示模型逐幕渲染教育、工作、项目、展示与技能卡，技能区尾带版权行。 */
-export function WarmMacaronSections({ model, resolveResumeImage, onOpenImage, onOpenProject, onOpenShowcase, onNavigate }: Props) {
+export function WarmMacaronSections({ model, resolveResumeImage, onOpenImage, onOpenProject, onOpenShowcase, onNavigate, actHref }: Props) {
   const { sections } = model;
   return <>
     {sections.map((section, index) => {
@@ -205,7 +207,7 @@ export function WarmMacaronSections({ model, resolveResumeImage, onOpenImage, on
             © {new Date().getFullYear()}{model.hero.name ? ` ${model.hero.name}` : ""}
           </p>}
         </div>
-        {next && <a className="macaron-next" href={`#${next.id}`}
+        {next && <a className="macaron-next" href={actHref ? actHref(next.id) : `#${next.id}`}
           onClick={event => onNavigate?.(event, next.id)}>{MACARON_NEXT_LABEL}</a>}
       </section>;
     })}
