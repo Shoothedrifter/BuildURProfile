@@ -1279,8 +1279,26 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-about-copy { max-width: 720px; display: grid; gap: 28px; font-size: clamp(18px, 2vw, 27px); line-height: 1.55; }
 .cyber-about-copy .cyber-entry { border: 0; padding: 0; }
 .cyber-about .cyber-contact-button { margin-top: 55px; }
-.cyber-capabilities { position: relative; z-index: 2; padding: clamp(72px, 8vw, 112px) 0; color: #0c0c0c; background: var(--cyber-paper); border-radius: clamp(28px, 4vw, 48px) clamp(28px, 4vw, 48px) 0 0; }
-.cyber-capabilities h2 { text-align: center; }
+.cyber-capabilities { position: relative; z-index: 2; padding: clamp(72px, 8vw, 112px) 0; color: #dce5ed; background: radial-gradient(ellipse at 85% 50%, #4a246144, transparent 65%), #0b0b0e; border-top: 1px solid #ffffff18; }
+.cyber-capabilities h2 { text-align: left; background-image: linear-gradient(180deg, #646973, #bbccd7); }
+.cyber-skills-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; align-items: center; }
+.cyber-skills-layout[data-drum] { grid-template-columns: minmax(0, 1fr) minmax(280px, .8fr); }
+.cyber-skills-copy { min-width: 0; }
+.cyber-skills-tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px; }
+.cyber-skills-tabs button { border: 1px solid #ffffff26; border-radius: 24px; padding: 10px 18px; color: #c8c6d2; background: #ffffff06; cursor: pointer; font: inherit; }
+.cyber-skills-tabs button[aria-pressed="true"] { color: #f2e5ff; background: #b87be924; border-color: #c688efaa; }
+.cyber-skills-tabs button:focus-visible { outline: 2px solid #d8afff; outline-offset: 4px; }
+.cyber-skill-detail.cyber-entry { border: 0; padding: 0; min-height: 240px; }
+.cyber-capabilities .cyber-text-detail summary, .cyber-capabilities .cyber-detail-body { color: #dce5ed; }
+.cyber-skills-stage { position: relative; height: 640px; overflow: hidden; perspective: 1100px; touch-action: pan-x; cursor: grab; user-select: none; mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); }
+.cyber-skills-stage:active { cursor: grabbing; }
+.cyber-skills-ring { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; transform: translateZ(-360px) rotateX(0deg); }
+.cyber-skill-face { position: absolute; left: -140px; top: -106px; width: 280px; height: 212px; box-sizing: border-box; padding: 24px; border: 1px solid #d3a3ff55; border-radius: 20px; background: radial-gradient(ellipse at 85% 0%, #a55ceb44, transparent 75%), #15121e; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: space-between; box-shadow: inset 0 1px 0 #ffffff24, 0 15px 40px #0006; }
+.cyber-skill-face span { color: #be8be4; font-size: 14px; letter-spacing: .15em; }
+.cyber-skill-face strong { color: #e1dfea; font-size: 30px; line-height: 1.2; overflow-wrap: anywhere; }
+.cyber-skill-face i { position: absolute; right: 22px; top: 16px; color: #cb8df6; font-size: 30px; font-style: normal; }
+.cyber-skills-hint { margin: -16px 0 24px; color: #b6a2c5; font-size: 12px; }
+@media (max-width: 760px) { .cyber-skills-layout[data-drum] { grid-template-columns: minmax(0, 1fr); } .cyber-skills-stage { height: 460px; } }
 .cyber-capability-list { max-width: 1080px; margin: auto; }
 .cyber-capability { display: grid; grid-template-columns: minmax(80px, .3fr) 1fr; gap: 28px; padding: 35px 0; border-top: 1px solid #0c0c0c33; }
 .cyber-capability > span { font-size: clamp(58px, 9vw, 130px); font-weight: 900; line-height: 1; letter-spacing: -.08em; }
@@ -1336,7 +1354,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .cyber-text-detail summary:focus-visible { outline: 2px solid #ead2f2; outline-offset: 5px; }
 .cyber-detail-body { max-width: 76ch; padding: 18px 0 4px; color: #e0e4e8; font-size: 16px; line-height: 1.75; }
 .cyber-detail-body p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.cyber-capabilities .cyber-text-detail summary, .cyber-capabilities .cyber-detail-body { color: #242027; }
+
 .cyber-project-more { margin-top: 25px; }
 .cyber-project-more summary { cursor: pointer; font-weight: 600; }
 .cyber-project-more > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-top: 20px; }
@@ -2008,6 +2026,14 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   object-position: bottom;
   image-rendering: pixelated;
 }
+
+/* 模板选择样张复用真实首屏，角色按完整正方形舞台展示。 */
+.pixel-template-preview { min-height: 0; border-radius: 12px; overflow: hidden; }
+.pixel-template-preview .pixel-header { position: static; }
+.pixel-template-preview .pixel-header-inner { flex-wrap: wrap; padding-block: 12px; }
+.pixel-template-preview .pixel-hero { min-height: 0; padding-block: 28px; }
+.pixel-template-preview .pixel-stage { width: min(100%, 20rem); justify-self: center; }
+.pixel-template-preview .pixel-hero h1 { overflow-wrap: anywhere; }
 
 /* 像素跑马灯：首屏之下的章节分隔装饰，双色块 + 逐帧滚动 */
 .pixel-ticker {

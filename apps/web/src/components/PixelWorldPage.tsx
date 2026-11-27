@@ -6,6 +6,7 @@ import {
 } from "../lib/pixelWorldPresentation";
 import { pixelFontChapterLabels, pixelFontFaceCss, pixelFontRequestHref } from "../lib/pixelFontLabels.mjs";
 import { PixelProjectArchive, PixelProjectDialog, pixelProjectLinkId } from "./PixelWorldProjects";
+import { PixelHero } from "./PixelHero";
 import { ResumeSupplement, type ResumeImageResolver } from "./ResumeDisplay";
 
 export const pixelDefaultPortrait = "/pixel-world-base.svg";
@@ -56,18 +57,6 @@ function ResumeSection({ section, resolveImage }: { section: VisibleSection; res
   </section>;
 }
 
-function PixelPortrait({ artwork, defaultUrl }: { artwork: DesignConfigV4["heroArtwork"]; defaultUrl: string }) {
-  const [failedPortrait, setFailedPortrait] = useState<string | null>(null);
-  const portrait = artwork?.assetUrl;
-  const showPortrait = portrait && /^\/api\/hero-assets\/[a-f0-9-]{36}$/i.test(portrait) && failedPortrait !== portrait;
-  return <div className="pixel-stage">
-    <div className="pixel-stage-grid" aria-hidden="true" />
-    <div className="pixel-speech pixel-label" aria-hidden="true">你好！<i /></div>
-    <img className="pixel-portrait" src={showPortrait ? portrait : defaultUrl}
-      alt={showPortrait ? artwork?.alt || "个人像素头像" : "像素世界风默认角色"} width="512" height="512"
-      onError={showPortrait ? () => setFailedPortrait(portrait) : undefined} />
-  </div>;
-}
 
 function plainClick(event: MouseEvent<HTMLAnchorElement>) {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
@@ -279,11 +268,7 @@ export function PixelWorldPage({ config, resolveResumeImage, preserveShareHash =
     </header>
 
     <main className="pixel-main">
-      <section id="top" data-pixel-chapter="top" className="pixel-hero pixel-width">
-        <div className="pixel-hero-copy">
-          {role && <p className="pixel-role">{role}</p>}
-          <h1 tabIndex={-1}>{name}</h1>
-        </div>
+      <PixelHero name={name} role={role} intro={intro} artwork={config.heroArtwork} defaultPortraitUrl={defaultPortraitUrl}>
         {(firstDestination || hasContact) && <div className="pixel-actions">
           {firstDestination && <a className="pixel-button pixel-label" href={addressHref({ chapter: firstDestination })}
             onClick={event => navigate(event, firstDestination)}>
@@ -293,10 +278,7 @@ export function PixelWorldPage({ config, resolveResumeImage, preserveShareHash =
           {hasContact && <a className="pixel-text-link" href={addressHref({ chapter: "contact" })}
             onClick={event => navigate(event, "contact")}>联系我</a>}
         </div>}
-        <PixelPortrait artwork={config.heroArtwork} defaultUrl={defaultPortraitUrl} />
-        {intro && <p className="pixel-hero-intro pixel-copy">{intro}</p>}
-        <p className="pixel-press pixel-label" aria-hidden="true">▼ 向下滚动</p>
-      </section>
+      </PixelHero>
 
       <div className="pixel-ticker" aria-hidden="true">
         <span>{"像素世界 PIXEL WORLD ★ ".repeat(10)}</span><span>{"像素世界 PIXEL WORLD ★ ".repeat(10)}</span>

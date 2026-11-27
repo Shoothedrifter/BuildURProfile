@@ -44,8 +44,14 @@ def valid_cutout(image: GeneratedImage) -> bool:
             alpha.thumbnail((128, 128))
             width, height = alpha.size
             coverage = sum(value >= 128 for value in alpha.tobytes()) / (width * height)
-            top_corners = [alpha.getpixel(point) for point in ((0, 0), (width - 1, 0))]
-            return 0.14 <= coverage <= 0.88 and max(top_corners) <= 40 and alpha.getpixel((width // 2, height // 2)) >= 128
+            # Hats, hair and close crops can legitimately touch either top corner.
+            # Require actual removed background along the perimeter instead of a
+            # particular composition. A single transparent pixel is insufficient.
+            border = [alpha.getpixel((x, y)) for x in range(width) for y in (0, height - 1)]
+            border += [alpha.getpixel((x, y)) for y in range(1, height - 1) for x in (0, width - 1)]
+            removed_border = sum(value <= 40 for value in border) / len(border)
+            return (0.14 <= coverage <= 0.97 and removed_border >= 0.05
+                    and alpha.getpixel((width // 2, height // 2)) >= 128)
     except (OSError, ValueError, Image.DecompressionBombError):
         return False
 

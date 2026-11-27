@@ -14,6 +14,7 @@ import { openShowcasePreview } from "../lib/showcasePreview";
 import "./result-ui.css";
 import { PixelAvatarEditor } from "./PixelAvatarEditor";
 import { pixelDefaultPortrait } from "./PixelWorldPage";
+import { PixelTemplatePreview } from "./PixelHero";
 import { LaunchPage } from "./LaunchPage";
 import {
   BuilderChrome,
@@ -167,6 +168,7 @@ function PortfolioSnapshot({ name, role, intro, project, projectDescription = ""
   name: string; role: string; intro: string; project: string; projectDescription?: string; photo?: string | null; tone?: StylePresetId; draftPreview?: boolean; hidePortrait?: boolean;
 }) {
   const displayName = name.trim() || "你的名字";
+  if (tone === "pixel") return <PixelTemplatePreview name={name} role={role} intro={intro} />;
   return <div className={`proof-portfolio-snapshot proof-portfolio-snapshot--${tone}${draftPreview ? " proof-portfolio-snapshot--draft" : ""}${draftPreview && photo && !hidePortrait ? " proof-portfolio-snapshot--draft-portrait" : ""}`}>
     <span>{displayName} / 个人作品集</span>
     <small>{role.trim() || "个人作品集"}</small>

@@ -7,6 +7,7 @@ import { observeCyberProjectStack } from "../lib/cyber-project-stack";
 import { CyberGlassBackdrop } from "./CyberGlassBackdrop";
 import { CyberAwardsSection, CyberCampusSection } from "./CyberOptionalSections";
 import { CyberWorkTimeline } from "./CyberWorkTimeline";
+import { CyberSkillsDrum } from "./CyberSkillsDrum";
 import { ResumeSupplement, type ResumeImageResolver } from "./ResumeDisplay";
 
 type Props = {
@@ -146,8 +147,7 @@ export function CyberCreatorPage({ config, resolveResumeImage, preserveShareHash
           {hasContact && <a href="#contact" className="cyber-contact-button">联系我 ↗</a>}
         </section>;
         if (section.kind === "skills") return <section className="cyber-capabilities" id={section.kind} key={section.kind}><div className="cyber-page-width">
-          <h2>能力与专长</h2>
-          <div className="cyber-capability-list">{section.items.map((item, index) => <div className="cyber-capability" key={item.itemId}><span>{String(index + 1).padStart(2, "0")}</span><ItemContent item={item} resolveResumeImage={resolveResumeImage} /></div>)}</div>
+          <CyberSkillsDrum items={section.items} animate={!staticMode} resolveResumeImage={resolveResumeImage} />
         </div></section>;
         if (section.kind === "projects") return <section className="cyber-projects" id={section.kind} key={section.kind}><div className="cyber-page-width">
           <h2>项目作品</h2>

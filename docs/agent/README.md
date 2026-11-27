@@ -73,3 +73,5 @@ npm run test:agent
 新 Agent 简历生成使用 `python-agent-v4`、`GenerationBriefV3` 和 `DesignConfigV3`。`resume.compose.v4` 只验证并透传按用户确认顺序排列的 `resume-v3` 条目、事实和补充内容；不再调用模型重写，图片只有稳定 ID。`artifact.qa.v3` 验证新合同，图同时检查最终 content 与确认 brief 完全一致。肖像重生成仍受本机非商业预览限制。
 
 Worker 同时消费旧 `python-agent-v2/v3`，其合同及黄金样例保持原语义。新旧版本混用明确失败。Schema 导出、`agent-golden.v3.json` 和 Node HTTP ↔ Python 图的合成测试覆盖新版合同与免费项目创建，不需要真实模型或支付凭据。
+
+透明人物层验收兼容近景肖像：主体覆盖率为 14%–97%，至少 5% 周界采样为透明背景，并检查画面中心保留主体。不再要求两个顶角都透明，帽子或头发可触及顶角；仍拒绝完全不透明、完全透明和只有零星透明像素的结果。已有 HTML 缺失透明层时不会自动补齐，需要重新生成或用有效透明资产重新导出。
