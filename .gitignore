@@ -34,3 +34,4 @@ docs/PRD/
 /.alipay-sandbox.json
 
 apps/web/.export/
+.worktrees/
