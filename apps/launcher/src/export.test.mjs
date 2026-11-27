@@ -17,6 +17,15 @@ test("cleanConfig keeps non-empty project sourceText and omits the key when abse
   assert.equal("sourceText" in cleaned.content.projects[1], false);
 });
 
+test("offline export requires the macaron hero photo to be embedded like the artwork", () => {
+  const config = JSON.parse(readFileSync(new URL("../../web/src/fixtures/two-projects.json", import.meta.url)));
+  const clean = JSON.parse(cleanConfig({ ...config, templateId: "warm-macaron-v1",
+    heroPhoto: { assetUrl: "data:image/jpeg;base64,aGVsbG8=", alt: "合成用户的个人照片" } }));
+  assert.equal(buildStaticHtml(clean, "", "").includes("data:image/jpeg;base64,aGVsbG8="), true);
+  const unembedded = { ...clean, heroPhoto: { assetUrl: "/api/portraits/x", alt: "合成用户的个人照片" } };
+  assert.throws(() => buildStaticHtml(unembedded, "", ""), /embedded/);
+});
+
 test("offline export runs the shared showcase with embedded portrait and safe confirmed content", async () => {
   const config = JSON.parse(readFileSync(new URL("../../web/src/fixtures/two-projects.json", import.meta.url)));
   config.heroArtwork = { assetUrl: "data:image/png;base64,aGVsbG8=", styleId: "owned-style", alt: "Portrait" };

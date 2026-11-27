@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4, JobRole, ResumeContent, TemplateId } from "../../../packages/contracts/src/config";
 import type { ResumeDraftV2 } from "../../../packages/contracts/src/resume-draft";
 import { projectConfirmedResumeV3 } from "../../../packages/contracts/src/resume-draft";
 import type { GenerationStatus } from "./lib/generationApi";
@@ -133,7 +133,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
         return;
       }
       if (result.projectId) { setProjectId(result.projectId); setProjectPaid(result.projectPaid ?? false); }
-      setGenerated({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
+      setGenerated({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}),
+        ...(result.heroPhoto ? { heroPhoto: result.heroPhoto } : {}) } as DesignConfig);
       setResultResumeId(result.resumeId ?? null);
       setProgress("");
       setPhase("result");
@@ -422,9 +423,9 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     setGeneratingAvatar(false);
     setProgress("");
     setGenerated((previous) => {
-      if (!previous?.heroArtwork) return previous;
-      const { heroArtwork: _ignored, ...withoutArtwork } = previous;
-      return withoutArtwork;
+      if (!previous?.heroArtwork && !(previous as DesignConfigV4)?.heroPhoto) return previous;
+      const { heroArtwork: _ignored, heroPhoto: _ignoredPhoto, ...withoutAssets } = previous as DesignConfigV4;
+      return withoutAssets;
     });
   };
 
@@ -485,9 +486,11 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
 
   const generate = async () => {
     if ((!draft && !agentDraft) || !selectedTemplate || (!agentDraft && !isAssessmentComplete(answers))) return;
-    const portrait = selectedTemplate !== "pixel-world-v1" && avatarDemo && photoDataUrl ? { dataUrl: photoDataUrl } : undefined;
-    if (selectedTemplate !== "pixel-world-v1" && photoDataUrl && !TEMPLATE_PORTRAIT_POLICIES[selectedTemplate]) {
-      setError("当前模板暂不支持照片生成，请移除照片或选择赛博科技。");
+    // 暖调马卡龙支持照片直出：上传即入私有资产区直接展示，不受肖像生成门控限制。
+    const macaronDirect = selectedTemplate === "warm-macaron-v1";
+    const portrait = selectedTemplate !== "pixel-world-v1" && photoDataUrl && (macaronDirect || avatarDemo) ? { dataUrl: photoDataUrl } : undefined;
+    if (selectedTemplate !== "pixel-world-v1" && !macaronDirect && photoDataUrl && !TEMPLATE_PORTRAIT_POLICIES[selectedTemplate]) {
+      setError("当前模板暂不支持照片生成，请移除照片后重试。");
       return;
     }
     let confirmation: { problems: string[]; content?: ResumeContent };
@@ -524,7 +527,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       if (result.projectId) { setProjectId(result.projectId); setProjectPaid(result.projectPaid ?? false); }
       setResultResumeId(result.projectId ? result.resumeId ?? null : result.resumeId ?? agentDraft?.resumeId ?? null);
       void paymentApi.projects().then(setProjects).catch(()=>{});
-      showResult({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
+      showResult({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}),
+        ...(result.heroPhoto ? { heroPhoto: result.heroPhoto } : {}) } as DesignConfig);
       if (selectedTemplate === "pixel-world-v1" && pixelAvatarEnabled && photoDataUrl) {
         await runAvatarGeneration(result.config, true);
       }

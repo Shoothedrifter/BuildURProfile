@@ -44,6 +44,7 @@ export function buildStaticHtml(config, javascript, css, mediaReader, fontSubset
   const images = [
     config.heroArtwork?.assetUrl,
     config.heroArtwork?.cutoutAssetUrl,
+    config.heroPhoto?.assetUrl,
     ...config.content.projects.map((project) => project.image),
     ...(config.marquee.items ?? []).map((item) => typeof item === "string" ? undefined : item.image)
   ];

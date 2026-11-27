@@ -132,8 +132,10 @@ const stylePresets: Array<{
   }
 ];
 
-function AvatarPicker({ pixel = false, enabled, photoDataUrl, photoName, generating, disabledReason, inline = false, onPhoto, onClear }: {
+function AvatarPicker({ pixel = false, direct = false, enabled, photoDataUrl, photoName, generating, disabledReason, inline = false, onPhoto, onClear }: {
   pixel?: boolean;
+  /** 暖调马卡龙照片直出：原图进入作品集，不经过图像生成供应商。 */
+  direct?: boolean;
   enabled: boolean;
   photoDataUrl: string | null;
   photoName: string;
@@ -147,7 +149,9 @@ function AvatarPicker({ pixel = false, enabled, photoDataUrl, photoName, generat
     <h2 id="avatar-heading">个人头像</h2>
     <p>{pixel
       ? "照片可选。生成时会发送给 Cloudflare Workers AI，识别发型、发色、刘海和镜框，并合成你的像素 IP。原照片保留 1 天，候选头像保留 7 天，仅用于当前编辑预览，分享和导出使用默认角色。"
-      : "照片可选；此处不展示原图，生成后再查看与模板匹配的头像。"}</p>
+      : direct
+        ? "照片可选。上传后存储于私有资产区，并在作品集中直接展示原图；不发送给图像生成供应商，保存作品时嵌入页面。"
+        : "照片可选；此处不展示原图，生成后再查看与模板匹配的头像。"}</p>
     {enabled ? <>
       <label className="proof-avatar-upload">
         <strong>{photoDataUrl ? "重新选择照片" : "上传照片"}</strong>
@@ -271,6 +275,8 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   } = props;
   const selectedPreset = stylePresets.find(preset => preset.templateId === props.selectedTemplate)?.id ?? null;
   const pixelSelected = props.selectedTemplate === "pixel-world-v1";
+  // 暖调马卡龙：照片直出模板，上传不经过肖像生成门控。
+  const macaronSelected = props.selectedTemplate === "warm-macaron-v1";
   const pixelResult = generated && "templateId" in generated && generated.templateId === "pixel-world-v1";
   const pixelArtwork = props.pixelArtwork ?? null;
   const portraitPolicy = props.selectedTemplate ? TEMPLATE_PORTRAIT_POLICIES[props.selectedTemplate] : undefined;
@@ -513,7 +519,8 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <p>{pixelSelected ? "当前样张展示默认像素角色；上传照片后，生成你的个性化像素 IP。" : selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
         </ProofCard>
         <ProofCard as="section" className="proof-style-controls" aria-label="头像与网站模板">
-        <AvatarPicker inline pixel={pixelSelected} enabled={pixelSelected ? Boolean(props.pixelAvatarEnabled) : avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
+        <AvatarPicker inline pixel={pixelSelected} direct={macaronSelected}
+          enabled={pixelSelected ? Boolean(props.pixelAvatarEnabled) : macaronSelected || avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
           disabledReason={avatarDemo ? "当前模板暂不支持照片生成；移除照片后可继续生成。" : undefined}
           photoDataUrl={photoDataUrl} photoName={photoName}
           generating={generatingAvatar} onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
@@ -529,7 +536,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           {isTouch && <p className="proof-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
           {progress && <p className="proof-status" role="status">{progress}</p>}
           {error && <p className="proof-inline-error" role="alert">{error}</p>}
-          <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar || Boolean(!pixelSelected && photoDataUrl && !portraitPolicy)} onClick={props.onGenerate}>
+          <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar || Boolean(!pixelSelected && !macaronSelected && photoDataUrl && !portraitPolicy)} onClick={props.onGenerate}>
             {generatingAvatar ? "正在生成作品…" : "生成我的 Showcase →"}
           </ProofButton>
         </section>

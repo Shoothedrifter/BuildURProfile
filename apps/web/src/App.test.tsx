@@ -661,6 +661,16 @@ describe("showcase builder", () => {
     expect((JSON.parse(json.textContent ?? "") as DesignConfig).content.profile.name).toBe("Alex Morgan");
     expect(screen.getByRole("heading", { name: "04 网站预览与轻量编辑" })).toBeInTheDocument();
   });
+  it("restores a warm macaron task with its direct hero photo", async () => {
+    const draft = { ...normalizeResumeDraft(resumeDraftFixture), revision: 1 };
+    const config = { ...rawConfig, templateId: "warm-macaron-v1", content: projectConfirmedResumeV3(draft) } as DesignConfigV4;
+    vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config,
+      heroPhoto: { assetUrl: "/api/portraits/portrait-id", alt: "合成用户的个人照片" } });
+    render(<App />);
+    const json = () => JSON.parse(screen.getByTestId("design-config-json").textContent || "{}") as DesignConfigV4;
+    await waitFor(() => expect(json().heroPhoto).toEqual({ assetUrl: "/api/portraits/portrait-id", alt: "合成用户的个人照片" }));
+    expect(await screen.findByTestId("warm-macaron-page")).toBeInTheDocument();
+  });
   it("offers photo upload without portrait style choices", async () => {
     render(<App />);
     await reachStyle();

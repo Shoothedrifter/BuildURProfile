@@ -70,6 +70,43 @@ it("submits a photo without letting the browser choose its portrait style", asyn
   expect(submitted).not.toHaveProperty("styleId");
 });
 
+it("sends a macaron photo as a direct delivery field instead of a vendor portrait", async () => {
+  let submitted: Record<string, unknown> | undefined;
+  vi.stubGlobal("fetch", vi.fn(async (path: string, options?: RequestInit) => {
+    if (path === "/api/session") return Response.json({ csrfToken: "csrf" });
+    if (path === "/api/portraits") return Response.json({ id: "portrait-id" });
+    if (path === "/api/generations") {
+      submitted = JSON.parse(options?.body as string) as Record<string, unknown>;
+      return Response.json({ id: "macaron-photo-task" });
+    }
+    if (path === "/api/generations/macaron-photo-task") return Response.json({ status: "SUCCEEDED", config: rawConfig });
+    throw new Error(`Unexpected request: ${path}`);
+  }));
+  const result = await generationApi.generatePortfolio({ resumeId: "resume-id", revision: 2, role: "ui-ux-designer",
+    templateId: "warm-macaron-v1" }, { dataUrl: "data:image/png;base64,aGVsbG8=" });
+  expect(submitted).toMatchObject({ templateId: "warm-macaron-v1", photoAssetId: "portrait-id", portraitAssetId: null });
+  expect(submitted).not.toHaveProperty("styleId");
+  expect(result.config).not.toHaveProperty("heroPhoto");
+});
+
+it("carries the macaron hero photo next to both the task config and the server project", async () => {
+  const heroPhoto = { assetUrl: "/api/portraits/portrait-id", alt: "合成用户的个人照片" };
+  const taskConfig = { ...rawConfig, templateId: "warm-macaron-v1", heroPhoto };
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+    if (path === "/api/session") return Response.json({ csrfToken: "csrf" });
+    if (path === "/api/generations") return Response.json({ id: "macaron-task" });
+    if (path === "/api/generations/macaron-task") return Response.json({ status: "SUCCEEDED", config: taskConfig, projectId: "server-project" });
+    if (path === "/api/projects/server-project") return Response.json({ id: "server-project", config: rawConfig, paid: false });
+    throw new Error(`Unexpected route: ${path}`);
+  }));
+  const result = await generationApi.generatePortfolio({ resumeId: "resume-id", revision: 1, role: "ui-ux-designer",
+    templateId: "warm-macaron-v1" });
+  expect(result.projectId).toBe("server-project");
+  expect(result.heroPhoto).toEqual(heroPhoto);
+  expect(result.config).not.toHaveProperty("heroPhoto");
+  expect(await generationApi.resumeGeneration()).toBeNull();
+});
+
 it("Pixel World uploads photo only on request and never replaces the base task pointer", async () => {
   sessionStorage.setItem("burp-avatar-task", "base-task");
   const config = { ...rawConfig, templateId: "pixel-world-v1" } as DesignConfig;

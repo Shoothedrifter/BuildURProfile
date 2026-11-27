@@ -27,10 +27,17 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     const expired = deleted || row.status === "SUCCEEDED" && row.output_asset_id && !await assets.outputExists(row.output_asset_id);
     const cancelling = row.status === "RUNNING" && row.cancel_requested_at != null;
     const expiredMessage = isPixelCandidateWorkflow(row.workflow_version) ? PIXEL_CANDIDATE_EXPIRED_MESSAGE : "成图已过期，请重新上传照片生成。";
-    const resumeId = row.resume_request_json && JSON.parse(row.resume_request_json).resumeId;
+    const request = row.resume_request_json ? JSON.parse(row.resume_request_json) : null;
+    const resumeId = request?.resumeId;
+    // 暖调马卡龙直出照片：任务侧以会话内预览 URL 呈现；资产过期即退场（已保存项目读取内嵌 data URL，不受影响）。
+    const heroPhoto = request?.photoAssetId && row.status === "SUCCEEDED" && !expired && row.config_json
+      && await db.prepare("SELECT 1 FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind='portrait' AND expires_at>?")
+        .get(request.photoAssetId, row.owner_session_id, now())
+      ? { assetUrl: `/api/portraits/${request.photoAssetId}`, alt: `${JSON.parse(row.config_json).content?.profile?.name ?? ""}的个人照片` }
+      : null;
     return { id: row.id, ...(row.project_id ? {projectId:row.project_id} : {}), ...(resumeId ? {resumeId} : {}), status: expired ? "EXPIRED" : cancelling ? "CANCELLING" : row.status, styleId: row.style_id,
       error: deleted ? "作品已删除，请重新生成。" : expired ? expiredMessage : row.error,
-      ...(row.status === "SUCCEEDED" && !expired && row.config_json ? { config: JSON.parse(row.config_json) } : {}),
+      ...(row.status === "SUCCEEDED" && !expired && row.config_json ? { config: heroPhoto ? { ...JSON.parse(row.config_json), heroPhoto } : JSON.parse(row.config_json) } : {}),
       ...(row.status === "SUCCEEDED" && row.output_asset_id && !expired ? { heroArtwork: { assetUrl: `/api/hero-assets/${row.output_asset_id}`, styleId: row.style_id,
         alt: row.style_id === PIXEL_AVATAR_STYLE_ID ? "个人像素头像" : "根据本人肖像生成的动画风格虚拟形象",
         ...(row.cutout_asset_id && await assets.cutoutExists(row.cutout_asset_id) ? { cutoutAssetUrl: `/api/hero-assets/${row.cutout_asset_id}` } : {}) } } : {}) };

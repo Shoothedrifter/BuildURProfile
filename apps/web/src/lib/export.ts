@@ -1,4 +1,4 @@
-import type { DesignConfig } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4 } from "../../../../packages/contracts/src/config";
 
 async function inlineImage(source: string, label: string): Promise<string> {
   if (source.startsWith("data:image/")) return source;
@@ -22,7 +22,8 @@ async function inlineImage(source: string, label: string): Promise<string> {
 
 /** Only confirmed content and embedded assets are sent for delivery; the PDF remains local. */
 export async function inlineConfigImages(config: DesignConfig): Promise<DesignConfig> {
-  const [projects, items, heroArtwork, cutoutArtwork] = await Promise.all([
+  const heroPhotoSource = (config as DesignConfigV4).heroPhoto;
+  const [projects, items, heroArtwork, cutoutArtwork, heroPhoto] = await Promise.all([
     Promise.all(config.content.projects.map(async (project) => project.image
       ? { ...project, image: await inlineImage(project.image, `project “${project.title}”`) }
       : project)),
@@ -30,13 +31,16 @@ export async function inlineConfigImages(config: DesignConfig): Promise<DesignCo
       ? item
       : { ...item, image: await inlineImage(item.image, `marquee “${item.label}”`) })),
     config.heroArtwork ? inlineImage(config.heroArtwork.assetUrl, "portrait") : undefined,
-    config.heroArtwork?.cutoutAssetUrl ? inlineImage(config.heroArtwork.cutoutAssetUrl, "transparent portrait") : undefined
+    config.heroArtwork?.cutoutAssetUrl ? inlineImage(config.heroArtwork.cutoutAssetUrl, "transparent portrait") : undefined,
+    heroPhotoSource ? inlineImage(heroPhotoSource.assetUrl, "photo") : undefined
   ]);
   return {
     ...config,
     ...(config.heroArtwork && heroArtwork ? { heroArtwork: { ...config.heroArtwork, assetUrl: heroArtwork,
       ...(cutoutArtwork ? { cutoutAssetUrl: cutoutArtwork } : {}) } } : {}),
+    // 直出照片同样在浏览器侧预内嵌，保证保存前后配置可比、服务端无需重复读取。
+    ...(heroPhotoSource && heroPhoto ? { heroPhoto: { ...heroPhotoSource, assetUrl: heroPhoto } } : {}),
     marquee: items ? { ...config.marquee, items } : config.marquee,
     content: { ...config.content, projects }
-  };
+  } as DesignConfig;
 }

@@ -96,6 +96,38 @@ test("Pixel World default art is exportable for free and sharing requires entitl
   assert.deepEqual((await service.readShare(share.token)).config.content.resume, base.content.resume);
 });
 
+test("warm macaron hero photo stays embedded in share and export after the portrait expires", async t => {
+  const assetRoot = mkdtempSync(join(tmpdir(), "burp-macaron-delivery-"));
+  t.after(() => rmSync(assetRoot, { recursive: true, force: true }));
+  const generation = createGenerationService({ db, assetRoot, minPixels: 1, now: () => time });
+  const withReader = createPaymentService(db, { gateway, paymentConfig: merchant, now: () => time,
+    readHeroPhotoAsset: (sessionId, id) => generation.readAsset(sessionId, id, "portrait") });
+  const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=";
+  const photo = await generation.savePortrait("owner", `data:image/png;base64,${image}`);
+  const base = pixelConfig();
+  const request = { ...base, templateId: "warm-macaron-v1",
+    heroPhoto: { assetUrl: `/api/portraits/${photo.id}`, alt: "合成用户的个人照片" } };
+  // 保存即内嵌：读回 data URL，不再依赖 avatar_assets 存活。
+  const { id, config: saved } = await withReader.createProject("owner", request);
+  assert.equal(saved.templateId, "warm-macaron-v1");
+  assert.equal(saved.heroPhoto.assetUrl, `data:image/png;base64,${image}`);
+  assert.equal(saved.heroPhoto.alt, "合成用户的个人照片");
+  time += 30 * 86400000;
+  assert.equal((await withReader.getProject("owner", id)).config.heroPhoto.assetUrl, `data:image/png;base64,${image}`);
+  // 支付核实后的分享页与免费导出都读取内嵌值。
+  await withReader.notify(paidNotice(await withReader.checkout("owner", id, "share")));
+  const share = await withReader.publish("owner", id);
+  assert.equal((await withReader.readShare(share.token)).config.heroPhoto.assetUrl, `data:image/png;base64,${image}`);
+  const download = await withReader.issueDownload("owner", id);
+  const html = buildStaticHtml((await withReader.getDownload("owner", download.token)).config, "", "");
+  assert.ok(html.includes(`data:image/png;base64,${image}`));
+  assert.ok(!html.includes("/api/portraits/"));
+  // 非法形态交给 cleanConfig 拒绝（Task 1 的 schema 断言迁移到真实清洗路径）。
+  await assert.rejects(async () => await withReader.createProject("owner", { ...request, heroPhoto: 123 }), { status: 400 });
+  await assert.rejects(async () => await withReader.updateProject("owner", id, { ...request,
+    heroPhoto: { assetUrl: "javascript:alert(1)", alt: "" } }), { status: 400 });
+});
+
 test("free export does not create an order or alter an existing legacy export order", async () => {
   const id = await setupProject();
   const order = await service.checkout("owner", id, "share");

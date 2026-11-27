@@ -1,10 +1,10 @@
-import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4, HeroPhoto, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
 import { toPublishedConfig } from "./publication";
 import { PIXEL_AVATAR_STYLE_ID } from "../../../../packages/skills/src/avatar-catalog";
 
 export type HeroArtwork = NonNullable<DesignConfig["heroArtwork"]>;
 export type GenerationBrief = { role: JobRole; answers: Record<string, number>; content: Omit<ResumeContent, "sourceRefs"> };
-export type GenerationResult = { projectId?: string; projectPaid?: boolean; resumeId?: string; config: DesignConfig; heroArtwork?: HeroArtwork };
+export type GenerationResult = { projectId?: string; projectPaid?: boolean; resumeId?: string; config: DesignConfig; heroArtwork?: HeroArtwork; heroPhoto?: HeroPhoto };
 export type GenerationStatus = "QUEUED" | "RUNNING" | "CANCELLING";
 // Retain the old key so a task started before this migration can still be restored.
 const savedTaskKey = "burp-avatar-task";
@@ -51,13 +51,18 @@ async function waitForTask(id: string, epoch: number, onStatus?: (status: Genera
     assertCurrent();
     if (current.status === "SUCCEEDED") {
       if (!current.config) throw new Error("生成任务缺少作品配置，请重新生成。");
+      // 暖调马卡龙直出照片由服务端并入任务配置；这里统一转为兄弟字段，与 heroArtwork 同构。
+      const heroPhoto = (current.config as DesignConfigV4).heroPhoto;
+      if (heroPhoto) delete (current.config as { heroPhoto?: HeroPhoto }).heroPhoto;
       if (current.projectId) {
         const project = await request<{ id: string; resumeId?: string; config: DesignConfig; paid: boolean }>(`/api/projects/${encodeURIComponent(current.projectId)}`);
         assertCurrent();
         if (!signal && sessionStorage.getItem(savedTaskKey) === id) sessionStorage.removeItem(savedTaskKey);
-        return { config: project.config, projectId: project.id, projectPaid: project.paid, ...(project.resumeId ? { resumeId: project.resumeId } : {}) };
+        return { config: project.config, projectId: project.id, projectPaid: project.paid,
+          ...(project.resumeId ? { resumeId: project.resumeId } : {}), ...(heroPhoto ? { heroPhoto } : {}) };
       }
-      return { config: current.config, ...(current.resumeId ? { resumeId: current.resumeId } : {}), ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}) };
+      return { config: current.config, ...(current.resumeId ? { resumeId: current.resumeId } : {}),
+        ...(current.heroArtwork ? { heroArtwork: current.heroArtwork } : {}), ...(heroPhoto ? { heroPhoto } : {}) };
     }
     if (current.status === "FAILED" || current.status === "EXPIRED" || current.status === "CANCELLED") {
       if (!signal && sessionStorage.getItem(savedTaskKey) === id) sessionStorage.removeItem(savedTaskKey);
@@ -102,14 +107,16 @@ export const generationApi = {
   async generatePortfolio(brief: GenerationBrief | {resumeId: string; revision: number; role: JobRole; answers: Record<string,number>} | {resumeId: string; revision: number; role: JobRole; templateId: TemplateId}, portrait?: { dataUrl: string },
     onStatus?: (status: GenerationStatus) => void): Promise<GenerationResult> {
     const epoch = generationEpoch;
-    let portraitAssetId: string | null = null;
+    let portraitAssetId: string | null = null, photoAssetId: string | null = null;
     if (portrait) {
       const uploaded = await request<{ id: string }>("/api/portraits", { dataUrl: portrait.dataUrl });
       requireCurrent(epoch);
-      portraitAssetId = uploaded.id;
+      // 暖调马卡龙走照片直出：上传即入私有资产区，不创建发给图像供应商的肖像任务。
+      if ("templateId" in brief && brief.templateId === "warm-macaron-v1") photoAssetId = uploaded.id;
+      else portraitAssetId = uploaded.id;
     }
     const task = await request<{ id: string }>("/api/generations", {
-      ...("resumeId" in brief ? brief : {brief}), portraitAssetId, idempotencyKey: crypto.randomUUID()
+      ...("resumeId" in brief ? brief : {brief}), portraitAssetId, ...(photoAssetId ? { photoAssetId } : {}), idempotencyKey: crypto.randomUUID()
     });
     await retainTaskOrCancel(task.id, epoch);
     return waitForTask(task.id, epoch, onStatus);
