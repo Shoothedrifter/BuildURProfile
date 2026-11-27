@@ -19,6 +19,7 @@ type Props = {
   staticDecorations?: boolean;
   defaultPortraitUrl?: string;
   loadFont?: boolean;
+  gazeDisabled?: boolean;
 };
 
 function PixelEntry({ item, resolveImage, Title = "h4" }: { item: ResumeDisplayItem; resolveImage: ResumeImageResolver; Title?: "h3" | "h4" }) {
@@ -63,7 +64,7 @@ function plainClick(event: MouseEvent<HTMLAnchorElement>) {
 }
 
 export function PixelWorldPage({ config, resolveResumeImage, preserveShareHash = false,
-  staticDecorations = false, defaultPortraitUrl = pixelDefaultPortrait, loadFont = true }: Props) {
+  staticDecorations = false, defaultPortraitUrl = pixelDefaultPortrait, loadFont = true, gazeDisabled = false }: Props) {
   const { name, role, intro, about, projects, experience, email, phone, phoneNumber } = useMemo(() => pixelWorldPresentation(config), [config]);
   const hasAbout = about.length > 0;
   const hasWorks = projects.length > 0;
@@ -268,7 +269,7 @@ export function PixelWorldPage({ config, resolveResumeImage, preserveShareHash =
     </header>
 
     <main className="pixel-main">
-      <PixelHero name={name} role={role} intro={intro} artwork={config.heroArtwork} defaultPortraitUrl={defaultPortraitUrl}>
+      <PixelHero name={name} role={role} intro={intro} artwork={config.heroArtwork} defaultPortraitUrl={defaultPortraitUrl} gazeDisabled={gazeDisabled}>
         {(firstDestination || hasContact) && <div className="pixel-actions">
           {firstDestination && <a className="pixel-button pixel-label" href={addressHref({ chapter: firstDestination })}
             onClick={event => navigate(event, firstDestination)}>

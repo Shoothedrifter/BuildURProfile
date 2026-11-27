@@ -50,7 +50,7 @@ function AdditionalModule({ title, entries, id }: { title: string; entries: read
 export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHash = false, touchDowngraded = false, staticDecorations = false, resolveResumeImage = id => `/api/showcase-media/${encodeURIComponent(id)}`, defaultPortraitUrl, samplePreview = false }: { config: DesignConfig; allowSkinSwitch?: boolean; preserveShareHash?: boolean; touchDowngraded?: boolean; staticDecorations?: boolean; resolveResumeImage?: ResumeImageResolver; defaultPortraitUrl?: string; samplePreview?: boolean }) {
   if ((config as DesignConfigV4).templateId === "pixel-world-v1" && config.content.resume?.version === "resume-v3") {
     return <PixelWorldPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash}
-      staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} loadFont={!samplePreview} />;
+      staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} gazeDisabled={touchDowngraded} loadFont={!samplePreview} />;
   }
   if ((config as DesignConfigV4).templateId === "cyber-creator-v1" && config.content.resume?.version === "resume-v3") {
     return <CyberCreatorPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} previewHeadline={samplePreview ? config.content.profile.intro : undefined} />;

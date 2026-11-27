@@ -227,3 +227,29 @@ it('exports cyber project mosaic with confirmed captions and full text', async (
   expect(doc.querySelector('a[href="https://example.test/project"]')).not.toBeNull();
   page.window.close();
 });
+
+
+it("runs pixel eye tracking from embedded assets even with static export decorations", async () => {
+  const {buildStaticHtml}=await import("../server/export.mjs");
+  const fixture=await import("../../../../packages/contracts/fixtures/agent-golden.v3.json");
+  const {eyePatchBounds,pixelEyeProfiles}=await import("./pixelGaze");
+  const source={width:1254,height:1254,data:new Uint8ClampedArray(1254*1254*4)};
+  const b=eyePatchBounds;
+  for(let y=0;y<b.height;y++) source.data.set(pixelEyeProfiles[0].original.subarray(y*b.width*4,(y+1)*b.width*4),((b.y+y)*1254+b.x)*4);
+  const html=buildStaticHtml({...fixture.default.expected.config,templateId:"pixel-world-v1"},undefined,undefined,
+    ()=>({mime:"image/png",bytes:Buffer.from([1,2,3])}));
+  const page=new JSDOM(html,{runScripts:"dangerously",pretendToBeVisual:true,beforeParse(window) {
+    window.matchMedia=(query: string)=>({matches:!query.includes("reduced-motion"),addEventListener(){},removeEventListener(){}} as unknown as MediaQueryList);
+    window.HTMLCanvasElement.prototype.getContext=(()=>({drawImage(){},getImageData:()=>source,
+      createImageData:(w:number,h:number)=>({width:w,height:h,data:new Uint8ClampedArray(w*h*4)}),putImageData(){}})) as never;
+  }});
+  try {
+    await new Promise(resolve=>setTimeout(resolve,150));
+    const image=page.window.document.querySelector(".pixel-portrait")!;
+    expect(image.getAttribute("src")).toMatch(/^data:image\/svg\+xml;base64,/);
+    Object.defineProperties(image,{naturalWidth:{value:1254},naturalHeight:{value:1254}});
+    image.dispatchEvent(new page.window.Event("load"));
+    expect(page.window.document.querySelector("canvas")?.getAttribute("data-gaze")).toBe("ready");
+    expect(page.window.document.querySelectorAll('script[src]')).toHaveLength(0);
+  } finally { page.window.close(); }
+});
