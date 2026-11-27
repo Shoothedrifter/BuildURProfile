@@ -2027,6 +2027,14 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   image-rendering: pixelated;
 }
 
+/* 模板选择样张复用真实首屏，角色按完整正方形舞台展示。 */
+.pixel-template-preview { min-height: 0; border-radius: 12px; overflow: hidden; }
+.pixel-template-preview .pixel-header { position: static; }
+.pixel-template-preview .pixel-header-inner { flex-wrap: wrap; padding-block: 12px; }
+.pixel-template-preview .pixel-hero { min-height: 0; padding-block: 28px; }
+.pixel-template-preview .pixel-stage { width: min(100%, 20rem); justify-self: center; }
+.pixel-template-preview .pixel-hero h1 { overflow-wrap: anywhere; }
+
 /* 像素跑马灯：首屏之下的章节分隔装饰，双色块 + 逐帧滚动 */
 .pixel-ticker {
   display: flex;
