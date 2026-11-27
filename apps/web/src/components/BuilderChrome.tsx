@@ -7,13 +7,13 @@ import "./workflow-ui.css";
 
 export type WorkflowPhase = "landing" | "upload" | "confirm" | "quiz" | "result" | "delivery" | "mock";
 
-const progressSteps = ["上传简历", "解析与补充", "头像与风格", "生成作品集", "分享与付费"] as const;
+const progressSteps = ["上传简历", "解析与补充", "挑选风格", "生成完成"] as const;
 const phaseStep: Record<Exclude<WorkflowPhase, "landing" | "mock">, number> = {
   upload: 1,
   confirm: 2,
   quiz: 3,
   result: 4,
-  delivery: 5
+  delivery: 4
 };
 
 export type WorkflowStepTarget = { href?: string; onClick?: () => void };
@@ -170,7 +170,7 @@ export function WorkflowChrome({ children, navigation, action, progress, onHome,
     <main className="proof-main">{children}</main>
     <footer className="proof-footer workflow-footer">
       {brand(88, 46, "workflow-footer-brand")}
-      <a href="/#upload" onClick={onStart ? event => {
+      <a href="/upload" onClick={onStart ? event => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
         onStart();

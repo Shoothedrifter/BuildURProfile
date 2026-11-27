@@ -17,6 +17,12 @@ it("creates valid examples for all five templates with the same source content",
     && example.content.projects[0]?.title === "城市通勤服务")).toBe(true);
 });
 
+it("routes the start action to the standalone upload step page", () => {
+  const { unmount } = render(<DemoWorkbench />);
+  expect(screen.getByRole("link", { name: "制作我的作品集 →" })).toHaveAttribute("href", "/upload");
+  unmount();
+});
+
 it("updates the iframe snapshot and persists the sample without touching real draft data", () => {
   const { unmount } = render(<DemoWorkbench />);
   const frame = screen.getByTitle("实时样例预览") as HTMLIFrameElement;

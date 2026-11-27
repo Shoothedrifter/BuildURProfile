@@ -37,7 +37,7 @@ function touchInput(): boolean {
 
 function hasExplicitHomeTarget(): boolean {
   const hash = window.location.hash;
-  return hash.startsWith("#share=") || /^#(?:intro|write|design|check|upload|editor|process)$/.test(hash);
+  return hash.startsWith("#share=") || /^#(?:intro|write|design|check|editor|process)$/.test(hash);
 }
 
 function shareToken(): string | null {

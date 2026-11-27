@@ -1,11 +1,23 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import UploadPage from "./page";
 import { ResumeUpload } from "../../components/ResumeUpload";
 import { resumeApi } from "../../lib/resumeApi";
 
 vi.mock("../../lib/resumeApi", () => ({ resumeApi: {
   upload: vi.fn(), parse: vi.fn(), status: vi.fn(), cancel: vi.fn()
 } }));
+
+it("作为独立步骤页渲染上传流程，而不是重定向回首页锚点", () => {
+  const view = render(<UploadPage />);
+  // 顶部步骤条处于第 1 步「上传简历」
+  expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("上传简历");
+  // ResumeUpload 的真实上传区挂载在本页
+  expect(screen.getByText(/将 PDF 拖到这里/)).toBeInTheDocument();
+  // 可返回首页
+  expect(screen.getByRole("link", { name: "← 返回首页" })).toHaveAttribute("href", "/");
+  view.unmount();
+});
 
 beforeEach(() => {
   sessionStorage.clear();

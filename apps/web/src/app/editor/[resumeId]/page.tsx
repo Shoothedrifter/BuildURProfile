@@ -363,7 +363,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       if(cacheScopeRef.current)void removeLocalDelta(cacheScopeRef.current,resumeId).catch(()=>{});
       sessionStorage.removeItem("burp-agent-resume-id");
       sessionStorage.removeItem("burp-agent-file-id");
-      window.location.assign("/#upload");
+      window.location.assign("/upload");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "删除失败。");
       setBusy(false); setDialog(null);
@@ -378,7 +378,7 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
       const task = await resumeApi.reparse(resumeId);
       sessionStorage.setItem("burp-agent-resume-id", task.resumeId);
       if (task.fileId) sessionStorage.setItem("burp-agent-file-id", task.fileId);
-      window.location.assign("/#upload");
+      window.location.assign("/upload");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "重新解析失败。");
       setBusy(false); setDialog(null);
@@ -492,19 +492,19 @@ export default function ResumeEditorPage({ params }: { params: Promise<{ resumeI
     } catch(cause) {setError(cause instanceof Error?cause.message:'合并失败。');}
   };
 
-  if (!draft && error) return <AgentChrome phase="confirm" backHref="/#upload" backLabel="← 返回上传"
-    steps={{ 1: { href: "/#upload" } }}>
+  if (!draft && error) return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传"
+    steps={{ 1: { href: "/upload" } }}>
     <section className="proof-step-page">
       <ProofCard className="proof-error-card">
         <h1>简历不存在或已过期</h1>
         <p>{error}</p>
-        <ProofButton onClick={() => window.location.assign("/#upload")}>返回上传</ProofButton>
+        <ProofButton onClick={() => window.location.assign("/upload")}>返回上传</ProofButton>
       </ProofCard>
     </section>
   </AgentChrome>;
 
-  return <AgentChrome phase="confirm" backHref="/#upload" backLabel="← 返回上传"
-    steps={{ 1: { href: "/#upload" }, 2: { onClick: () => window.scrollTo({ top: 0, behavior: "instant" }) },
+  return <AgentChrome phase="confirm" backHref="/upload" backLabel="← 返回上传"
+    steps={{ 1: { href: "/upload" }, 2: { onClick: () => window.scrollTo({ top: 0, behavior: "instant" }) },
       ...(draft && !busy ? { 3: { onClick: () => void save(true) } } : {}) }}>
     <section className="proof-step-page">
       <StepHeader number={2} title="核对经历，把你的能力补充完整"

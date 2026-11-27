@@ -181,7 +181,7 @@ export function DemoWorkbench() {
         <div className="demo-actions">
           <button type="button" onClick={openPreview}>新标签页预览 ↗</button>
           <button type="button" onClick={save}>保存样例草稿</button>
-          <a className="demo-start" href="#upload">制作我的作品集 →</a>
+          <a className="demo-start" href="/upload">制作我的作品集 →</a>
         </div>
         {previewError && <p className="demo-feedback" role="alert">{previewError}</p>}
         {status && <p className="demo-feedback" role="status">{status}</p>}

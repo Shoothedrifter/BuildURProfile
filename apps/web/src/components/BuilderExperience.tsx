@@ -292,6 +292,11 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     window.scrollTo({ top: 0, behavior: "instant" });
   };
   const goLanding = (section?: "about" | "process" | "upload") => {
+    // 上传已是独立步骤页，不再回到首页锚点
+    if (section === "upload") {
+      window.location.assign("/upload");
+      return;
+    }
     const id = section === "about" ? "write" : section;
     const url = id ? `/#${id}` : "/";
     if (window.location.pathname !== "/") {
@@ -328,8 +333,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     ...((draft || props.hasConfirmedResume || props.resultResumeId) ? {
       3: { onClick: phase === "result" || phase === "delivery" ? props.onRestartQuiz : () => go("quiz") }
     } : {}),
-    ...(generated ? { 4: { onClick: () => go("result") },
-      5: { onClick: () => props.onRequestDelivery("share") } } : {})
+    ...(generated ? { 4: { onClick: () => go("result") } } : {})
   };
 
   if (phase === "mock") {
@@ -363,7 +367,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     props.onPhaseChange("result");
   };
 
-  const progressNumber = phase === "upload" ? 1 : phase === "confirm" ? 2 : phase === "quiz" ? 3 : phase === "result" ? 4 : phase === "delivery" ? 5 : 0;
+  const progressNumber = phase === "upload" ? 1 : phase === "confirm" ? 2 : phase === "quiz" ? 3 : phase === "result" || phase === "delivery" ? 4 : 0;
 
   return <BuilderChrome projectCount={projects.length}
     onHome={() => goLanding()}
@@ -375,7 +379,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     {progressNumber > 0 && <div className="proof-step-shell" data-step={progressNumber} />}
 
     {phase === "upload" && <section className="proof-step-page">
-      <StepHeader number={2} title="从你的简历开始" description="上传一份 PDF，我们帮你整理经历；你始终决定最终展示什么。" />
+      <StepHeader number={1} title="从你的简历开始" description="上传一份 PDF，我们帮你整理经历；你始终决定最终展示什么。" />
       <div className="proof-upload-layout">
         <label className={`proof-upload-card ${selectedFile ? "has-file" : ""}`} onDragOver={(event: DragEvent<HTMLLabelElement>) => event.preventDefault()}
           onDrop={(event) => {
@@ -420,7 +424,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </section>}
 
     {phase === "confirm" && draft && <section className="proof-step-page">
-      <StepHeader number={3} title="让每一段经历，都有证据可循" description={`已从 ${fileName} 提取。请逐项核对，再补充能体现思考与结果的内容。`} />
+      <StepHeader number={2} title="让每一段经历，都有证据可循" description={`已从 ${fileName} 提取。请逐项核对，再补充能体现思考与结果的内容。`} />
       <div className="proof-confirm-layout">
         <ProofCard className="proof-module-nav">
           <h2>资料模块</h2>
@@ -485,7 +489,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </section>}
 
     {phase === "quiz" && !draft && !props.hasConfirmedResume && <section className="proof-step-page">
-      <StepHeader number={4} title="04 头像与网站风格" description="正在准备已确认的简历草稿。" />
+      <StepHeader number={3} title="挑选风格与头像" description="正在准备已确认的简历草稿。" />
       <ProofCard role={error ? "alert" : "status"}>
         <p>{error || progress || "正在读取已确认的简历草稿…"}</p>
         {error && styleResumeId && <a href={`/editor/${encodeURIComponent(styleResumeId)}`}>← 返回资料编辑</a>}
@@ -493,7 +497,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </section>}
 
     {phase === "quiz" && (draft || props.hasConfirmedResume) && <section className="proof-step-page">
-      <StepHeader number={4} title="04 头像与网站风格" description="头像可选；选择网站风格后查看首屏样张，再生成完整作品集。" />
+      <StepHeader number={3} title="挑选风格与头像" description="头像可选；选择网站风格后查看首屏样张，再生成完整作品集。" />
       <div className="proof-style-layout">
         <ProofCard as="section" className="proof-style-preview" aria-label="首屏实时预览">
           <h2>实时预览 / {stylePresets.find((preset) => preset.id === selectedPreset)?.label ?? "风格示意"}</h2>
@@ -537,7 +541,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     </section>}
 
     {(phase === "result" || phase === "delivery") && !generated && <section className="proof-step-page" aria-labelledby="missing-result-title">
-      <StepHeader number={phase === "result" ? 5 : 6} title="作品配置暂时不可用" description="你的操作没有被当作成功生成。请返回风格设置重新生成，已有简历确认内容会保留。" />
+      <StepHeader number={4} title="作品配置暂时不可用" description="你的操作没有被当作成功生成。请返回风格设置重新生成，已有简历确认内容会保留。" />
       <ProofCard className="proof-error-card">
         <strong id="missing-result-title">没有可预览的作品配置</strong>
         <p>{error || resultError || "生成结果不完整，请重新生成后再继续。"}</p>
@@ -551,7 +555,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
     {(phase === "result" || phase === "delivery") && generated && workbenchConfig && <section className="proof-step-page result-workbench">
       <div className="result-heading">
         <div>
-          <h1>05 网站预览与轻量编辑</h1>
+          <h1>04 网站预览与轻量编辑</h1>
           <p>左侧预览作品，右侧调整内容与发布。</p>
         </div>
         {props.draftSaved && <span role="status">草稿已保存</span>}
@@ -635,7 +639,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
             {pixelResult && <p className="proof-note">分享和导出将使用默认角色。</p>}
             {previewError && <p className="proof-inline-error" role="alert">{previewError}</p>}
           </> : <>
-            <h2 ref={deliveryHeading} tabIndex={-1}>06 分享确认与发布</h2>
+            <h2 ref={deliveryHeading} tabIndex={-1}>04 分享确认与发布</h2>
             {pixelResult && <p className="proof-note">分享和导出将使用默认角色。</p>}
             {!publishConfirmed ? <ProofCard className="proof-unlock-card">
               <h2>准备好公开分享了吗？</h2>

@@ -5,7 +5,6 @@ import type { KeyboardEvent, PointerEvent } from "react";
 import type { TemplateId } from "../../../../packages/contracts/src/config";
 import { demoTemplates } from "../demo/showcaseDemo";
 import { DemoWorkbench } from "./DemoWorkbench";
-import { ResumeUpload } from "./ResumeUpload";
 import "./LaunchPage.css";
 
 type LaunchPageProps = {
@@ -267,7 +266,7 @@ export function LaunchPage({ projectCount, onProjects, onSample, onLegacyParse }
     const home = root.current;
     if (!home) return;
     const scenes = Array.from(home.querySelectorAll<HTMLElement>(".journey-scene"));
-    const sections = Array.from(home.querySelectorAll<HTMLElement>("#write, #design, #check, #upload, #editor"));
+    const sections = Array.from(home.querySelectorAll<HTMLElement>("#write, #design, #check, #editor"));
     let frame = 0;
     const paint = () => {
       frame = 0;
@@ -303,7 +302,7 @@ export function LaunchPage({ projectCount, onProjects, onSample, onLegacyParse }
       <div className="journey-header-actions">
         <button type="button" className="journey-button" onClick={onProjects}
           aria-label={`我的项目，共 ${projectCount} 个`}>我的项目</button>
-        <a className="journey-button journey-button--primary" href="#upload">开始制作 →</a>
+        <a className="journey-button journey-button--primary" href="/upload">开始制作 →</a>
       </div>
     </header>
 
@@ -312,23 +311,20 @@ export function LaunchPage({ projectCount, onProjects, onSample, onLegacyParse }
       <WritingScene />
       <ComparisonScene onSample={onSample} />
       <EvidenceScene />
-      <div className="journey-upload">
-        <ResumeUpload />
-        <button type="button" className="journey-link" onClick={onLegacyParse}>使用浏览器解析（兼容）</button>
-      </div>
       <DemoWorkbench />
       <section className="journey-process" id="process" aria-labelledby="journey-process-title">
         <h2 id="journey-process-title">从简历到作品集</h2>
         <ol>
           {["上传 PDF", "确认内容", "选择风格", "预览与发布"].map(step => <li key={step}>{step}</li>)}
         </ol>
-        <a className="journey-button journey-button--primary" href="#upload">上传简历，免费开始</a>
+        <a className="journey-button journey-button--primary" href="/upload">上传简历，免费开始</a>
       </section>
     </main>
 
     <footer className="journey-footer">
       <a href="#intro">BuildURProfile</a>
       <span>让你的经历被看见。</span>
+      <button type="button" className="journey-footer-legacy" onClick={onLegacyParse}>使用浏览器解析（兼容）</button>
     </footer>
   </div>;
 }
