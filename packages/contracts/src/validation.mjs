@@ -115,7 +115,7 @@ export function cleanConfig(config) {
     !Number.isFinite(clone.marquee.speed) || !Number.isFinite(clone.stackedCards.scaleStep)) {
     throw new ServiceError(400, "Design Config 参数无效。");
   }
-  if (clone.templateId && !["cyber-creator-v1", "pixel-world-v1", "warm-v1", "minimal-v1", "bold-v1"].includes(clone.templateId)) {
+  if (clone.templateId && !["cyber-creator-v1", "pixel-world-v1", "warm-v1", "warm-macaron-v1", "minimal-v1", "bold-v1"].includes(clone.templateId)) {
     throw new ServiceError(400, "作品模板无效。");
   }
   if (clone.templateId === "pixel-world-v1" && clone.content.resume?.version !== "resume-v3") {
