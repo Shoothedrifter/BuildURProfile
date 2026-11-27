@@ -12,7 +12,6 @@ import { ShowcasePage } from "../ShowcasePage";
 import { EditorPanel, InteractionSettings } from "./EditorPanel";
 import { openShowcasePreview } from "../lib/showcasePreview";
 import "./result-ui.css";
-import { PixelAvatarEditor } from "./PixelAvatarEditor";
 import { pixelDefaultPortrait } from "./PixelWorldPage";
 import { PixelTemplatePreview } from "./PixelHero";
 import { LaunchPage } from "./LaunchPage";
@@ -133,7 +132,8 @@ const stylePresets: Array<{
   }
 ];
 
-function AvatarPicker({ enabled, photoDataUrl, photoName, generating, disabledReason, inline = false, onPhoto, onClear }: {
+function AvatarPicker({ pixel = false, enabled, photoDataUrl, photoName, generating, disabledReason, inline = false, onPhoto, onClear }: {
+  pixel?: boolean;
   enabled: boolean;
   photoDataUrl: string | null;
   photoName: string;
@@ -145,7 +145,9 @@ function AvatarPicker({ enabled, photoDataUrl, photoName, generating, disabledRe
 }) {
   const content = <>
     <h2 id="avatar-heading">个人头像</h2>
-    <p>照片可选；此处不展示原图，生成后再查看与模板匹配的头像。</p>
+    <p>{pixel
+      ? "照片可选。生成时会发送给 Cloudflare Workers AI，识别发型、发色、刘海和镜框，并合成你的像素 IP。原照片保留 1 天，候选头像保留 7 天，仅用于当前编辑预览，分享和导出使用默认角色。"
+      : "照片可选；此处不展示原图，生成后再查看与模板匹配的头像。"}</p>
     {enabled ? <>
       <label className="proof-avatar-upload">
         <strong>{photoDataUrl ? "重新选择照片" : "上传照片"}</strong>
@@ -220,6 +222,8 @@ export type BuilderExperienceProps = {
   photoName: string;
   generatingAvatar: boolean;
   avatarDemo: boolean;
+  pixelAvatarEnabled?: boolean;
+  pixelArtwork?: HeroArtwork | null;
   onPhaseChange: (phase: WorkflowPhase) => void;
   onSelectFile: (file: File) => void;
   onParseFile: () => void;
@@ -268,9 +272,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const selectedPreset = stylePresets.find(preset => preset.templateId === props.selectedTemplate)?.id ?? null;
   const pixelSelected = props.selectedTemplate === "pixel-world-v1";
   const pixelResult = generated && "templateId" in generated && generated.templateId === "pixel-world-v1";
-  const [pixelPreview, setPixelPreview] = useState<{ projectId: string | null; artwork: HeroArtwork } | null>(null);
-  const pixelArtwork = pixelPreview?.projectId === projectId ? pixelPreview?.artwork ?? null : null;
-  useEffect(() => { setPixelPreview(null); }, [projectId, pixelResult]);
+  const pixelArtwork = props.pixelArtwork ?? null;
   const portraitPolicy = props.selectedTemplate ? TEMPLATE_PORTRAIT_POLICIES[props.selectedTemplate] : undefined;
   useEffect(() => { if (phase === "result") setPublishConfirmed(false); }, [phase]);
   useEffect(() => {
@@ -508,13 +510,13 @@ export function BuilderExperience(props: BuilderExperienceProps) {
             project={previewProjectTitle} projectDescription={previewProjectDescription} tone={selectedPreset ?? "minimal"}
             photo={selectedPreset === "cyber" ? "/cyber-neutral-print-anime.webp" : pixelSelected ? pixelDefaultPortrait : null}
             draftPreview hidePortrait={selectedPreset !== "cyber" && !pixelSelected} />
-          <p>{pixelSelected ? "作品使用默认像素角色。" : selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
+          <p>{pixelSelected ? "当前样张展示默认像素角色；上传照片后，生成你的个性化像素 IP。" : selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
         </ProofCard>
         <ProofCard as="section" className="proof-style-controls" aria-label="头像与网站模板">
-        {!pixelSelected && <AvatarPicker inline enabled={avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
+        <AvatarPicker inline pixel={pixelSelected} enabled={pixelSelected ? Boolean(props.pixelAvatarEnabled) : avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
           disabledReason={avatarDemo ? "当前模板暂不支持照片生成；移除照片后可继续生成。" : undefined}
           photoDataUrl={photoDataUrl} photoName={photoName}
-          generating={generatingAvatar} onPhoto={props.onPhoto} onClear={props.onClearPhoto} />}
+          generating={generatingAvatar} onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
         <section className="proof-style-card" aria-labelledby="website-style-heading">
           <h2 id="website-style-heading">网站模板</h2>
           <div className="proof-style-options">
@@ -580,6 +582,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
               <div style={{ zoom: zoom / 100 }}><ShowcasePage config={workbenchConfig} touchDowngraded={isTouch} /></div>
             </div>
           </div>
+          {pixelResult && progress && <p className="proof-status" role="status">{progress}</p>}
           <details className="proof-advanced">
             <summary>高级参数 / 调试信息 →</summary>
             <pre data-testid="design-config-json">{JSON.stringify(generated, null, 2)}</pre>
@@ -611,16 +614,14 @@ export function BuilderExperience(props: BuilderExperienceProps) {
               </div>}
               {resultTab === "settings" && <div className="result-tab-content">
                 <InteractionSettings config={generated} onChange={props.onEditGenerated} isTouch={isTouch} />
-                {pixelResult && <PixelAvatarEditor key={projectId ?? "pixel-preview"} config={generated} applied={pixelArtwork}
-                  onApply={artwork => setPixelPreview(artwork ? { projectId, artwork } : null)} />}
-                {!pixelResult && avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId))) && <details className="proof-regenerate">
+                {(pixelResult ? props.pixelAvatarEnabled : avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId)))) && <details className="proof-regenerate">
                   <summary>更换照片 →</summary>
-                  <AvatarPicker enabled photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}
+                  <AvatarPicker enabled pixel={Boolean(pixelResult)} photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}
                     onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
                   <ProofButton variant="primary" disabled={!photoDataUrl || generatingAvatar} onClick={props.onRunAvatarGeneration}>
                     {generatingAvatar ? "正在生成头像…" : "应用新照片 →"}
                   </ProofButton>
-                  {progress && <p className="proof-status" role="status">{progress}</p>}
+                  {!pixelResult && progress && <p className="proof-status" role="status">{progress}</p>}
                 </details>}
               </div>}
             </div>

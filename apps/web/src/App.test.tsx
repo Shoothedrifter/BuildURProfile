@@ -78,7 +78,7 @@ async function reachResult(optionIndex = 0) {
   await screen.findByRole("heading", { name: "04 网站预览与轻量编辑" });
 }
 
-async function reachPixelAvatar() {
+async function reachPixelStyle() {
   window.history.replaceState(null, "", "/style/resume_synthetic");
   const draft = { ...normalizeResumeDraft(resumeDraftFixture), revision: 1 };
   vi.mocked(resumeApi.read).mockResolvedValueOnce({ draft, revision: 1, expiresAt: "2026-12-09T00:00:00Z" });
@@ -87,21 +87,14 @@ async function reachPixelAvatar() {
   vi.mocked(generationApi.pixelAvatarEnabled).mockResolvedValue(true);
   render(<App initialPhase="quiz" styleResumeId="resume_synthetic" />);
   fireEvent.click(await screen.findByRole("button", { name: /像素世界风/ }));
-  fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
-  fireEvent.click(await screen.findByRole("tab", { name: "设置" }));
-  return {
-    preview: within(await screen.findByTestId("pixel-world-page")),
-    input: await screen.findByLabelText("选择个人像素头像照片")
-  };
+  return { config, input: await screen.findByLabelText("选择个人肖像照片") };
 }
 
 const pixelArtwork = { assetUrl: "/api/hero-assets/12345678-1234-1234-1234-123456789012", styleId: "pixel-halfbody-v1", alt: "个人像素头像" };
 
 async function choosePixelPhoto(input: HTMLElement, name = "synthetic.png") {
   fireEvent.change(input, { target: { files: [new File(["photo"], name, { type: "image/png" })] } });
-  const recognize = screen.getByRole("button", { name: "识别照片特征" });
-  await waitFor(() => expect(recognize).toBeEnabled());
-  return recognize;
+  await screen.findByText(name);
 }
 
 beforeEach(() => {
@@ -177,63 +170,74 @@ describe("showcase builder", () => {
     }
   });
 
-  it("discloses photo processing before recognition and applies the private candidate only after selection", async () => {
+  it("offers one shared photo upload and automatically generates a private pixel IP after the base portfolio", async () => {
     vi.mocked(generationApi.generatePixelAvatar).mockResolvedValueOnce(pixelArtwork);
-    try {
-      const { preview, input } = await reachPixelAvatar();
-      const disclosure = screen.getByText(/Cloudflare Workers AI/);
-      expect(disclosure).toHaveTextContent(/用于识别发型、发色、镜框和可见的头颈配饰/);
-      expect(disclosure).toHaveTextContent(/短发.*齐肩发.*长发/);
-      expect(disclosure).toHaveTextContent(/单马尾.*双马尾.*刘海/);
-      expect(disclosure).toHaveTextContent(/暖棕.*粉色.*镜框/);
-      expect(disclosure).toHaveTextContent(/原照片.*1 天.*候选头像.*7 天/);
-      expect(disclosure).toHaveTextContent(/仅用于当前编辑预览.*分享和导出使用默认角色/);
-      const recognize = await choosePixelPhoto(input);
-      expect(generationApi.generatePixelAvatar).not.toHaveBeenCalled();
-      fireEvent.click(recognize);
-      expect(await screen.findByRole("img", { name: "生成的像素头像候选" })).toBeInTheDocument();
-      expect(preview.getByRole("img", { name: "像素世界风默认角色" })).toBeVisible();
-      fireEvent.click(screen.getByRole("button", { name: "使用此头像" }));
-      expect(preview.getByRole("img", { name: pixelArtwork.alt })).toHaveAttribute("src", pixelArtwork.assetUrl);
-      expect(screen.getByText(/分享和导出将使用默认角色/)).toBeInTheDocument();
-      expect(JSON.parse(screen.getByTestId("design-config-json").textContent || "{}")).not.toHaveProperty("heroArtwork");
-
-      vi.mocked(generationApi.generatePixelAvatar).mockRejectedValueOnce(new Error("这张照片没有可应用的造型特征。你可以保留当前头像、使用默认角色，或换一张照片。"));
-      fireEvent.click(await choosePixelPhoto(input, "unsupported.png"));
-      expect(await screen.findByRole("alert")).toHaveTextContent(/没有可应用的造型特征.*默认角色/);
-      expect(preview.getByRole("img", { name: pixelArtwork.alt })).toHaveAttribute("src", pixelArtwork.assetUrl);
-      expect(screen.queryByRole("button", { name: "使用此头像" })).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "恢复默认角色" }));
-      expect(preview.getByRole("img", { name: "像素世界风默认角色" })).toBeVisible();
-    } finally {
-      window.history.replaceState(null, "", "/");
-    }
+    const { input, config } = await reachPixelStyle();
+    expect(document.querySelectorAll('input[type="file"]')).toHaveLength(1);
+    expect(screen.getByText(/Cloudflare Workers AI/)).toBeVisible();
+    await choosePixelPhoto(input);
+    expect(generationApi.generatePixelAvatar).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    const preview = within(await screen.findByTestId("pixel-world-page"));
+    await waitFor(() => expect(preview.getByRole("img", { name: pixelArtwork.alt })).toHaveAttribute("src", pixelArtwork.assetUrl));
+    expect(generationApi.generatePixelAvatar).toHaveBeenCalledWith(expect.stringContaining("data:image/"), config, expect.any(AbortSignal));
+    expect(vi.mocked(generationApi.generatePortfolio).mock.calls[0][1]).toBeUndefined();
+    expect(JSON.parse(screen.getByTestId("design-config-json").textContent || "{}")).not.toHaveProperty("heroArtwork");
+    expect(screen.queryByRole("button", { name: "识别照片特征" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "设置" }));
+    fireEvent.click(screen.getByText("更换照片 →"));
+    expect(screen.getAllByLabelText("选择个人肖像照片")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
+    expect(preview.getByRole("img", { name: "像素世界风默认角色" })).toBeVisible();
   });
 
-  it.each(["switch photo", "restore default", "leave the result"] as const)("ignores a late avatar candidate when the user chooses to %s", async action => {
+  it.each(["remove photo", "leave result"] as const)("cancels pixel IP generation on %s", async action => {
     let finish!: (artwork: typeof pixelArtwork) => void;
     vi.mocked(generationApi.generatePixelAvatar).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    try {
-      const { preview, input } = await reachPixelAvatar();
-      fireEvent.click(await choosePixelPhoto(input));
-      expect(screen.getByText("正在识别照片特征…")).toBeVisible();
-      const [, , signal] = vi.mocked(generationApi.generatePixelAvatar).mock.calls[0];
-      if (action === "switch photo") await choosePixelPhoto(input, "new-photo.png");
-      if (action === "restore default") fireEvent.click(screen.getByRole("button", { name: "恢复默认角色" }));
-      if (action === "leave the result") {
-        fireEvent.click(within(screen.getByRole("navigation", { name: "生成进度" })).getByRole("button", { name: /挑选风格/ }));
-      }
-      expect(signal.aborted).toBe(true);
-      await act(async () => finish(pixelArtwork));
-      expect(screen.queryByRole("button", { name: "使用此头像" })).toBeNull();
-      if (action === "leave the result") {
-        expect(screen.queryByLabelText("选择个人像素头像照片")).toBeNull();
-      } else {
-        expect(preview.getByRole("img", { name: "像素世界风默认角色" })).toBeVisible();
-      }
-    } finally {
-      window.history.replaceState(null, "", "/");
+    const { input } = await reachPixelStyle();
+    await choosePixelPhoto(input);
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    await waitFor(() => expect(generationApi.generatePixelAvatar).toHaveBeenCalled());
+    const [, , signal] = vi.mocked(generationApi.generatePixelAvatar).mock.calls[0];
+    if (action === "remove photo") {
+      fireEvent.click(screen.getByRole("tab", { name: "设置" }));
+      fireEvent.click(screen.getByText("更换照片 →"));
+      fireEvent.click(screen.getByRole("button", { name: "移除照片" }));
+    } else {
+      fireEvent.click(within(screen.getByRole("navigation", { name: "生成进度" })).getByRole("button", { name: /挑选风格/ }));
     }
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish(pixelArtwork));
+    expect(screen.queryByRole("img", { name: pixelArtwork.alt })).toBeNull();
+  });
+
+  it("clears a pending pixel task and the busy state when opening another project", async () => {
+    let finish!: (artwork: typeof pixelArtwork) => void;
+    vi.mocked(generationApi.generatePixelAvatar).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    vi.mocked(paymentApi.projects).mockResolvedValue([{ id: "other", config: rawConfig as DesignConfig,
+      revision: 1, paid: false, pendingAction: null, pendingAmountFen: null }]);
+    const { input } = await reachPixelStyle();
+    await choosePixelPhoto(input);
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    await waitFor(() => expect(generationApi.generatePixelAvatar).toHaveBeenCalled());
+    const [, , signal] = vi.mocked(generationApi.generatePixelAvatar).mock.calls[0];
+    fireEvent.click(await screen.findByRole("button", { name: "我的项目，共 1 个" }));
+    fireEvent.click(screen.getByRole("button", { name: /继续编辑/ }));
+    expect(signal.aborted).toBe(true);
+    fireEvent.click(screen.getByRole("tab", { name: "设置" }));
+    fireEvent.click(screen.getByText("更换照片 →"));
+    expect(screen.getByRole("button", { name: /应用新照片/ })).toBeEnabled();
+    await act(async () => finish(pixelArtwork));
+    expect(JSON.parse(screen.getByTestId("design-config-json").textContent || "{}")).not.toHaveProperty("heroArtwork", pixelArtwork);
+  });
+
+  it("keeps the base portfolio usable when pixel IP generation fails", async () => {
+    vi.mocked(generationApi.generatePixelAvatar).mockRejectedValueOnce(new Error("照片识别失败，请重新选择照片。"));
+    const { input } = await reachPixelStyle();
+    await choosePixelPhoto(input);
+    fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
+    expect(await screen.findByText("照片识别失败，请重新选择照片。")).toBeVisible();
+    expect(screen.getByRole("img", { name: "像素世界风默认角色" })).toBeVisible();
   });
 
   it("selecting Pixel World generates the confirmed resume without a portrait", async () => {
