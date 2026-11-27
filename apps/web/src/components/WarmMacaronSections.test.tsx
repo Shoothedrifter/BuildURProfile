@@ -201,6 +201,34 @@ it("omits figure boxes entirely for image-less cards", () => {
   }
 });
 
+it("keeps a work card copy-only without a media column when the entry ships no images", () => {
+  const model = makeModel([section("workExperience", 0, [
+    item("work-plain", "独立设计工作室", "负责品牌视觉与物料延展。")
+  ])]);
+  render(<WarmMacaronSections model={model} resolveResumeImage={resolveImage} />);
+  const card = cardOf("独立设计工作室");
+  expect(card.className).toContain("macaron-work-card");
+  // 无图工作卡直接以纯文案呈现：不渲染图列，也不残留任何 figure/图片。
+  expect(card.querySelector(".macaron-work-media")).toBeNull();
+  expect(card.querySelector("figure")).toBeNull();
+  expect(card.querySelector("img")).toBeNull();
+  expect(within(card).getByText("负责品牌视觉与物料延展。")).toBeVisible();
+  expect(within(card).getAllByRole("listitem")[0].textContent).toBe("负责品牌视觉与物料延展。");
+});
+
+it("falls back to a stable accessible name when caption and title are both empty", () => {
+  const model = makeModel([section("campusExperience", 0, [
+    item("campus-plain", "", "组织校园工作坊。", [], {
+      supplement: { text: "", links: [], images: [{ imageId: "img-plain", caption: "" }] }
+    })
+  ])]);
+  render(<WarmMacaronSections model={model} resolveResumeImage={resolveImage} />);
+  // 图注与卡标题同时为空：alt 回退到固定文案，图片仍拥有可访问名称。
+  const img = document.querySelector<HTMLImageElement>(".macaron-showcase-grid img")!;
+  expect(img).not.toBeNull();
+  expect(img.alt).toBe("作品图片");
+});
+
 it("keeps oversized Chinese titles wrapped in break-safe card copy containers", () => {
   render(<WarmMacaronSections model={makeModel()} resolveResumeImage={resolveImage} />);
   const heading = screen.getByRole("heading", { level: 3, name: longTitle });

@@ -51,7 +51,8 @@ it("renders the hero identity, intro box and confirmed contact entry", () => {
   expect(screen.getByRole("heading", { level: 1, name: "林予安" })).toBeVisible();
   expect(screen.getByText("产品体验设计师")).toBeVisible();
   expect(screen.getByText("用设计让复杂变简单。")).toBeVisible();
-  expect(screen.getByRole("link", { name: "联系我" })).toHaveAttribute("href", "mailto:lin@example.test");
+  // 联系入口是联系卡模态的触发按钮，mailto 本身进入联系卡。
+  expect(screen.getByRole("button", { name: "联系我" })).toBeVisible();
   // 相框容器存在；未提供任何图片源时不渲染 img。
   expect(container.querySelector(".macaron-photo-frame")).not.toBeNull();
   expect(container.querySelector(".macaron-photo-frame img")).toBeNull();
@@ -63,7 +64,7 @@ it("omits the contact button when no public contact is confirmed", () => {
     section("skills", 1, [item("skill-1", "产品体验设计", "用户研究")])
   ];
   render(<WarmMacaronPage config={makeConfig(sections)} resolveResumeImage={resolveImage} />);
-  expect(screen.queryByRole("link", { name: "联系我" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "联系我" })).toBeNull();
 });
 
 it("mirrors the rendered sections in the fixed nav", () => {

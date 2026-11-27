@@ -12,6 +12,8 @@ export type WarmMacaronCard = Readonly<{
   title: string;
   time: string;
   paragraphs: readonly string[];
+  /** 补充说明（supplement.text）：项目详情模态在正文之后收纳的一段确认文字。 */
+  supplementText: string;
   facts: readonly ResumeFact[];
   highlights: readonly PresentationHighlight[];
   links: readonly { label: string; url: string }[];
@@ -67,11 +69,17 @@ function cardOf(entry: OrderedItem): WarmMacaronCard {
     title: entry.title,
     time: entry.facts.find(fact => fact.value.trim() && isTimeFact(fact))?.value.trim() ?? "",
     paragraphs: entry.details.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+    supplementText: entry.supplement.text.trim(),
     facts: entry.facts.filter(fact => fact.value.trim() && !isTimeFact(fact)),
     highlights: entry.presentationHighlights ?? [],
     links: entry.supplement.links.filter(link => validHttpUrl(link.url)),
     images: entry.supplement.images
   };
+}
+
+/** 图片可访问名称的兜底链：图注 → 所属卡标题 → 固定文案；caption 与标题同时为空时仍给出名称。 */
+export function macaronImageAlt(caption: string, title: string): string {
+  return caption.trim() || title.trim() || "作品图片";
 }
 
 /** 首屏文字侧：身份与联系字段沿用 LegacyShowcasePage 的读取方式（profile.email + basicInfo 的 phone fact）。 */

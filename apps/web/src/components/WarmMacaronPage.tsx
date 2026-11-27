@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from "react";
 import type { DesignConfigV4 } from "../../../../packages/contracts/src/config";
-import { buildWarmMacaronModel, type WarmMacaronSection } from "../lib/warmMacaron";
+import { buildWarmMacaronModel, type WarmMacaronCard, type WarmMacaronSection } from "../lib/warmMacaron";
 import type { ResumeImageResolver } from "./ResumeDisplay";
 import { MACARON_NEXT_LABEL, WarmMacaronSections } from "./WarmMacaronSections";
+import {
+  MacaronContactDialog, MacaronDetailDialog, MacaronLightbox, MacaronShowcaseDialog,
+  findMacaronDetail, macaronAddressFromLocation, macaronAddressHref,
+  type MacaronAddress, type MacaronAddressMode, type MacaronDetail, type MacaronDetailKind,
+} from "./WarmMacaronModals";
 
 type Props = {
   config: DesignConfigV4;
@@ -24,10 +29,10 @@ function reducedMotionPreference(): boolean {
 }
 
 /** 首屏（关于我）：问候、姓名、岗位、介绍盒、联系入口与外扩描边相框；气泡为纯装饰。 */
-function MacaronHero({ model, defaultPhotoUrl, contactHref, nextHref, onNavigate }: {
+function MacaronHero({ model, defaultPhotoUrl, onOpenContact, nextHref, onNavigate }: {
   model: ReturnType<typeof buildWarmMacaronModel>;
   defaultPhotoUrl?: string;
-  contactHref?: string;
+  onOpenContact?: () => void;
   nextHref?: string;
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, id: string) => void;
 }) {
@@ -44,8 +49,8 @@ function MacaronHero({ model, defaultPhotoUrl, contactHref, nextHref, onNavigate
         {introLines.length > 0 && <div className="macaron-intro">
           {introLines.map((line, index) => <p key={index}>{line}</p>)}
         </div>}
-        {contactHref && <div className="macaron-hero-actions">
-          <a className="macaron-contact" href={contactHref}>联系我</a>
+        {onOpenContact && <div className="macaron-hero-actions">
+          <button type="button" className="macaron-contact" onClick={onOpenContact}>联系我</button>
         </div>}
       </div>
       <div className="macaron-photo-frame">
@@ -57,22 +62,29 @@ function MacaronHero({ model, defaultPhotoUrl, contactHref, nextHref, onNavigate
   </section>;
 }
 
-export function WarmMacaronPage({ config, resolveResumeImage, staticDecorations = false, defaultPhotoUrl }: Props) {
+export function WarmMacaronPage({ config, resolveResumeImage, preserveShareHash = false, staticDecorations = false, defaultPhotoUrl }: Props) {
   const model = useMemo(() => buildWarmMacaronModel(config), [config]);
   const { hero, sections } = model;
   const [reduceMotion, setReduceMotion] = useState(reducedMotionPreference);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeId, setActiveId] = useState("about");
+  const [detail, setDetail] = useState<MacaronDetail>();
+  const [zoom, setZoom] = useState<{ src: string; caption: string }>();
+  const [contactOpen, setContactOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const navId = useId();
-  // 静态导出与「减弱动态效果」共用同一停用开关：气泡与平滑滚动降级，内容与导航保持完整可达。
-  const still = staticDecorations || reduceMotion;
+  // 详情模态的地址簿记（对齐像素世界风）：列表打开的详情关闭时走历史回退，深链打开的改写参数。
+  const openedFromList = useRef(false);
+  const backPending = useRef(false);
+  const detailSection = useRef<string | undefined>(undefined);
   const navItems = useMemo(() => [{ id: "about", label: "关于我" as string },
     ...sections.map((section: WarmMacaronSection) => ({ id: section.id, label: section.title }))], [sections]);
-  // 联系入口只在任一公开联系字段非空时渲染；详情模态由 Task 5 接管。
-  const contactHref = hero.contact.email ? `mailto:${hero.contact.email}`
-    : hero.contact.phone ? `tel:${hero.contact.phone.replace(/[^+\d]/g, "")}` : undefined;
+  // 静态导出与「减弱动态效果」共用同一停用开关：气泡与平滑滚动降级，内容与导航保持完整可达。
+  const still = staticDecorations || reduceMotion;
+  const mode: MacaronAddressMode = preserveShareHash ? "share" : staticDecorations ? "export" : "preview";
+  // 联系入口只在任一公开联系字段非空时出现，点击打开联系卡模态。
+  const hasContact = Boolean(hero.contact.email || hero.contact.phone);
 
   useEffect(() => {
     const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -99,13 +111,90 @@ export function WarmMacaronPage({ config, resolveResumeImage, staticDecorations 
     };
   }, [sections]);
 
-  const goToSection = useCallback((next: string) => {
+  const goToSection = useCallback((next: string, focus = true) => {
     setMenuOpen(false);
     setActiveId(next);
     const pane = root.current?.querySelector<HTMLElement>(`[data-macaron-section="${next}"]`);
-    pane?.querySelector<HTMLElement>("h1, h2")?.focus({ preventScroll: true });
+    if (focus) pane?.querySelector<HTMLElement>("h1, h2")?.focus({ preventScroll: true });
     pane?.scrollIntoView?.({ block: "start", behavior: still ? "auto" : "smooth" });
   }, [still]);
+
+  function addressHref(address: MacaronAddress) {
+    return macaronAddressHref(address, mode, typeof window === "undefined" ? undefined : window.location);
+  }
+
+  function writeAddress(address: MacaronAddress, replace = false) {
+    if (mode === "preview") return;
+    const href = addressHref(address);
+    if (mode === "export") {
+      if (href === window.location.hash) return;
+      if (replace) window.location.replace(href);
+      else window.location.hash = href;
+    } else if (href !== window.location.pathname + window.location.search + window.location.hash) {
+      if (replace) window.history.replaceState(window.history.state, "", href);
+      else window.history.pushState(window.history.state, "", href);
+    }
+  }
+
+  // 分享与导出模式读取地址定位（对齐像素世界风）：挂载时消费深链，popstate/hashchange 时同步。
+  useEffect(() => {
+    if (mode === "preview") return;
+    function readAddress(fromHistory: boolean) {
+      const leavingCase = backPending.current || openedFromList.current;
+      backPending.current = false;
+      const requested = macaronAddressFromLocation(model, mode, window.location);
+      openedFromList.current = Boolean(requested.caseId && window.history.state?.macaronCaseId === requested.caseId);
+      setDetail(requested.caseId ? findMacaronDetail(model, requested.caseId) : undefined);
+      setZoom(undefined);
+      setContactOpen(false);
+      // 离开或返回条目详情时停留在详情所在区块，不把视口拽回首屏。
+      if (fromHistory && (leavingCase || openedFromList.current)) {
+        setActiveId(detailSection.current ?? requested.sectionId);
+        return;
+      }
+      if (fromHistory || requested.sectionId !== "about") goToSection(requested.sectionId, false);
+    }
+    readAddress(false);
+    const onAddressChange = () => readAddress(true);
+    const eventType = mode === "export" ? "hashchange" : "popstate";
+    window.addEventListener(eventType, onAddressChange);
+    return () => window.removeEventListener(eventType, onAddressChange);
+  }, [mode, model, goToSection]);
+
+  function openDetail(kind: MacaronDetailKind, card: WarmMacaronCard) {
+    const sectionId = kind === "project" ? "projects" : "showcase";
+    detailSection.current = sectionId;
+    setActiveId(sectionId);
+    if (mode !== "preview") {
+      writeAddress({ sectionId, caseId: card.itemId });
+      // 标记当前历史条目（不改写 URL）：前进也能重开同一条目，文件导出同样可用。
+      window.history.replaceState({ ...window.history.state, macaronCaseId: card.itemId }, "");
+      openedFromList.current = true;
+    }
+    setDetail({ kind, card });
+  }
+
+  function dismissDetail() {
+    if (!detail || backPending.current) return;
+    const sectionId = detail.kind === "project" ? "projects" : "showcase";
+    if (openedFromList.current) {
+      backPending.current = true;
+      window.history.back();
+      return;
+    }
+    if (mode === "export") {
+      // 等原生片段跳转完成后再恢复列表位置。
+      backPending.current = true;
+      writeAddress({ sectionId }, true);
+      return;
+    }
+    writeAddress({ sectionId }, true);
+    setDetail(undefined);
+    setZoom(undefined);
+  }
+
+  const openZoom = (src: string, caption: string) => setZoom({ src, caption });
+  const closeZoom = () => setZoom(undefined);
 
   // 站内锚点统一接管：普通点击不改写地址栏（分享令牌与预览 URL 均保持原样），
   // 带修饰键的点击回落到浏览器默认行为，离线导出的片段定位不受影响。
@@ -142,12 +231,24 @@ export function WarmMacaronPage({ config, resolveResumeImage, staticDecorations 
     </div>
 
     <main>
-      <MacaronHero model={model} defaultPhotoUrl={defaultPhotoUrl} contactHref={contactHref}
+      <MacaronHero model={model} defaultPhotoUrl={defaultPhotoUrl}
+        onOpenContact={hasContact ? () => setContactOpen(true) : undefined}
         nextHref={sections[0] ? `#${sections[0].id}` : undefined} onNavigate={navigate} />
 
       {/* 内容区块（教育/工作/项目/展示/技能）整体由 WarmMacaronSections 渲染，
-          含分幕外壳与「继续下滑」；模态回调由 Task 5 接管后再传入。 */}
-      <WarmMacaronSections model={model} resolveResumeImage={resolveResumeImage} onNavigate={navigate} />
+          含分幕外壳与「继续下滑」；灯箱、详情与轮播接管点在这里接线。 */}
+      <WarmMacaronSections model={model} resolveResumeImage={resolveResumeImage}
+        onOpenImage={openZoom}
+        onOpenProject={card => openDetail("project", card)}
+        onOpenShowcase={card => openDetail("showcase", card)}
+        onNavigate={navigate} />
     </main>
+
+    {detail?.kind === "project" && <MacaronDetailDialog key={detail.card.itemId} card={detail.card}
+      resolveResumeImage={resolveResumeImage} onOpenImage={openZoom} onClose={dismissDetail} />}
+    {detail?.kind === "showcase" && <MacaronShowcaseDialog key={detail.card.itemId} card={detail.card}
+      resolveResumeImage={resolveResumeImage} onClose={dismissDetail} />}
+    {zoom && <MacaronLightbox src={zoom.src} caption={zoom.caption} onClose={closeZoom} />}
+    {contactOpen && <MacaronContactDialog contact={hero.contact} onClose={() => setContactOpen(false)} />}
   </div>;
 }

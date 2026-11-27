@@ -1,6 +1,6 @@
 import type { MouseEvent } from "react";
 import type { ResumeFact } from "../../../../packages/contracts/src/config";
-import type { WarmMacaronCard, WarmMacaronModel, WarmMacaronSection } from "../lib/warmMacaron";
+import { macaronImageAlt, type WarmMacaronCard, type WarmMacaronModel, type WarmMacaronSection } from "../lib/warmMacaron";
 import type { ResumeImageResolver } from "./ResumeDisplay";
 
 /** 分幕底部的「继续下滑」文案：页面骨架（首屏按钮）与区块渲染共用一份。 */
@@ -34,7 +34,8 @@ function MacaronFigure({ image, title, resolveResumeImage, onOpenImage, classNam
   className: string;
 }>) {
   const src = resolveResumeImage(image.imageId);
-  const img = <img src={src} alt={image.caption || title} loading="lazy" />;
+  // 按钮的可访问名称由图的可访问名称提供：图注 → 卡标题 → 固定兜底，三层都不会为空串。
+  const img = <img src={src} alt={macaronImageAlt(image.caption, title)} loading="lazy" />;
   if (!onOpenImage) return <figure className={className}>{img}</figure>;
   return <button type="button" className={className} onClick={() => onOpenImage(src, image.caption)}>{img}</button>;
 }

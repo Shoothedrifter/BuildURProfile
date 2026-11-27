@@ -47,7 +47,7 @@ describe("buildWarmMacaronModel", () => {
           item("edu-0", "香港大学", "交换学习一学期。", [], { order: 0 })
         ]),
         section("projects", 4, [item("proj-1", "城市通勤服务", "项目背景：换乘信息分散。\n交付：路线比较原型。", [{ key: "role", label: "项目角色", value: "用户研究" }],
-          { supplement: { text: "", links: [{ label: "项目链接", url: "https://example.com/commute" }, { label: "坏链接", url: "javascript:alert(1)" }], images: [] } })]),
+          { supplement: { text: "补充说明：覆盖三类通勤场景。", links: [{ label: "项目链接", url: "https://example.com/commute" }, { label: "坏链接", url: "javascript:alert(1)" }], images: [] } })]),
         section("campusExperience", 5, [item("campus-1", "设计协会", "组织校园工作坊。")]),
         section("awards", 6, [item("award-1", "校园设计奖", "决赛入围。", [], { presentationHighlights: awardHighlights })]),
         section("other", 7, [item("other-1", "自媒体", "发布设计教程。")]),
@@ -86,7 +86,11 @@ describe("buildWarmMacaronModel", () => {
 
     const projCard = projects.cards[0];
     expect(projCard.paragraphs).toEqual(["项目背景：换乘信息分散。", "交付：路线比较原型。"]);
+    // 补充说明（supplement.text）由项目详情模态收纳：投影保留 trim 后的全文。
+    expect(projCard.supplementText).toBe("补充说明：覆盖三类通勤场景。");
     expect(projCard.links).toEqual([{ label: "项目链接", url: "https://example.com/commute" }]);
+    // 无补充说明的条目投影为空串，详情模态据此省略该段。
+    expect(experience.cards[0].supplementText).toBe("");
 
     // campusExperience/awards/other 合并进 showcase 区，模块与条目均按 order 排列。
     expect(showcase.cards.map(card => card.itemId)).toEqual(["campus-1", "award-1", "other-1"]);
