@@ -418,7 +418,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   text-align: left;
   cursor: pointer;
 }
-.proof-style-options button[data-preset="warm"] { background: #f6e1ce; }
+.proof-style-options button[data-preset="macaron"] { background: linear-gradient(135deg, #e0a6b5, #fed2bc 55%, #deedc3); color: #4a3840; }
 .proof-style-options button[data-preset="minimal"] { background: #d8eadb; }
 .proof-style-options button[data-preset="bold"] { background: #dce7f7; }
 .proof-style-options button[data-preset="pixel"] { background: #222d42; color: #ffca7d; }

@@ -77,6 +77,13 @@ it("aligns UI tokens with the jld2nd palette", () => {
   expect(cssSource).toMatch(/--pixel-shadow:\s*#000000/);
 });
 
+// 预设按钮底色接替：五个预设各有个性化底色；macaron 接替 warm 后，
+// 旧 data-preset="warm" 规则是死规则（按钮不再渲染该值），不得残留。
+it("styles the macaron preset button and drops the retired warm rule", () => {
+  expect(cssSource).toMatch(/\.proof-style-options button\[data-preset="macaron"\]\s*\{[^}]*background/);
+  expect(cssSource).not.toMatch(/data-preset="warm"/);
+});
+
 it("keeps the legacy entry selector spaced and limits right alignment to Agent tools", () => {
   document.body.innerHTML = `
     <div class="proof-entry-top" data-testid="legacy-entry">
