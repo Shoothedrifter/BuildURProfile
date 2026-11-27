@@ -95,6 +95,22 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   const [githubDialog, setGitHubDialog] = useState<{ paymentReturn: boolean; deployment: GitHubDeployment | null } | null>(null);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [photoName, setPhotoName] = useState("");
+  const [pixelAvatarEnabled, setPixelAvatarEnabled] = useState(false);
+  const [pixelArtwork, setPixelArtwork] = useState<NonNullable<DesignConfig["heroArtwork"]> | null>(null);
+  const pixelAvatarRequest = useRef<AbortController | null>(null);
+  useEffect(() => {
+    let active = true;
+    void generationApi.pixelAvatarEnabled().then(enabled => {
+      if (active) setPixelAvatarEnabled(enabled);
+    }).catch(() => {});
+    return () => { active = false; pixelAvatarRequest.current?.abort(); };
+  }, []);
+  useEffect(() => {
+    if (phase !== "result") {
+      pixelAvatarRequest.current?.abort();
+      setPixelArtwork(null);
+    }
+  }, [phase]);
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   const generationVersion = useRef(0);
   const pdfVersion = useRef(0);
@@ -372,8 +388,11 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
   const onPhoto = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     if (!file) return;
+    event.currentTarget.value = "";
     setError("");
     const version = ++generationVersion.current;
+    pixelAvatarRequest.current?.abort();
+    photoDataRef.current = null;
     void generationApi.cancelSavedGeneration();
     setGeneratingAvatar(false);
     setProgress("正在压缩照片…");
@@ -394,6 +413,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
 
   const clearPhoto = () => {
     generationVersion.current++;
+    pixelAvatarRequest.current?.abort();
+    setPixelArtwork(null);
     photoDataRef.current = null;
     void generationApi.cancelSavedGeneration();
     setPhotoDataUrl(null);
@@ -414,6 +435,7 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       return;
     }
     setGenerated(config);
+    setPixelArtwork(null);
     setShare(null);
     setShareSnapshot("");
     setResultError("");
@@ -427,13 +449,21 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     const sourcePhoto = photoDataRef.current;
     const version = ++generationVersion.current;
     const { heroArtwork: _oldArtwork, ...baseConfig } = sourceConfig;
+    pixelAvatarRequest.current?.abort();
+    const controller = new AbortController();
+    pixelAvatarRequest.current = controller;
     setGeneratingAvatar(true);
     setError("");
     setProgress("已提交肖像生成任务，正在应用网站模板的头像风格…");
     try {
-      const heroArtwork = await generationApi.generateAvatar(photoDataUrl, baseConfig);
-      if (version !== generationVersion.current || sourcePhoto !== photoDataRef.current) return;
-      if (preserveEdits) {
+      const pixel = "templateId" in baseConfig && baseConfig.templateId === "pixel-world-v1";
+      const heroArtwork = pixel
+        ? await generationApi.generatePixelAvatar(photoDataUrl, baseConfig, controller.signal)
+        : await generationApi.generateAvatar(photoDataUrl, baseConfig);
+      if (controller.signal.aborted || version !== generationVersion.current || sourcePhoto !== photoDataRef.current) return;
+      if (pixel) {
+        setPixelArtwork(heroArtwork);
+      } else if (preserveEdits) {
         setGenerated((previous) => ({ ...(previous ?? baseConfig), heroArtwork }));
         setShare(null);
         setShareSnapshot("");
@@ -442,9 +472,10 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
         showResult({ ...baseConfig, heroArtwork });
       }
     } catch (cause) {
-      if (version !== generationVersion.current) return;
+      if (controller.signal.aborted || version !== generationVersion.current) return;
       setError(cause instanceof Error ? cause.message : "肖像生成失败，请重试。");
     } finally {
+      if (pixelAvatarRequest.current === controller) pixelAvatarRequest.current = null;
       if (version === generationVersion.current) {
         setProgress("");
         setGeneratingAvatar(false);
@@ -494,6 +525,9 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       setResultResumeId(result.projectId ? result.resumeId ?? null : result.resumeId ?? agentDraft?.resumeId ?? null);
       void paymentApi.projects().then(setProjects).catch(()=>{});
       showResult({ ...result.config, ...(result.heroArtwork ? { heroArtwork: result.heroArtwork } : {}) });
+      if (selectedTemplate === "pixel-world-v1" && pixelAvatarEnabled && photoDataUrl) {
+        await runAvatarGeneration(result.config, true);
+      }
     } catch (cause) {
       if (version !== generationVersion.current) return;
       setError(cause instanceof Error ? cause.message : "作品生成失败，请重试。");
@@ -667,6 +701,9 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
       return;
     }
     generationVersion.current++;
+    pixelAvatarRequest.current?.abort();
+    setGeneratingAvatar(false);
+    setPixelArtwork(null);
     pdfVersion.current++;
     void generationApi.cancelSavedGeneration();
     if (project.id !== projectId) {
@@ -816,6 +853,8 @@ export default function App({ initialPhase = "landing", styleResumeId = null }: 
     photoName={photoName}
     generatingAvatar={generatingAvatar}
     avatarDemo={avatarDemo}
+    pixelAvatarEnabled={pixelAvatarEnabled}
+    pixelArtwork={pixelArtwork ?? null}
     onPhaseChange={setPhase}
     onSelectFile={selectFile}
     onParseFile={() => void parseSelectedFile()}
