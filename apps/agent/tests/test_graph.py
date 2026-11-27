@@ -127,6 +127,26 @@ def test_cutout_quality_accepts_a_person_whose_clothing_reaches_bottom_corners()
     assert valid_cutout(GeneratedImage(stream.getvalue())) is True
 
 
+def test_cutout_quality_accepts_close_crop_with_hat_touching_top_corner():
+    # A close portrait may fill 91% of the frame and touch a top corner.
+    layer = Image.new("RGBA", (256, 256), (120, 30, 200, 255))
+    for y in range(256):
+        for x in range(24):
+            layer.putpixel((x, y), (0, 0, 0, 0))
+    stream = io.BytesIO()
+    layer.save(stream, format="PNG")
+    assert valid_cutout(GeneratedImage(stream.getvalue())) is True
+
+
+def test_cutout_quality_rejects_single_transparent_pixel_and_empty_subject():
+    layer = Image.new("RGBA", (256, 256), (120, 30, 200, 255))
+    layer.putpixel((0, 0), (0, 0, 0, 0))
+    for candidate in (layer, Image.new("RGBA", (256, 256), (0, 0, 0, 0))):
+        stream = io.BytesIO()
+        candidate.save(stream, format="PNG")
+        assert valid_cutout(GeneratedImage(stream.getvalue())) is False
+
+
 def task(*, portrait=False):
     return AgentTask(str(uuid4()), str(uuid4()), "python-agent-v2", GOLDEN["input"], None,
                      str(uuid4()) if portrait else None, "retro-flat-anime-head" if portrait else None, None)
