@@ -2,10 +2,11 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type MouseEve
 import type { DesignConfigV4 } from "../../../../packages/contracts/src/config";
 import { buildWarmMacaronModel, type WarmMacaronSection } from "../lib/warmMacaron";
 import type { ResumeImageResolver } from "./ResumeDisplay";
+import { MACARON_NEXT_LABEL, WarmMacaronSections } from "./WarmMacaronSections";
 
 type Props = {
   config: DesignConfigV4;
-  /** Task 4 内容区块消费的媒体解析器；骨架阶段仅在合同中保留。 */
+  /** 内容区块消费的媒体解析器。 */
   resolveResumeImage: ResumeImageResolver;
   preserveShareHash?: boolean;
   staticDecorations?: boolean;
@@ -13,8 +14,6 @@ type Props = {
   /** 与 PixelWorldPage 的 loadFont 对齐的预览开关；马卡龙用系统衬线降级，暂无运行时字体请求。 */
   samplePreview?: boolean;
 };
-
-const NEXT_LABEL = "继续下滑，探索更多";
 
 function plainClick(event: MouseEvent<HTMLAnchorElement>): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
@@ -54,11 +53,11 @@ function MacaronHero({ model, defaultPhotoUrl, contactHref, nextHref, onNavigate
       </div>
     </div>
     {nextHref && <a className="macaron-next macaron-next--hero" href={nextHref}
-      onClick={event => onNavigate(event, nextHref.slice(1))}>{NEXT_LABEL}</a>}
+      onClick={event => onNavigate(event, nextHref.slice(1))}>{MACARON_NEXT_LABEL}</a>}
   </section>;
 }
 
-export function WarmMacaronPage({ config, staticDecorations = false, defaultPhotoUrl }: Props) {
+export function WarmMacaronPage({ config, resolveResumeImage, staticDecorations = false, defaultPhotoUrl }: Props) {
   const model = useMemo(() => buildWarmMacaronModel(config), [config]);
   const { hero, sections } = model;
   const [reduceMotion, setReduceMotion] = useState(reducedMotionPreference);
@@ -146,20 +145,9 @@ export function WarmMacaronPage({ config, staticDecorations = false, defaultPhot
       <MacaronHero model={model} defaultPhotoUrl={defaultPhotoUrl} contactHref={contactHref}
         nextHref={sections[0] ? `#${sections[0].id}` : undefined} onNavigate={navigate} />
 
-      {sections.map((section, index) => {
-        const next = sections[index + 1];
-        return <section key={section.id} id={section.id} data-macaron-section={section.id}
-          className="macaron-act" aria-labelledby={`macaron-${section.id}-title`}>
-          <div className="macaron-act-inner">
-            <p className="macaron-eyebrow">{section.eyebrow}</p>
-            <h2 id={`macaron-${section.id}-title`} tabIndex={-1}>{section.title}</h2>
-            {/* Task 4 在此挂载内容区块；骨架阶段的空容器不渲染任何占位卡。 */}
-            <div className="macaron-act-body" />
-          </div>
-          {next && <a className="macaron-next" href={`#${next.id}`}
-            onClick={event => navigate(event, next.id)}>{NEXT_LABEL}</a>}
-        </section>;
-      })}
+      {/* 内容区块（教育/工作/项目/展示/技能）整体由 WarmMacaronSections 渲染，
+          含分幕外壳与「继续下滑」；模态回调由 Task 5 接管后再传入。 */}
+      <WarmMacaronSections model={model} resolveResumeImage={resolveResumeImage} onNavigate={navigate} />
     </main>
   </div>;
 }

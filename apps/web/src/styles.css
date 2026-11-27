@@ -2537,18 +2537,190 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
   font-size: clamp(1.55rem, 3vw, 1.75rem);
   line-height: 1.35;
 }
-/* Task 4 挂载内容前的空占位容器：不占版面。 */
+/* Task 4 内容卡片：毛玻璃卡为共同基底，min-width:0 保证长中文不撑破 grid/flex 子项。 */
+.warm-macaron .macaron-act-body { margin-top: 2.4rem; }
 .warm-macaron .macaron-act-body:empty { display: none; }
+.warm-macaron .macaron-card {
+  display: grid;
+  gap: 1rem 1.4rem;
+  min-width: 0;
+  padding: 1.4rem 1.5rem;
+  border-radius: 16px;
+  background: var(--macaron-card);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--macaron-shadow);
+}
+.warm-macaron .macaron-card-copy { display: grid; gap: 0.65rem; align-content: start; min-width: 0; }
+.warm-macaron .macaron-card-title {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--macaron-serif);
+  font-weight: 600;
+  font-size: 1.16rem;
+  line-height: 1.5;
+  /* 超长中文（连续无空格串）在卡内强制折行，不产生横向溢出。 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.warm-macaron .macaron-card-sub { margin: 0; font-size: 0.95rem; opacity: 0.85; }
+.warm-macaron .macaron-card-time {
+  margin: 0;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  color: var(--macaron-rose-deep);
+}
+.warm-macaron .macaron-card-text { margin: 0; line-height: 1.85; overflow-wrap: anywhere; }
+
+/* 内容图：按钮与静态 figure 共用一套外壳，无图条目整体省略图片区。 */
+.warm-macaron :is(.macaron-card-cover, .macaron-work-figure, .macaron-thumb) {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.warm-macaron :is(.macaron-card-cover, .macaron-work-figure, .macaron-thumb) img {
+  display: block;
+  width: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+  transition: transform 0.25s ease;
+}
+.warm-macaron .macaron-card-cover img { aspect-ratio: 16 / 10; }
+.warm-macaron .macaron-work-figure img { aspect-ratio: 4 / 3; }
+.warm-macaron .macaron-card-cover:hover img,
+.warm-macaron .macaron-work-figure:hover img { transform: scale(1.02); }
+.warm-macaron .macaron-card-thumbs { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.warm-macaron .macaron-thumb { width: 5.5rem; }
+.warm-macaron .macaron-thumb img { aspect-ratio: 1 / 1; border-radius: 10px; }
+
+/* 教育卡：图片在上信息在下的纵排毛玻璃卡；facts 与已确认亮点构成高亮数字行。 */
+.warm-macaron .macaron-edu-stack { display: grid; gap: 1.6rem; max-width: 760px; }
+.warm-macaron .macaron-edu-card { grid-template-columns: 1fr; }
+.warm-macaron .macaron-facts {
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.8rem;
+}
+.warm-macaron .macaron-facts > div { display: grid; gap: 0.15rem; min-width: 0; }
+.warm-macaron .macaron-facts dt {
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  color: var(--macaron-rose-deep);
+}
+.warm-macaron .macaron-facts dd {
+  margin: 0;
+  font: 600 1.28rem/1.25 var(--macaron-serif);
+  overflow-wrap: anywhere;
+}
+
+/* 工作卡：横向图卡（图片列 + 文案列），粉点列表按段展示。 */
+.warm-macaron .macaron-work-stack { display: grid; gap: 1.6rem; }
+.warm-macaron .macaron-work-card {
+  grid-template-columns: minmax(0, 250px) minmax(0, 1fr);
+  align-items: start;
+}
+.warm-macaron .macaron-work-media { display: grid; gap: 0.8rem; }
+.warm-macaron .macaron-dot-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+.warm-macaron .macaron-dot-list li { position: relative; padding-left: 1.15rem; line-height: 1.8; overflow-wrap: anywhere; }
+.warm-macaron .macaron-dot-list li::before {
+  content: "";
+  position: absolute;
+  left: 0.15rem;
+  top: 0.68em;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--macaron-rose);
+}
+
+/* 项目卡：双列图卡；展示区同版式，多图展示卡提供轮播入口。 */
+.warm-macaron .macaron-project-grid,
+.warm-macaron .macaron-showcase-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.6rem; }
+.warm-macaron .macaron-highlights {
+  margin: 0.2rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+.warm-macaron .macaron-highlights > div { display: grid; gap: 0.1rem; min-width: 0; }
+.warm-macaron .macaron-highlights dt { font-size: 0.74rem; letter-spacing: 0.1em; color: var(--macaron-rose-deep); }
+.warm-macaron .macaron-highlights dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
+/* chip：蓝粉双色交替（蓝系消费预留令牌 --macaron-sky-soft）。 */
+.warm-macaron .macaron-chips {
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.warm-macaron .macaron-chip {
+  padding: 0.28rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.warm-macaron .macaron-chip[data-tone="rose"] { background: var(--macaron-rose-soft); }
+.warm-macaron .macaron-chip[data-tone="sky"] { background: var(--macaron-sky-soft); }
+
+/* 详情/轮播入口按钮（模态由 Task 5 接管）。 */
+.warm-macaron .macaron-more {
+  justify-self: start;
+  margin-top: 0.2rem;
+  padding: 0.38rem 1rem;
+  border: 1px solid var(--macaron-rose-soft);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--macaron-rose-deep);
+  font: 600 0.88rem/1.5 var(--macaron-serif);
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.warm-macaron .macaron-more:hover { background: var(--macaron-rose-soft); transform: translateY(-1px); }
+
+/* 技能区：分组卡片 + 区尾版权行。 */
+.warm-macaron .macaron-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 1.6rem;
+}
+.warm-macaron .macaron-footer-line {
+  margin: 3.2rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  opacity: 0.75;
+}
 
 /* 静态导出：装饰与变换全部停用（内容与导航保持可达）。 */
 .warm-macaron[data-static="true"] :is(.macaron-bubbles i, .macaron-photo-frame img) { animation: none; transition: none; }
 .warm-macaron[data-static="true"] .macaron-contact,
 .warm-macaron[data-static="true"] .macaron-next { transition: none; }
+.warm-macaron[data-static="true"] :is(.macaron-card-cover, .macaron-work-figure) img { transition: none; }
+.warm-macaron[data-static="true"] .macaron-more { transition: none; }
 
 /* 900px 起：首屏与内容单列堆叠。 */
 @media (max-width: 56.25rem) {
   .warm-macaron .macaron-hero-inner { grid-template-columns: 1fr; gap: 2.2rem; }
   .warm-macaron .macaron-photo-frame { width: min(100%, 340px); }
+  .warm-macaron .macaron-work-card { grid-template-columns: 1fr; }
+  .warm-macaron .macaron-work-media { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .warm-macaron .macaron-project-grid,
+  .warm-macaron .macaron-showcase-grid { grid-template-columns: 1fr; }
 }
 /* 600px 起：汉堡导航、首屏上图下文、按钮全宽。 */
 @media (max-width: 37.5rem) {
