@@ -369,7 +369,7 @@ describe("showcase builder", () => {
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
     const generate = screen.getByRole("button", { name: /生成我的 Showcase/ });
     expect(generate).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: /温暖创意/ }));
+    fireEvent.click(screen.getByRole("button", { name: /暖调马卡龙/ }));
     expect(generate).toBeEnabled();
   });
 
@@ -548,11 +548,11 @@ describe("showcase builder", () => {
   it("fills the generation contract from the selected template without manual questions", async () => {
     render(<App />);
     await reachStyle();
-    fireEvent.click(screen.getByRole("button", { name: /温暖创意/ }));
+    fireEvent.click(screen.getByRole("button", { name: /暖调马卡龙/ }));
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
-    expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /暖调马卡龙/ })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: /理性简约/ }));
-    expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /暖调马卡龙/ })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     await screen.findByRole("heading", { name: "04 网站预览与轻量编辑" });
     const firstBrief = vi.mocked(generationApi.generatePortfolio).mock.calls[0][0];

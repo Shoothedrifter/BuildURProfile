@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanConfig } from "../../../../packages/contracts/src/validation.mjs";
-import { createDemoShowcaseConfig, demoDraftKey, demoTemplates } from "../demo/showcaseDemo";
+import { createDemoShowcaseConfig, defaultDemoDraft, demoDraftKey, demoTemplates } from "../demo/showcaseDemo";
 import { openShowcasePreview } from "../lib/showcasePreview";
 import { DemoWorkbench } from "./DemoWorkbench";
 
@@ -15,6 +15,25 @@ it("creates valid examples for all five templates with the same source content",
   expect(examples.map(example => example.templateId)).toEqual(demoTemplates.map(({ id }) => id));
   expect(examples.every(example => example.content.profile.name === "林予安"
     && example.content.projects[0]?.title === "城市通勤服务")).toBe(true);
+});
+
+it("hands the demo entry over to warm macaron", () => {
+  expect(demoTemplates.map(({ id }) => id)).toEqual([
+    "cyber-creator-v1", "pixel-world-v1", "warm-macaron-v1", "minimal-v1", "bold-v1"
+  ]);
+  expect(demoTemplates.find(({ id }) => id === "warm-macaron-v1")).toMatchObject({
+    name: "暖调马卡龙", background: "#FED2BC", foreground: "#4A3840"
+  });
+  expect(defaultDemoDraft.templateId).toBe("warm-macaron-v1");
+});
+
+it("falls back to the macaron default when a stored demo draft names the retired template", () => {
+  localStorage.setItem(demoDraftKey, JSON.stringify({ ...defaultDemoDraft, templateId: "warm-v1" }));
+  const { unmount } = render(<DemoWorkbench />);
+  fireEvent.click(screen.getByRole("tab", { name: "样式" }));
+  expect(screen.getByRole("button", { name: "暖调马卡龙" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.queryByRole("button", { name: "温暖创意" })).not.toBeInTheDocument();
+  unmount();
 });
 
 it("routes the start action to the standalone upload step page", () => {

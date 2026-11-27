@@ -1,8 +1,31 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { JobRole, TemplateId } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4, JobRole, TemplateId } from "../../../../packages/contracts/src/config";
+import type { ResumeDraft } from "../lib/resume";
 import type { OwnedProject } from "../lib/paymentApi";
+import { createDemoShowcaseConfig } from "../demo/showcaseDemo";
 import { BuilderExperience } from "./BuilderExperience";
+
+const emptyField = (value = "") => ({ value, source: value, page: 1, included: true });
+/** 浏览器解析草稿的最小形态：仅触发 quiz 渲染与预设答案应用路径。 */
+const browserDraft = {
+  version: "resume-candidate-v2",
+  name: emptyField("林予安"),
+  email: emptyField("lin@example.test"),
+  basicInfo: [], jobIntent: [], selfEvaluation: [], education: [], workExperience: [],
+  campusExperience: [], projects: [], awards: [], skills: [], other: []
+} as ResumeDraft;
+
+const macaronAnswers = {
+  "e-presence": 3,
+  "e-type": 2,
+  "k-pace": 2,
+  "k-cards": 2,
+  "p-tone": 2,
+  "p-strength": 2,
+  "s-browse": 2,
+  "s-control": 2
+};
 
 function renderStyleStep(overrides: Partial<Parameters<typeof BuilderExperience>[0]> = {}) {
   const props = {
@@ -106,5 +129,70 @@ describe("BuilderExperience photo gating", () => {
     const { props } = renderStyleStep({ selectedTemplate: "warm-macaron-v1" });
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     expect(props.onGenerate).toHaveBeenCalled();
+  });
+});
+
+describe("BuilderExperience preset handover", () => {
+  it("lists five presets with macaron replacing the retired warm entry", () => {
+    renderStyleStep();
+    const presets = Array.from(document.querySelectorAll("[data-preset]"));
+    expect(presets).toHaveLength(5);
+    expect(screen.getByRole("button", { name: /暖调马卡龙/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /温暖创意/ })).not.toBeInTheDocument();
+  });
+
+  it("selects the macaron template and applies the warm answer combination", () => {
+    const { props } = renderStyleStep({ hasConfirmedResume: false, draft: browserDraft });
+    fireEvent.click(screen.getByRole("button", { name: /暖调马卡龙/ }));
+    expect(props.onSelectTemplate).toHaveBeenCalledWith("warm-macaron-v1");
+    expect(props.onApplyAnswers).toHaveBeenCalledWith(macaronAnswers);
+  });
+
+  it("shows the uploaded photo directly in the macaron snapshot preview", () => {
+    renderStyleStep({ selectedTemplate: "warm-macaron-v1", photoDataUrl: "data:image/png;base64,aGVsbG8=" });
+    expect(screen.getByRole("img", { name: "作品集头像预览" }))
+      .toHaveAttribute("src", "data:image/png;base64,aGVsbG8=");
+    expect(screen.getByText(/马卡龙样张示意渐变首屏/)).toBeInTheDocument();
+  });
+});
+
+describe("BuilderExperience result photo settings", () => {
+  function renderMacaronResult(overrides: Partial<Parameters<typeof BuilderExperience>[0]> = {},
+    heroPhoto?: { assetUrl: string; alt: string }) {
+    const base = createDemoShowcaseConfig("warm-macaron-v1") as DesignConfig;
+    const generated = heroPhoto ? { ...base, heroPhoto } as DesignConfig : base;
+    return { generated, ...renderStyleStep({ phase: "result", generated, ...overrides }) };
+  }
+
+  function openPhotoSettings() {
+    fireEvent.click(screen.getByRole("tab", { name: "设置" }));
+    fireEvent.click(screen.getByText("更换照片 →"));
+  }
+
+  it("swaps the embedded photo through the picker without a vendor task", () => {
+    const { props, generated } = renderMacaronResult({
+      photoDataUrl: "data:image/png;base64,bmV3cGhvdG8=", photoName: "new.png"
+    });
+    openPhotoSettings();
+    expect(screen.getByText(/不发送给图像生成供应商/)).toBeInTheDocument();
+    expect(props.onRunAvatarGeneration).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /应用新照片/ }));
+    expect(props.onEditGenerated).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+    const update = vi.mocked(props.onEditGenerated).mock.calls[0][0];
+    expect((update(generated) as DesignConfigV4).heroPhoto).toEqual({
+      assetUrl: "data:image/png;base64,bmV3cGhvdG8=",
+      alt: "林予安的个人照片"
+    });
+  });
+
+  it("offers removal when the work embeds a photo but no local copy is held", () => {
+    const { props } = renderMacaronResult({ photoDataUrl: null, photoName: "" },
+      { assetUrl: "/api/portraits/expired", alt: "林予安的个人照片" });
+    openPhotoSettings();
+    expect(screen.queryByLabelText("选择个人肖像照片")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /移除作品中的照片/ }));
+    expect(props.onClearPhoto).toHaveBeenCalledOnce();
   });
 });

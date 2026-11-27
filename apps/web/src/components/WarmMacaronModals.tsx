@@ -111,7 +111,7 @@ export function MacaronLightbox({ src, caption, onClose }: Readonly<{
   const closeRef = useRef<HTMLButtonElement>(null);
   const alt = macaronImageAlt(caption, "");
   useMacaronDialog(dialogRef, closeRef);
-  return <dialog ref={dialogRef} className="macaron-lightbox" aria-label={alt}
+  return <dialog ref={dialogRef} className="macaron-lightbox" aria-label={alt} aria-modal="true"
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}
     onKeyDown={event => {
@@ -140,7 +140,7 @@ export function MacaronDetailDialog({ card, resolveResumeImage, onOpenImage, onC
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   useMacaronDialog(dialogRef, closeRef);
-  return <dialog ref={dialogRef} className="macaron-case macaron-detail-case" aria-labelledby={titleId}
+  return <dialog ref={dialogRef} className="macaron-case macaron-detail-case" aria-labelledby={titleId} aria-modal="true"
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}
     onKeyDown={event => {
@@ -201,7 +201,7 @@ export function MacaronShowcaseDialog({ card, resolveResumeImage, onClose }: Rea
   if (total === 0) return null;
   const step = (delta: number) => setIndex(current => (current + delta + total) % total);
   const image = card.images[index];
-  return <dialog ref={dialogRef} className="macaron-case macaron-carousel-case" aria-labelledby={titleId}
+  return <dialog ref={dialogRef} className="macaron-case macaron-carousel-case" aria-labelledby={titleId} aria-modal="true"
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}
     onKeyDown={event => {
@@ -257,7 +257,7 @@ export function MacaronContactDialog({ contact, onClose }: Readonly<{
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   useMacaronDialog(dialogRef, closeRef);
-  return <dialog ref={dialogRef} className="macaron-case macaron-contact-case" aria-labelledby={titleId}
+  return <dialog ref={dialogRef} className="macaron-case macaron-contact-case" aria-labelledby={titleId} aria-modal="true"
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}
     onKeyDown={event => {

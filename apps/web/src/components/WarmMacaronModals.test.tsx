@@ -78,6 +78,7 @@ it("opens the lightbox from a content image with its caption and closes via over
 
   fireEvent.click(trigger);
   const lightbox = screen.getByRole("dialog", { name: "课堂" });
+  expect(lightbox).toHaveAttribute("aria-modal", "true");
   expect(within(lightbox).getByRole("img", { name: "课堂" })).toHaveAttribute("src", "/media/img-edu-2b");
   expect(within(lightbox).getByText("课堂")).toBeVisible();
   // 打开即锁正文滚动，焦点移入模态的关闭按钮。
@@ -104,6 +105,7 @@ it("renders the project detail as title, gallery, body then links and nests the 
   fireEvent.click(open);
 
   const dialog = screen.getByRole("dialog", { name: "城市通勤服务" });
+  expect(dialog).toHaveAttribute("aria-modal", "true");
   expect(within(dialog).getByRole("button", { name: "关闭详情" })).toHaveFocus();
   expect(document.body.style.overflow).toBe("hidden");
   // 「标题与元数据 → 图画廊 → 正文 → 外部链接」的阅读顺序。
@@ -158,6 +160,7 @@ it("drives the showcase carousel via buttons, dots and arrow keys with wrapping"
   open.focus();
   fireEvent.click(open);
   const dialog = screen.getByRole("dialog", { name: "设计协会" });
+  expect(dialog).toHaveAttribute("aria-modal", "true");
   expect(carouselImage(dialog)).toBe("/media/img-campus-1");
   expect(document.body.style.overflow).toBe("hidden");
 
@@ -194,6 +197,7 @@ it("renders only confirmed contact fields in the contact card", () => {
   contactButton.focus();
   fireEvent.click(contactButton);
   const dialog = screen.getByRole("dialog", { name: "联系方式" });
+  expect(dialog).toHaveAttribute("aria-modal", "true");
   expect(within(dialog).getByRole("link", { name: "lin@example.test" })).toHaveAttribute("href", "mailto:lin@example.test");
   expect(within(dialog).getByRole("link", { name: "+86 138 0000 0000" })).toHaveAttribute("href", "tel:+8613800000000");
   fireEvent.click(within(dialog).getByRole("button", { name: "关闭联系方式" }));

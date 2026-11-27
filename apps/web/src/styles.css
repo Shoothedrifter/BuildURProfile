@@ -527,7 +527,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .proof-style-preview h2 { margin: 0; font-size: 18px; }
 .proof-style-preview > p { font-size: 13px; }
 .proof-portfolio-snapshot { min-width: 0; padding: 30px; display: grid; align-content: start; gap: 16px; border-radius: 12px; background: #e6f2e7; color: #17251c; overflow: hidden; }
-.proof-portfolio-snapshot--warm { background: #f6e1ce; }
+.proof-portfolio-snapshot--macaron { background: linear-gradient(135deg, #e0a6b5, #fed2bc 55%, #deedc3); color: #4a3840; }
+.proof-portfolio-snapshot--macaron :is(strong, h3, h4) { font-family: Georgia, "Songti SC", SimSun, serif; }
 .proof-portfolio-snapshot--bold { background: #dce7f7; }
 .proof-portfolio-snapshot--cyber { display: block; position: relative; min-height: 420px; background: radial-gradient(circle at 58% 60%, #3c174c, #0c0c0c 64%); color: #fff; }
 .proof-portfolio-snapshot--cyber > span, .proof-portfolio-snapshot--cyber > small { display: block; position: relative; z-index: 2; }
@@ -2541,7 +2542,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 }
 /* Task 4 内容卡片：毛玻璃卡为共同基底，min-width:0 保证长中文不撑破 grid/flex 子项。 */
 .warm-macaron .macaron-act-body { margin-top: 2.4rem; }
-.warm-macaron .macaron-act-body:empty { display: none; }
 .warm-macaron .macaron-card {
   display: grid;
   gap: 1rem 1.4rem;
