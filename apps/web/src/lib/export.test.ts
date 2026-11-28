@@ -8,6 +8,23 @@ import draftFixture from "../../../../packages/contracts/fixtures/resume-draft.v
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("embeds the shared macaron stylesheet so offline layout matches live preview", async () => {
+  const { buildStaticHtml } = await import("../server/export.mjs");
+  const { createDemoShowcaseConfig } = await import("../demo/showcaseDemo");
+  const html = buildStaticHtml(createDemoShowcaseConfig("warm-macaron-v1"));
+  const page = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 150));
+    const doc = page.window.document;
+    expect(page.window.getComputedStyle(doc.querySelector(".warm-macaron")!).backgroundAttachment).toBe("fixed");
+    expect(page.window.getComputedStyle(doc.querySelector(".macaron-hero-inner")!).display).toBe("grid");
+    expect(page.window.getComputedStyle(doc.querySelector(".macaron-photo-frame img")!).objectFit).toBe("cover");
+    expect(doc.querySelector('link[rel="stylesheet"]')).toBeNull();
+  } finally {
+    page.window.close();
+  }
+});
+
 describe("publication asset preparation", () => {
   it("embeds project and marquee images before confirmed content is sent to the server", async () => {
     const config = rawConfig as DesignConfig;

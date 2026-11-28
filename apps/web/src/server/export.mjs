@@ -26,7 +26,9 @@ function exportAssets() {
   const root = repoRoot();
   return {
     javascript: readFileSync(join(root, "apps/web/.export/showcase.js"), "utf8"),
-    css: readFileSync(join(root, "apps/web/src/styles.css"), "utf8").replace(/^@import "tailwindcss";\s*/m, "")
+    css: ["apps/web/src/styles.css", "apps/web/src/components/WarmMacaronPage.css"]
+      .map(file => readFileSync(join(root, file), "utf8")).join("\n")
+      .replace(/^@import "tailwindcss";\s*/m, "")
   };
 }
 

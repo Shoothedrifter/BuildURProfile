@@ -347,7 +347,7 @@ it("generates offline and share addresses as pure functions", () => {
 });
 
 it("locks the modal layout guardrails of the macaron stylesheet", () => {
-  const cssPath = ["apps/web/src/styles.css", "src/styles.css"]
+  const cssPath = ["apps/web/src/components/WarmMacaronPage.css", "src/components/WarmMacaronPage.css"]
     .map(candidate => resolve(process.cwd(), candidate))
     .find(candidate => existsSync(candidate))!;
   const css = readFileSync(cssPath, "utf8");

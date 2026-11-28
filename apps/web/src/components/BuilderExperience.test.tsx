@@ -148,11 +148,18 @@ describe("BuilderExperience preset handover", () => {
     expect(props.onApplyAnswers).toHaveBeenCalledWith(macaronAnswers);
   });
 
-  it("shows the uploaded photo directly in the macaron snapshot preview", () => {
+  it("renders the real macaron hero preview with the default portrait", () => {
+    renderStyleStep({ selectedTemplate: "warm-macaron-v1" });
+    expect(document.querySelector(".macaron-template-preview")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "你的名字的默认形象" }))
+      .toHaveAttribute("src", "/warm-macaron-default.svg");
+    expect(screen.getByText(/马卡龙样张展示真实模板首屏/)).toBeInTheDocument();
+  });
+
+  it("shows the uploaded photo directly in the macaron hero preview", () => {
     renderStyleStep({ selectedTemplate: "warm-macaron-v1", photoDataUrl: "data:image/png;base64,aGVsbG8=" });
-    expect(screen.getByRole("img", { name: "作品集头像预览" }))
+    expect(screen.getByRole("img", { name: "你的名字的个人照片" }))
       .toHaveAttribute("src", "data:image/png;base64,aGVsbG8=");
-    expect(screen.getByText(/马卡龙样张示意渐变首屏/)).toBeInTheDocument();
   });
 });
 

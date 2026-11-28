@@ -1,5 +1,6 @@
 import { createResumeRepository } from "../../../../packages/storage/src/resumes/repository.mjs";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { sanitizeWebEnv } from "../../../launcher/src/web-env.mjs";
@@ -20,13 +21,39 @@ function resolveRepoRoot() {
 }
 
 export function getAppRuntime() {
-  globalThis[GLOBAL_RUNTIME_KEY] ??= createRuntime().catch(error => {
-    delete globalThis[GLOBAL_RUNTIME_KEY];
-    const code = /^[A-Z0-9_]{1,24}$/.test(error.code ?? "") ? error.code : "INITIALIZATION_FAILED";
-    console.warn(`web runtime unavailable code=${code}`);
-    throw error;
-  });
+  const development = process.env.NODE_ENV === "development";
+  const sourceVersion = development ? runtimeSourceVersion() : undefined;
+  const cached = globalThis[GLOBAL_RUNTIME_KEY];
+  if (!cached || (development && cached.sourceVersion !== sourceVersion)) {
+    // Fast Refresh replaces modules, while globalThis still owns the old service closures.
+    const pending = Promise.resolve(cached).catch(() => null).then(async previous => {
+      await previous?.close();
+      return createRuntime();
+    }).catch(error => {
+      if (globalThis[GLOBAL_RUNTIME_KEY] === pending) delete globalThis[GLOBAL_RUNTIME_KEY];
+      const code = /^[A-Z0-9_]{1,24}$/.test(error.code ?? "") ? error.code : "INITIALIZATION_FAILED";
+      console.warn(`web runtime unavailable code=${code}`);
+      throw error;
+    });
+    pending.sourceVersion = sourceVersion;
+    globalThis[GLOBAL_RUNTIME_KEY] = pending;
+  }
   return globalThis[GLOBAL_RUNTIME_KEY];
+}
+
+function runtimeSourceVersion() {
+  const root = resolveRepoRoot();
+  const version = createHash("sha256");
+  // Development only: inspect code metadata, never environment files or private assets.
+  for (const directory of ["apps/web/src/server", "packages/storage/src", "packages/contracts/src", "packages/skills/src"]) {
+    const base = join(root, directory);
+    for (const file of readdirSync(base, { recursive: true }).sort()) {
+      if (!/\.(?:mjs|ts|json)$/.test(file) || /\.test\./.test(file)) continue;
+      const { mtimeMs, size } = statSync(join(base, file));
+      version.update(`${directory}/${file}:${mtimeMs}:${size}\n`);
+    }
+  }
+  return version.digest("hex");
 }
 
 async function createRuntime() {
@@ -82,15 +109,31 @@ async function createRuntime() {
     githubConfig: githubPagesConfig(), registerCleanup: (cleanup) => cleanups.push(cleanup)
   });
 
+  let activeRequests = 0, resolveIdle, closing;
   return { db, service, generationService, handler, paymentConfig: config, priceFen, configurationError,
-    async close() { clearInterval(cleanupTimer); await queueNotifications.close(); await db.close(); }
+    async dispatch(request) {
+      activeRequests++;
+      try { return await dispatchWebRequest(request, handler); }
+      finally {
+        activeRequests--;
+        if (!activeRequests) resolveIdle?.();
+      }
+    },
+    close() {
+      return closing ??= (async () => {
+        clearInterval(cleanupTimer);
+        await queueNotifications.close();
+        if (activeRequests) await new Promise(resolve => { resolveIdle = resolve; });
+        await db.close();
+      })();
+    }
   };
 }
 
 export async function handleNextRouteRequest(request) {
   try {
-    const { handler } = await getAppRuntime();
-    return await dispatchWebRequest(request, handler);
+    const runtime = await getAppRuntime();
+    return await runtime.dispatch(request);
   } catch {
     return Response.json({ error: "服务暂时不可用。" }, { status: 503, headers: { "cache-control": "no-store" } });
   }

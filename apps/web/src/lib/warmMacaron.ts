@@ -57,7 +57,8 @@ const SECTION_BY_KIND: Readonly<Partial<Record<ResumeModuleKindV2, SectionId>>> 
   skills: "skills"
 };
 
-const GREETING = "Hi，";
+/** 首屏问候语：模板挑选预览与真实页面共用同一句。 */
+export const GREETING = "Hi，";
 
 function isTimeFact(fact: ResumeFact): boolean {
   return [fact.key, fact.label].some(value => timeField.test(value.trim()));

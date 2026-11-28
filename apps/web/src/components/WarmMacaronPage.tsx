@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from "react";
+import "./WarmMacaronPage.css";
 import type { DesignConfigV4 } from "../../../../packages/contracts/src/config";
-import { buildWarmMacaronModel, type WarmMacaronCard, type WarmMacaronSection } from "../lib/warmMacaron";
+import { buildWarmMacaronModel, GREETING, type WarmMacaronCard, type WarmMacaronModel, type WarmMacaronSection } from "../lib/warmMacaron";
 import type { ResumeImageResolver } from "./ResumeDisplay";
 import { MACARON_NEXT_LABEL, WarmMacaronSections } from "./WarmMacaronSections";
 import {
@@ -29,7 +30,7 @@ function reducedMotionPreference(): boolean {
 }
 
 /** 首屏（关于我）：问候、姓名、岗位、介绍盒、联系入口与外扩描边相框；气泡为纯装饰。 */
-function MacaronHero({ model, defaultPhotoUrl, onOpenContact, nextId, nextHref, onNavigate }: {
+function MacaronHero({ model, defaultPhotoUrl = "/warm-macaron-default.svg", onOpenContact, nextId, nextHref, onNavigate }: {
   model: ReturnType<typeof buildWarmMacaronModel>;
   defaultPhotoUrl?: string;
   onOpenContact?: () => void;
@@ -62,6 +63,28 @@ function MacaronHero({ model, defaultPhotoUrl, onOpenContact, nextId, nextHref, 
     {nextHref && nextId && <a className="macaron-next macaron-next--hero" href={nextHref}
       onClick={event => onNavigate(event, nextId)}>{MACARON_NEXT_LABEL}</a>}
   </section>;
+}
+
+/** 模板挑选页共享真实首屏（对齐像素风 PixelTemplatePreview）：无正文区块与联系入口，
+ *  仅问候、姓名、岗位、介绍与形象；photo 为已上传照片的 data URL，缺省走默认形象。 */
+export function MacaronTemplatePreview({ name, role, intro, photo }: {
+  name: string; role: string; intro: string; photo?: string | null;
+}) {
+  const displayName = name.trim() || "你的名字";
+  const model: WarmMacaronModel = {
+    hero: {
+      greeting: GREETING,
+      name: displayName,
+      role: role.trim(),
+      intro: intro.trim() || "用你的经历，讲述自己的故事。",
+      contact: {},
+      photo: photo ? { assetUrl: photo, alt: `${displayName}的个人照片` } : null
+    },
+    sections: []
+  };
+  return <div className="warm-macaron macaron-template-preview" data-testid="macaron-template-preview">
+    <MacaronHero model={model} onNavigate={() => undefined} />
+  </div>;
 }
 
 export function WarmMacaronPage({ config, resolveResumeImage, preserveShareHash = false, staticDecorations = false,

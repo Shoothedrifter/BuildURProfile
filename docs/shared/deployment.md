@@ -33,6 +33,8 @@
 
 启动脚本会自动检测 `apps/agent/.venv/bin/python`（Unix）与 `apps/agent/.venv/Scripts/python.exe`（Windows），也可通过环境变量 `PYTHON` 显式指定 Python 路径。
 
+Next.js 开发环境会在服务端及共享包源码变更后重建服务实例，并等待旧请求结束后释放数据库连接，避免热更新继续使用旧校验规则。生产环境仍在进程内复用实例；环境变量与 Python Agent 配置变更仍需重启对应服务。
+
 端口可通过 `VITE_PORT`（或 `PORT`）、`SERVER_PORT`、`AGENT_PORT` 调整。并行运行多组服务时，另外隔离 `DATABASE_URL` / `DATABASE_SCHEMA`、`AVATAR_ASSET_ROOT`、`AGENT_CHECKPOINT_DATABASE_URL` / `AGENT_CHECKPOINT_SCHEMA`。
 
 ## 单机 Compose

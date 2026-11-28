@@ -9,6 +9,7 @@ import type { Offer, OwnedProject } from "../lib/paymentApi";
 import type { HeroArtwork } from "../lib/generationApi";
 import { TEMPLATE_PORTRAIT_POLICIES } from "../../../../packages/skills/src/avatar-catalog";
 import { ShowcasePage } from "../ShowcasePage";
+import { MacaronTemplatePreview } from "./WarmMacaronPage";
 import { EditorPanel, InteractionSettings } from "./EditorPanel";
 import { openShowcasePreview } from "../lib/showcasePreview";
 import "./result-ui.css";
@@ -175,6 +176,7 @@ function PortfolioSnapshot({ name, role, intro, project, projectDescription = ""
 }) {
   const displayName = name.trim() || "你的名字";
   if (tone === "pixel") return <PixelTemplatePreview name={name} role={role} intro={intro} />;
+  if (tone === "macaron") return <MacaronTemplatePreview name={name} role={role} intro={intro} photo={photo} />;
   return <div className={`proof-portfolio-snapshot proof-portfolio-snapshot--${tone}${draftPreview ? " proof-portfolio-snapshot--draft" : ""}${draftPreview && photo && !hidePortrait ? " proof-portfolio-snapshot--draft-portrait" : ""}`}>
     <span>{displayName} / 个人作品集</span>
     <small>{role.trim() || "个人作品集"}</small>
@@ -524,9 +526,9 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <PortfolioSnapshot name={draft?.name.value ?? props.confirmedContent?.profile.name ?? ""} role={roles.find((entry) => entry.value === role)?.label ?? ""}
             intro={draft?.selfEvaluation[0]?.value ?? props.confirmedContent?.profile.summary ?? ""}
             project={previewProjectTitle} projectDescription={previewProjectDescription} tone={selectedPreset ?? "minimal"}
-            photo={selectedPreset === "cyber" ? "/cyber-neutral-print-anime.webp" : pixelSelected ? pixelDefaultPortrait : macaronSelected ? photoDataUrl : null}
-            draftPreview hidePortrait={selectedPreset !== "cyber" && !pixelSelected && !macaronSelected} />
-          <p>{pixelSelected ? "当前样张展示默认像素角色；上传照片后，生成你的个性化像素 IP。" : selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : macaronSelected ? "马卡龙样张示意渐变首屏；上传照片后将直接展示原图。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
+            photo={selectedPreset === "cyber" ? "/cyber-neutral-print-anime.webp" : pixelSelected ? pixelDefaultPortrait : photoDataUrl}
+            draftPreview hidePortrait={selectedPreset !== "cyber"} />
+          <p>{pixelSelected ? "当前样张展示默认像素角色；上传照片后，生成你的个性化像素 IP。" : selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : macaronSelected ? "马卡龙样张展示真实模板首屏；上传照片后将直接展示原图。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
         </ProofCard>
         <ProofCard as="section" className="proof-style-controls" aria-label="头像与网站模板">
         <AvatarPicker inline pixel={pixelSelected} direct={macaronSelected}

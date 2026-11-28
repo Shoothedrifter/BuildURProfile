@@ -239,7 +239,7 @@ it("keeps oversized Chinese titles wrapped in break-safe card copy containers", 
 
 it("locks the layout guardrails of the macaron stylesheet", () => {
   // vitest 把 import.meta.url 映射为 vite root 下的 http 地址，样式文件按运行目录双候选定位。
-  const cssPath = ["apps/web/src/styles.css", "src/styles.css"]
+  const cssPath = ["apps/web/src/components/WarmMacaronPage.css", "src/components/WarmMacaronPage.css"]
     .map(candidate => resolve(process.cwd(), candidate))
     .find(candidate => existsSync(candidate))!;
   const css = readFileSync(cssPath, "utf8");

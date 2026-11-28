@@ -45,6 +45,16 @@ function makeConfig(sections: readonly Section[] = fullResume, heroPhoto?: HeroP
 
 const resolveImage = () => "/media/synthetic";
 
+it("loads the macaron layout and portrait styles without the app-wide stylesheet", () => {
+  const { container } = render(<WarmMacaronPage config={makeConfig()} resolveResumeImage={resolveImage} />);
+  const root = container.querySelector<HTMLElement>(".warm-macaron")!;
+  const hero = container.querySelector<HTMLElement>(".macaron-hero-inner")!;
+  const portrait = container.querySelector<HTMLImageElement>(".macaron-photo-frame img")!;
+  expect(getComputedStyle(root).backgroundAttachment).toBe("fixed");
+  expect(getComputedStyle(hero).display).toBe("grid");
+  expect(getComputedStyle(portrait).objectFit).toBe("cover");
+});
+
 it("renders the hero identity, intro box and confirmed contact entry", () => {
   const { container } = render(<WarmMacaronPage config={makeConfig()} resolveResumeImage={resolveImage} />);
   expect(screen.getByText("Hi，")).toBeVisible();
