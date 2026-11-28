@@ -23,6 +23,16 @@ function setup(unknown=false) {
   fireEvent.load(img);
   return {...view,img,frame,cancel,put,fine,reduced,target:ref.current!,canvas:view.container.querySelector("canvas")!};
 }
+it("keeps the eye canvas out of normal flow and hidden before tracking starts without external CSS",()=>{
+  const ref=createRef<HTMLDivElement>();
+  const view=render(<div ref={ref}><PixelGazePortrait src="/pixel-world-base.svg" alt="测试角色" interactionRef={ref} disabled/></div>);
+  const canvas=view.container.querySelector("canvas")!;
+  const style=getComputedStyle(canvas);
+  expect(style.position).toBe("absolute");
+  expect(style.visibility).toBe("hidden");
+  expect(style.pointerEvents).toBe("none");
+  expect(style.imageRendering).toBe("pixelated");
+});
 it("prepares an eye overlay without duplicating the accessible image",()=>{
  const v=setup();
  expect(v.canvas).toHaveAttribute("data-gaze","ready");

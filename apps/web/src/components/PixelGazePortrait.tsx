@@ -157,7 +157,9 @@ export function PixelGazePortrait({ src, alt, interactionRef, disabled = false, 
   return <>
     <img ref={imageRef} className="pixel-portrait" draggable={false} src={src} alt={alt}
       width="512" height="512" onError={onError} />
+    {/* Keep overlay geometry with the canvas, including while a cached stylesheet is in use. */}
     <canvas ref={canvasRef} className="pixel-gaze-overlay" width={eyePatchBounds.width}
-      height={eyePatchBounds.height} aria-hidden="true" />
+      height={eyePatchBounds.height} aria-hidden="true"
+      style={{ position: "absolute", visibility: "hidden", pointerEvents: "none", imageRendering: "pixelated" }} />
   </>;
 }
