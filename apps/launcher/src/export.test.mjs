@@ -26,6 +26,18 @@ test("offline export requires the macaron hero photo to be embedded like the art
   assert.throws(() => buildStaticHtml(unembedded, "", ""), /embedded/);
 });
 
+test("offline export embeds the original macaron default portrait when no photo was uploaded", () => {
+  const config = JSON.parse(readFileSync(new URL("../../web/src/fixtures/two-projects.json", import.meta.url)));
+  const clean = JSON.parse(cleanConfig({ ...config, templateId: "warm-macaron-v1" }));
+  const html = buildStaticHtml(clean, "", "");
+  const art = readFileSync("apps/web/public/warm-macaron-default.svg").toString("base64");
+  assert.ok(html.includes(`data:image/svg+xml;base64,${art}`));
+  // 已上传照片的作品不再内嵌默认形象（导出 CSP 仅允许 data: 图片）。
+  const withPhoto = JSON.parse(cleanConfig({ ...config, templateId: "warm-macaron-v1",
+    heroPhoto: { assetUrl: "data:image/jpeg;base64,aGVsbG8=", alt: "合成用户的个人照片" } }));
+  assert.equal(buildStaticHtml(withPhoto, "", "").includes(`data:image/svg+xml;base64,${art}`), false);
+});
+
 test("offline export runs the shared showcase with embedded portrait and safe confirmed content", async () => {
   const config = JSON.parse(readFileSync(new URL("../../web/src/fixtures/two-projects.json", import.meta.url)));
   config.heroArtwork = { assetUrl: "data:image/png;base64,aGVsbG8=", styleId: "owned-style", alt: "Portrait" };

@@ -558,6 +558,27 @@ test("warm macaron delivers the uploaded photo directly without a vendor portrai
   assert.equal((await payment.listProjects("owner")).length, 1);
 });
 
+test("publicTask keeps the hero photo alt meaningful when the profile name is blank", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "burp-macaron-alt-"));
+  const db = await openDatabase();
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
+  const time = Date.now();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", time, time + 365 * 86400000);
+  const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
+  const photo = await service.savePortrait("owner", png);
+  const base = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8")).expected.config;
+  // 直插一条已成功的直出照片任务：姓名为空白时 alt 不得出现「的个人照片」裸前缀（与前端 设计师 兜底同口径）。
+  const blankName = JSON.stringify({ ...base, templateId: "warm-macaron-v1",
+    content: { ...base.content, profile: { ...base.content.profile, name: "  " } } });
+  await db.prepare(`INSERT INTO generations(id,owner_session_id,idempotency_key,workflow_version,status,config_json,resume_request_json,created_at,updated_at)
+    VALUES('blank-name-task','owner','blank-name','python-agent-v6','SUCCEEDED',?,?,'0','0')`)
+    .run(blankName, JSON.stringify({ resumeId: "blank-resume", revision: 1, role: "frontend-creative-developer",
+      templateId: "warm-macaron-v1", portraitAssetId: null, styleId: null, photoAssetId: photo.id }));
+  const task = await service.getTask("owner", "blank-name-task");
+  assert.equal(task.config.heroPhoto.assetUrl, `/api/portraits/${photo.id}`);
+  assert.equal(task.config.heroPhoto.alt, "设计师的个人照片");
+});
+
 test("generation enqueue is idempotent and owner-only", async () => {
   const db = await openDatabase();
   await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);

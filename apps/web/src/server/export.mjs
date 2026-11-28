@@ -6,7 +6,8 @@ import { pixelFontFaceCss } from '../lib/pixelFontLabels.mjs';
 
 const defaultPortraitAssets = new Map([
   ["cyber-creator-v1", { file: "cyber-neutral-print-anime.webp", mime: "image/webp" }],
-  ["pixel-world-v1", { file: "pixel-world-base.svg", mime: "image/svg+xml" }]
+  ["pixel-world-v1", { file: "pixel-world-base.svg", mime: "image/svg+xml" }],
+  ["warm-macaron-v1", { file: "warm-macaron-default.svg", mime: "image/svg+xml" }]
 ]);
 
 function repoRoot() {
@@ -59,7 +60,7 @@ export function buildStaticHtml(config, javascript, css, mediaReader, fontSubset
   const safeConfig = JSON.stringify(config).replace(/</g, "\\u003c");
   const safeImages = JSON.stringify(resumeImages).replace(/</g, "\\u003c");
   const defaultAsset = defaultPortraitAssets.get(config.templateId);
-  const defaultPortrait = defaultAsset && !config.heroArtwork
+  const defaultPortrait = defaultAsset && !config.heroArtwork && !config.heroPhoto
     ? `data:${defaultAsset.mime};base64,${readFileSync(join(repoRoot(), "apps/web/public", defaultAsset.file)).toString("base64")}`
     : "";
   const safeJs = javascript.replace(/<\/script/gi, "<\\/script");

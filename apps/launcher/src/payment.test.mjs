@@ -126,6 +126,11 @@ test("warm macaron hero photo stays embedded in share and export after the portr
   await assert.rejects(async () => await withReader.createProject("owner", { ...request, heroPhoto: 123 }), { status: 400 });
   await assert.rejects(async () => await withReader.updateProject("owner", id, { ...request,
     heroPhoto: { assetUrl: "javascript:alert(1)", alt: "" } }), { status: 400 });
+  // 照片资产已过期（上方已推进 30 天，肖像 TTL 为 1 天）：保存链路把读取器的 404 转为可操作的 400 文案。
+  await assert.rejects(async () => await withReader.createProject("owner", request),
+    { status: 400, message: "个人照片已过期，请移除后重新上传。" });
+  await assert.rejects(async () => await withReader.updateProject("owner", id, request),
+    { status: 400, message: "个人照片已过期，请移除后重新上传。" });
 });
 
 test("free export does not create an order or alter an existing legacy export order", async () => {

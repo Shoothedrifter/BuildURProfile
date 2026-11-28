@@ -53,9 +53,10 @@ it("renders the hero identity, intro box and confirmed contact entry", () => {
   expect(screen.getByText("用设计让复杂变简单。")).toBeVisible();
   // 联系入口是联系卡模态的触发按钮，mailto 本身进入联系卡。
   expect(screen.getByRole("button", { name: "联系我" })).toBeVisible();
-  // 相框容器存在；未提供任何图片源时不渲染 img。
+  // 相框容器存在；未上传照片时渲染原创默认形象（spec：非真人、非 Wibi 资源）。
   expect(container.querySelector(".macaron-photo-frame")).not.toBeNull();
-  expect(container.querySelector(".macaron-photo-frame img")).toBeNull();
+  expect(container.querySelector(".macaron-photo-frame img")).toHaveAttribute("src", "/warm-macaron-default.svg");
+  expect(container.querySelector(".macaron-photo-frame img")).toHaveAttribute("alt", "林予安的默认形象");
 });
 
 it("omits the contact button when no public contact is confirmed", () => {
@@ -185,7 +186,7 @@ it("freezes decorations for static decorations without touching the media query"
   for (const bubble of bubbles) expect(bubble).toHaveStyle({ animation: "none" });
 });
 
-it("prefers the hero photo, then the default artwork, and renders no image otherwise", () => {
+it("prefers the hero photo and falls back to the built-in default portrait", () => {
   const photo: HeroPhoto = { assetUrl: "data:image/png;base64,eA=", alt: "林予安的照片" };
   const withPhoto = render(<WarmMacaronPage config={makeConfig(fullResume, photo)} resolveResumeImage={resolveImage} />);
   expect(screen.getByRole("img", { name: "林予安的照片" })).toHaveAttribute("src", "data:image/png;base64,eA=");
@@ -198,5 +199,24 @@ it("prefers the hero photo, then the default artwork, and renders no image other
   withDefault.unmount();
 
   const bare = render(<WarmMacaronPage config={makeConfig()} resolveResumeImage={resolveImage} />);
-  expect(bare.container.querySelector(".macaron-photo-frame img")).toBeNull();
+  expect(bare.container.querySelector(".macaron-photo-frame img")).toHaveAttribute("src", "/warm-macaron-default.svg");
+  expect(bare.container.querySelector(".macaron-photo-frame img")).toHaveAttribute("alt", "林予安的默认形象");
+});
+
+it("falls back to the name template when the photo alt is blank", () => {
+  const photo: HeroPhoto = { assetUrl: "data:image/png;base64,eA=", alt: "   " };
+  render(<WarmMacaronPage config={makeConfig(fullResume, photo)} resolveResumeImage={resolveImage} />);
+  expect(screen.getByRole("img")).toHaveAttribute("alt", "林予安的默认形象");
+});
+
+it("falls back to 设计师 when both the photo alt and the name are blank", () => {
+  const sections = [
+    section("basicInfo", 0, [item("identity", "", "", [
+      { key: "email", label: "邮箱", value: "lin@example.test" }
+    ])]),
+    section("skills", 1, [item("skill-1", "产品体验设计", "用户研究")])
+  ];
+  const photo: HeroPhoto = { assetUrl: "data:image/png;base64,eA=", alt: "" };
+  render(<WarmMacaronPage config={makeConfig(sections, photo)} resolveResumeImage={resolveImage} />);
+  expect(screen.getByRole("img")).toHaveAttribute("alt", "设计师的默认形象");
 });

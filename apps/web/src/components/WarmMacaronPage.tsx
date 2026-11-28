@@ -39,7 +39,8 @@ function MacaronHero({ model, defaultPhotoUrl, onOpenContact, nextId, nextHref, 
 }) {
   const { hero } = model;
   const photoSrc = hero.photo?.assetUrl || defaultPhotoUrl;
-  const photoAlt = hero.photo?.alt ?? `${hero.name}的默认形象`;
+  // 空白 alt 与空姓名都回退到可读模板，避免读屏拿到空替代文本或裸前缀。
+  const photoAlt = hero.photo?.alt.trim() || `${hero.name.trim() || "设计师"}的默认形象`;
   const introLines = hero.intro ? hero.intro.split(/\r?\n/) : [];
   return <section id="about" data-macaron-section="about" className="macaron-hero" aria-labelledby="macaron-hero-title">
     <div className="macaron-hero-inner">
@@ -63,7 +64,8 @@ function MacaronHero({ model, defaultPhotoUrl, onOpenContact, nextId, nextHref, 
   </section>;
 }
 
-export function WarmMacaronPage({ config, resolveResumeImage, preserveShareHash = false, staticDecorations = false, defaultPhotoUrl }: Props) {
+export function WarmMacaronPage({ config, resolveResumeImage, preserveShareHash = false, staticDecorations = false,
+  defaultPhotoUrl = "/warm-macaron-default.svg" }: Props) {
   const model = useMemo(() => buildWarmMacaronModel(config), [config]);
   const { hero, sections } = model;
   const [reduceMotion, setReduceMotion] = useState(reducedMotionPreference);

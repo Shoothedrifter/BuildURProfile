@@ -45,7 +45,13 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     const match = /^\/api\/portraits\/([A-Za-z0-9-]+)$/.exec(source);
     if (!match) return config; // 已是 data URL 等形态，交给 cleanConfig 校验
     if (!readHeroPhotoAsset) throw new ServiceError(400, "个人照片暂不可用，请重新上传后再保存。");
-    const asset = await readHeroPhotoAsset(sessionId, match[1]);
+    // 保存链路里资产过期/不存在（读取器的 404）转为可操作的 400 文案；其余错误原样抛出。
+    const asset = await readHeroPhotoAsset(sessionId, match[1]).catch((error) => {
+      if (error instanceof ServiceError && error.status === 404) {
+        throw new ServiceError(400, "个人照片已过期，请移除后重新上传。");
+      }
+      throw error;
+    });
     const alt = typeof config.heroPhoto.alt === "string" && config.heroPhoto.alt.trim()
       ? config.heroPhoto.alt.trim() : `${config.content?.profile?.name ?? ""}的个人照片`;
     return { ...config, heroPhoto: { assetUrl: `data:${asset.mime};base64,${asset.bytes.toString("base64")}`, alt } };

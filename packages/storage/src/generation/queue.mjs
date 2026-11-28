@@ -30,10 +30,12 @@ export function createGenerationQueue({ db, assets, minPixels, now, leaseMs, max
     const request = row.resume_request_json ? JSON.parse(row.resume_request_json) : null;
     const resumeId = request?.resumeId;
     // 暖调马卡龙直出照片：任务侧以会话内预览 URL 呈现；资产过期即退场（已保存项目读取内嵌 data URL，不受影响）。
+    // alt 的姓名经 trim 且空姓名回退「设计师」，与前端 photoAlt 口径一致，避免裸「的个人照片」前缀。
     const heroPhoto = request?.photoAssetId && row.status === "SUCCEEDED" && !expired && row.config_json
       && await db.prepare("SELECT 1 FROM avatar_assets WHERE id=? AND owner_session_id=? AND kind='portrait' AND expires_at>?")
         .get(request.photoAssetId, row.owner_session_id, now())
-      ? { assetUrl: `/api/portraits/${request.photoAssetId}`, alt: `${JSON.parse(row.config_json).content?.profile?.name ?? ""}的个人照片` }
+      ? { assetUrl: `/api/portraits/${request.photoAssetId}`,
+        alt: `${(JSON.parse(row.config_json).content?.profile?.name ?? "").trim() || "设计师"}的个人照片` }
       : null;
     return { id: row.id, ...(row.project_id ? {projectId:row.project_id} : {}), ...(resumeId ? {resumeId} : {}), status: expired ? "EXPIRED" : cancelling ? "CANCELLING" : row.status, styleId: row.style_id,
       error: deleted ? "作品已删除，请重新生成。" : expired ? expiredMessage : row.error,
