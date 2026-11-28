@@ -8,6 +8,28 @@ import draftFixture from "../../../../packages/contracts/fixtures/resume-draft.v
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("embeds the cyber drum stylesheet with its 3D geometry in offline HTML", async () => {
+  const { buildStaticHtml } = await import("../server/export.mjs");
+  const { createDemoShowcaseConfig } = await import("../demo/showcaseDemo");
+  const base = createDemoShowcaseConfig("cyber-creator-v1");
+  const sections = base.content.resume.sections.map(section => section.kind === "skills"
+    ? { ...section, items: [...section.items, { ...section.items[0], itemId: "skill-2", title: "前端开发" }] }
+    : section);
+  const config = { ...base, content: { ...base.content, resume: { ...base.content.resume, sections } } };
+  const page = new JSDOM(buildStaticHtml(config), { runScripts: "dangerously", pretendToBeVisual: true });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 150));
+    const style = (selector: string) => page.window.getComputedStyle(page.window.document.querySelector(selector)!);
+    expect(style(".cyber-skills-stage").perspective).toBe("1100px");
+    expect(style(".cyber-skills-ring").transformStyle).toBe("preserve-3d");
+    expect(style(".cyber-skill-face").position).toBe("absolute");
+    expect(style(".cyber-skill-face").backfaceVisibility).toBe("hidden");
+    expect(page.window.document.querySelector('link[rel="stylesheet"]')).toBeNull();
+  } finally {
+    page.window.close();
+  }
+});
+
 it("embeds the shared macaron stylesheet so offline layout matches live preview", async () => {
   const { buildStaticHtml } = await import("../server/export.mjs");
   const { createDemoShowcaseConfig } = await import("../demo/showcaseDemo");

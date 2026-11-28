@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import "./CyberCreatorPage.css";
 import type { MouseEvent } from "react";
 import type { DesignConfigV4, ResumeDisplayItem } from "../../../../packages/contracts/src/config";
 import { RESUME_KINDS, RESUME_LABELS } from "../../../../packages/contracts/src/resume-v2.mjs";

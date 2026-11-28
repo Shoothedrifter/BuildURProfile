@@ -21,6 +21,23 @@ function config(images: string[] = []): DesignConfigV4 {
 }
 
 describe("赛博科技固定模板", () => {
+  it("loads the skills drum geometry with the template even when export decorations are static", () => {
+    const base = config();
+    const sections = base.content.resume.sections.map(section => section.kind === "skills"
+      ? { ...section, items: [...section.items, { ...section.items[0], itemId: "skill-2", title: "产品设计" }] }
+      : section);
+    const { container } = render(<ShowcasePage config={{ ...base, content: { ...base.content,
+      resume: { ...base.content.resume, sections } } }} staticDecorations />);
+    const style = (selector: string) => getComputedStyle(container.querySelector(selector)!);
+    expect(style(".cyber-skills-layout").display).toBe("grid");
+    expect(style(".cyber-skills-stage").perspective).toBe("1100px");
+    expect(style(".cyber-skills-ring").transformStyle).toBe("preserve-3d");
+    expect(style(".cyber-skill-face").position).toBe("absolute");
+    expect(style(".cyber-skill-face").width).toBe("280px");
+    expect(style(".cyber-skill-face").height).toBe("212px");
+    expect(style(".cyber-skill-face").backfaceVisibility).toBe("hidden");
+  });
+
   it("skips empty optional sections and shows a compact campus entry without invented content", () => {
     const base = config();
     const empty = { itemId: "blank", order: 0, title: " ", details: "", facts: [], supplement: { text: "", links: [], images: [] } };

@@ -29,6 +29,7 @@ PDF → 首页 `/#upload` 私有上传 → Web 复用浏览器解析算法固定
 | `src/App.tsx` | 页面阶段、字段确认、异步任务与支付返回后的动作恢复 |
 | `src/components/BuilderExperience.tsx`、`BuilderChrome.tsx` | 制作流程、共用导航和进度、正式预览工作台与交付面板 |
 | `src/styles.css`、`src/components/workflow-ui.css` | 共用样式和工作流样式，包含容器宽度、栅格和响应式断点 |
+| `src/components/CyberCreatorPage.css`、`src/components/WarmMacaronPage.css` | 随模板组件显式加载的独立样式；单文件导出内嵌同一份样式，保证预览与交付一致 |
 | `src/ShowcasePage.tsx`、`src/components/CyberCreatorPage.tsx`、`src/components/PixelWorldPage.tsx`、`src/components/PixelWorldProjects.tsx`、`src/components/PixelAvatarEditor.tsx`、`src/components/WarmMacaronPage.tsx`、`src/components/WarmMacaronSections.tsx`、`src/components/WarmMacaronModals.tsx` | 按显式模板标识分流的作品页、旧骨架、跑马灯、堆叠卡片、像素世界章节与作品档案/详情、本机像素头像候选编辑、暖调马卡龙分幕页面与模态 |
 | `src/lib/pdf.ts`、`src/lib/resume.ts` | 本地 PDF 提取与规则解析 |
 | `src/lib/*Api.ts` | 带会话与 CSRF 的同源服务端请求 |

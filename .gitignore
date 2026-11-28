@@ -35,3 +35,4 @@ docs/PRD/
 
 apps/web/.export/
 .worktrees/
+output/playwright/
