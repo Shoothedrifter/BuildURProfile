@@ -1,5 +1,5 @@
 export type SkinId = "dark-tech" | "light-minimal" | "high-saturation";
-export type TemplateId = "cyber-creator-v1" | "pixel-world-v1" | "warm-v1" | "minimal-v1" | "bold-v1";
+export type TemplateId = "cyber-creator-v1" | "pixel-world-v1" | "warm-v1" | "warm-macaron-v1" | "minimal-v1" | "bold-v1";
 export type PaletteTone = "cool" | "neutral" | "warm" | "vivid";
 export type JobRole = "ui-ux-designer" | "frontend-creative-developer" | "brand-motion-copy";
 
@@ -116,7 +116,11 @@ export type DesignConfig = Readonly<{
   heroArtwork?: Readonly<{ assetUrl: string; styleId: string; alt: string; cutoutAssetUrl?: string }>;
 }>;
 
+/** 暖调马卡龙等新模板的可选首页照片；由 Web 侧注入，Agent 不产出该字段。 */
+export type HeroPhoto = Readonly<{ assetUrl: string; alt: string }>;
+
 export type DesignConfigV4 = DesignConfig & Readonly<{
   templateId: TemplateId;
   content: ResumeContent & Readonly<{ resume: StructuredResumeV3 }>;
+  heroPhoto?: HeroPhoto;
 }>;

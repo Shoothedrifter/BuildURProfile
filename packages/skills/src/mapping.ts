@@ -81,6 +81,7 @@ const templateVectors: Record<TemplateId, StyleVector> = {
   "cyber-creator-v1": { E: 1, K: 0.75, P: 0.75, S: 0.75, PChoice: "cool" },
   "pixel-world-v1": { E: 0.75, K: 0.25, P: 0.75, S: 0.75, PChoice: "cool" },
   "warm-v1": { E: 0.75, K: 0.5, P: 0.5, S: 0.5, PChoice: "warm" },
+  "warm-macaron-v1": { E: 0.75, K: 0.5, P: 0.5, S: 0.5, PChoice: "warm" },
   "minimal-v1": { E: 0.25, K: 0.25, P: 0.25, S: 0.75, PChoice: "neutral" },
   "bold-v1": { E: 1, K: 1, P: 1, S: 0.5, PChoice: "vivid" }
 };

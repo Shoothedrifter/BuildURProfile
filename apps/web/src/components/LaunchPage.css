@@ -344,8 +344,12 @@
 .journey-web-hero strong { display: block; margin: 2px 0 3px; font-size: 31px; line-height: 1.1; }
 .journey-web-hero img { width: 62px; height: 72px; object-fit: contain; }
 .journey-sheet[data-template="minimal-v1"] .journey-web-hero strong { font-weight: 500; letter-spacing: -.08em; }
-.journey-sheet[data-template="warm-v1"] .journey-web-hero { background: #ffe3d1; }
-.journey-sheet[data-template="warm-v1"] .journey-web-hero strong { font-family: Georgia, "Songti SC", SimSun, serif; }
+/* 暖调马卡龙段落：对角渐变底 + 玻璃高光内描边 + 衬线姓名（原创视觉，色值沿用模板 token）。 */
+.journey-sheet[data-template="warm-macaron-v1"] .journey-web-hero {
+  background: linear-gradient(135deg, #e0a6b5, #fed2bc 55%, #deedc3);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .6), inset 0 1px 0 rgba(255, 255, 255, .75);
+}
+.journey-sheet[data-template="warm-macaron-v1"] .journey-web-hero strong { font-family: Georgia, "Songti SC", SimSun, serif; }
 .journey-sheet[data-template="bold-v1"] .journey-web-hero { border: 2px solid; box-shadow: 3px 3px 0 currentColor; }
 .journey-sheet[data-template="pixel-world-v1"] .journey-web-hero {
   border: 3px double;

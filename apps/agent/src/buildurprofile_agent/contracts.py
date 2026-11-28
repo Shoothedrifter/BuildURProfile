@@ -557,7 +557,7 @@ class DesignConfigV3(DesignConfigV1):
     content: ResumeContentV3
 
 
-TemplateId = Literal["cyber-creator-v1", "pixel-world-v1", "warm-v1", "minimal-v1", "bold-v1"]
+TemplateId = Literal["cyber-creator-v1", "pixel-world-v1", "warm-v1", "warm-macaron-v1", "minimal-v1", "bold-v1"]
 
 
 class GenerationBriefV4(StrictModel):
@@ -566,5 +566,12 @@ class GenerationBriefV4(StrictModel):
     content: ResumeContentV3
 
 
+class HeroPhoto(StrictModel):
+    """暖调马卡龙等新模板的可选首页照片；由 Web 侧注入，Agent 不产出该字段。"""
+    assetUrl: str
+    alt: str
+
+
 class DesignConfigV4(DesignConfigV3):
     templateId: TemplateId
+    heroPhoto: HeroPhoto | None = None

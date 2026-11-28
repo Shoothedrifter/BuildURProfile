@@ -35,8 +35,27 @@ async function publicProject(project, db, time) {
     paid: entitlement?.status === "ACTIVE", pendingAction: project.pending_action,
     pendingAmountFen: pending?.amount_fen ?? null };
 }
-export function createPaymentService(db, { gateway, paymentConfig, configurationError = null, now = () => Date.now() }) {
+export function createPaymentService(db, { gateway, paymentConfig, configurationError = null, now = () => Date.now(),
+  readHeroPhotoAsset = null }) {
   const media=createResumeMediaStore({db,now});
+  // 保存时把暖调马卡龙的直出照片从会话内预览 URL 内嵌为 data URL（服务端权威，镜像 heroArtwork 的内嵌约束）。
+  async function embedHeroPhoto(sessionId, config) {
+    if (!config?.heroPhoto) return config;
+    const source = typeof config.heroPhoto.assetUrl === "string" ? config.heroPhoto.assetUrl : "";
+    const match = /^\/api\/portraits\/([A-Za-z0-9-]+)$/.exec(source);
+    if (!match) return config; // 已是 data URL 等形态，交给 cleanConfig 校验
+    if (!readHeroPhotoAsset) throw new ServiceError(400, "个人照片暂不可用，请重新上传后再保存。");
+    // 保存链路里资产过期/不存在（读取器的 404）转为可操作的 400 文案；其余错误原样抛出。
+    const asset = await readHeroPhotoAsset(sessionId, match[1]).catch((error) => {
+      if (error instanceof ServiceError && error.status === 404) {
+        throw new ServiceError(400, "个人照片已过期，请移除后重新上传。");
+      }
+      throw error;
+    });
+    const alt = typeof config.heroPhoto.alt === "string" && config.heroPhoto.alt.trim()
+      ? config.heroPhoto.alt.trim() : `${config.content?.profile?.name ?? ""}的个人照片`;
+    return { ...config, heroPhoto: { assetUrl: `data:${asset.mime};base64,${asset.bytes.toString("base64")}`, alt } };
+  }
   async function markDeliveryFailure(projectId, kind) {
     if (kind === "share") await requirePaid(db, projectId);
     await db.prepare(`INSERT INTO deliveries(project_id,kind,status,error) VALUES(?,?,'FAILED','DELIVERY_FAILED')
@@ -48,7 +67,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   async function getProject(sessionId, projectId) { return await publicProject(await ownedProject(db, sessionId, projectId), db, now()); }
   async function createProject(sessionId, config, resumeId) {
     return await transaction(db,async ()=>{
-    const id = randomUUID(), time = now(), json = cleanConfig(config);
+    const id = randomUUID(), time = now(), json = cleanConfig(await embedHeroPhoto(sessionId, config));
     if (resumeId !== undefined && (typeof resumeId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(resumeId))) {
       throw new ServiceError(400, "简历标识无效。");
     }
@@ -57,8 +76,8 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
       await db.prepare("SELECT id FROM sessions WHERE id=? FOR NO KEY UPDATE").get(sessionId);
       const existing = await matchingResumeProject(db, sessionId, source, json);
       if (existing) {
-        // A plain repeat must not remove previously saved artwork.
-        if (JSON.parse(json).heroArtwork && json !== existing.config_json) {
+        // A plain repeat must not remove previously saved artwork or photo.
+        if ((JSON.parse(json).heroArtwork || JSON.parse(json).heroPhoto) && json !== existing.config_json) {
           await db.prepare("UPDATE projects SET config_json=?,revision=revision+1,updated_at=? WHERE id=?")
             .run(json, time, existing.id);
         }
@@ -74,7 +93,7 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
   async function updateProject(sessionId, projectId, config) {
     return await transaction(db,async ()=>{
     const existing = await ownedProject(db, sessionId, projectId, true);
-    const json = cleanConfig(config);
+    const json = cleanConfig(await embedHeroPhoto(sessionId, config));
     if (existing.config_json === json) return await getProject(sessionId, projectId);
     await db.prepare("UPDATE projects SET config_json=?,revision=revision+1,updated_at=? WHERE id=?")
       .run(json, now(), projectId);
@@ -87,14 +106,14 @@ export function createPaymentService(db, { gateway, paymentConfig, configuration
     const time = now();
     const projects = await db.prepare(`SELECT p.* FROM projects p WHERE p.owner_session_id=? AND p.deleted_at IS NULL
       AND NOT (
-        p.resume_id IS NOT NULL AND p.config_json::jsonb->'heroArtwork' IS NULL
+        p.resume_id IS NOT NULL AND p.config_json::jsonb->'heroArtwork' IS NULL AND p.config_json::jsonb->'heroPhoto' IS NULL
         AND EXISTS (SELECT 1 FROM generations g WHERE g.project_id=p.id)
         AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.project_id=p.id)
         AND NOT EXISTS (SELECT 1 FROM entitlements e WHERE e.project_id=p.id)
         AND EXISTS (SELECT 1 FROM projects other WHERE other.owner_session_id=p.owner_session_id
           AND other.resume_id=p.resume_id AND other.id<>p.id AND other.deleted_at IS NULL
-          AND other.config_json::jsonb->'heroArtwork' IS NOT NULL
-          AND (other.config_json::jsonb - 'heroArtwork')=(p.config_json::jsonb - 'heroArtwork'))
+          AND (other.config_json::jsonb->'heroArtwork' IS NOT NULL OR other.config_json::jsonb->'heroPhoto' IS NOT NULL)
+          AND (other.config_json::jsonb - 'heroArtwork' - 'heroPhoto')=(p.config_json::jsonb - 'heroArtwork' - 'heroPhoto'))
       ) ORDER BY p.updated_at DESC`).all(sessionId);
     return Promise.all(projects.map(project => publicProject(project, db, time)));
   }

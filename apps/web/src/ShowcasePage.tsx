@@ -5,6 +5,7 @@ import type { MouseEvent } from "react";
 import type { DesignConfig, DesignConfigV4, ResumeEntry, SkinId, StructuredResumeV1 } from "../../../packages/contracts/src/config";
 import { CyberCreatorPage } from "./components/CyberCreatorPage";
 import { PixelWorldPage } from "./components/PixelWorldPage";
+import { WarmMacaronPage } from "./components/WarmMacaronPage";
 import { Marquee } from "./components/Marquee";
 import { StackedCards } from "./components/StackedCards";
 import { shouldAnimateMarquee } from "./lib/presentation";
@@ -54,6 +55,9 @@ export function ShowcasePage({ config, allowSkinSwitch = false, preserveShareHas
   }
   if ((config as DesignConfigV4).templateId === "cyber-creator-v1" && config.content.resume?.version === "resume-v3") {
     return <CyberCreatorPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPortraitUrl={defaultPortraitUrl} previewHeadline={samplePreview ? config.content.profile.intro : undefined} />;
+  }
+  if ((config as DesignConfigV4).templateId === "warm-macaron-v1" && config.content.resume?.version === "resume-v3") {
+    return <WarmMacaronPage config={config as DesignConfigV4} preserveShareHash={preserveShareHash} staticDecorations={staticDecorations} resolveResumeImage={resolveResumeImage} defaultPhotoUrl={defaultPortraitUrl} samplePreview={samplePreview} />;
   }
   return <LegacyShowcasePage config={config} allowSkinSwitch={allowSkinSwitch} preserveShareHash={preserveShareHash} touchDowngraded={touchDowngraded} resolveResumeImage={resolveResumeImage} previewHeadline={samplePreview ? config.content.profile.intro : undefined} />;
 }

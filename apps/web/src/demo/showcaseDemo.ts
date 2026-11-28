@@ -5,7 +5,7 @@ import { templateToConfig } from "../../../../packages/skills/src/mapping";
 export const demoTemplates: readonly { id: TemplateId; name: string; background: string; foreground: string }[] = [
   { id: "cyber-creator-v1", name: "赛博科技", background: "#152337", foreground: "#d6e9ff" },
   { id: "pixel-world-v1", name: "像素世界风", background: "#091d22", foreground: "#d3ff9c" },
-  { id: "warm-v1", name: "温暖创意", background: "#f7eadd", foreground: "#814831" },
+  { id: "warm-macaron-v1", name: "暖调马卡龙", background: "#FED2BC", foreground: "#4A3840" },
   { id: "minimal-v1", name: "理性简约", background: "#f7f7f2", foreground: "#292925" },
   { id: "bold-v1", name: "大胆实验", background: "#e5dafd", foreground: "#302063" }
 ];
@@ -34,7 +34,7 @@ export const defaultDemoDraft: DemoDraft = {
   name: "林予安",
   role: "产品体验设计师",
   headline: "用设计，让复杂变简单。",
-  templateId: "warm-v1",
+  templateId: "warm-macaron-v1",
   modules: demoModules.map(({ kind }) => ({ kind, visible: true })),
   showContact: true
 };

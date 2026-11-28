@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { DesignConfig } from "../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4, StructuredResumeV3 } from "../../../packages/contracts/src/config";
+import { templateToConfig } from "../../../packages/skills/src/mapping";
 import rawConfig from "./demo/config.json";
 import { ShowcasePage } from "./ShowcasePage";
 
@@ -18,6 +19,36 @@ describe("fixed template contact placement", () => {
     expect(screen.queryByRole("heading", { name: "基本信息" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /123456789/ })).toHaveAttribute("href", "tel:123456789");
     expect(screen.getByRole("link", { name: "Contact" })).toHaveAttribute("href", "#contact");
+  });
+});
+
+describe("fixed template dispatch", () => {
+  const noSupplement = { text: "", links: [], images: [] };
+  const resume: StructuredResumeV3 = {
+    version: "resume-v3",
+    sections: [
+      { kind: "basicInfo", order: 0, items: [{ itemId: "identity", order: 0, title: "", details: "", facts: [
+        { key: "name", label: "姓名", value: "合成设计师" }], supplement: noSupplement }] },
+      { kind: "skills", order: 1, items: [{ itemId: "skill", order: 0, title: "产品体验设计", details: "调研与原型",
+        facts: [], supplement: noSupplement }] }
+    ]
+  };
+
+  function macaronConfig(templateId: "warm-macaron-v1" | "warm-v1"): DesignConfigV4 {
+    const mapped = templateToConfig(templateId, "ui-ux-designer");
+    return { ...mapped, content: { ...mapped.content, resume } } as DesignConfigV4;
+  }
+
+  it("renders warm-macaron-v1 through the macaron skeleton", () => {
+    const { container } = render(<ShowcasePage config={macaronConfig("warm-macaron-v1")} />);
+    expect(screen.getByTestId("warm-macaron-page")).toBeInTheDocument();
+    expect(container.querySelector(".warm-macaron")).not.toBeNull();
+  });
+
+  it("keeps existing warm-v1 projects on the legacy skeleton", () => {
+    const { container } = render(<ShowcasePage config={macaronConfig("warm-v1")} />);
+    expect(screen.queryByTestId("warm-macaron-page")).toBeNull();
+    expect(container.querySelector(".showcase-page")).not.toBeNull();
   });
 });
 

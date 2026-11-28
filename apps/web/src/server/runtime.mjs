@@ -54,12 +54,14 @@ async function createRuntime() {
     throw error;
   }
   const gateway = config ? createAlipayGateway(config) : null;
-  const service = createPaymentService(db, { gateway, paymentConfig: config, configurationError });
   const host = process.env.SERVER_HOST ?? "127.0.0.1";
   const avatarDemoEnabled = process.env.AVATAR_DEMO_ENABLED === "1" &&
     ["127.0.0.1", "localhost", "::1"].includes(host) && process.env.PAYMENT_ENV !== "production";
   const assetRoot = process.env.AVATAR_ASSET_ROOT || join(repoRoot, "data/avatar-assets");
   const generationService = createGenerationService({ db, assetRoot, allowPortraits: avatarDemoEnabled });
+  // 项目保存时把直出照片内嵌为 data URL，需要读到私有资产区里的本人照片。
+  const service = createPaymentService(db, { gateway, paymentConfig: config, configurationError,
+    readHeroPhotoAsset: (sessionId, id) => generationService.readAsset(sessionId, id, "portrait") });
   const resumeRepository = createResumeRepository({db, root: process.env.RESUME_FILE_ROOT || join(repoRoot, "data/resume-files")});
   const cleanups = [resumeRepository.cleanup, generationService.cleanupResumeMedia, generationService.purgeExpired];
   let sweeping = false;

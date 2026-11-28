@@ -71,6 +71,15 @@ describe("LaunchPage", () => {
     expect(container.querySelector(".journey-divider")).toHaveStyle("left:30%");
   });
 
+  it("defaults the comparison scene to warm macaron", () => {
+    const { container } = renderLaunchPage();
+    const scene = within(screen.getByRole("region", { name: /同一份经历.*你的表达/ }));
+    expect(scene.getByRole("button", { name: "暖调马卡龙" })).toHaveAttribute("aria-pressed", "true");
+    expect(scene.queryByRole("button", { name: "温暖创意" })).not.toBeInTheDocument();
+    expect(container.querySelector(".journey-comparison-overlay .journey-sheet"))
+      .toHaveAttribute("data-template", "warm-macaron-v1");
+  });
+
   it("toggles the evidence magnifier's pinned state", () => {
     renderLaunchPage();
     const control = screen.getByRole("button", { name: "固定放大镜" });

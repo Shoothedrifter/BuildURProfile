@@ -369,7 +369,7 @@ describe("showcase builder", () => {
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
     const generate = screen.getByRole("button", { name: /生成我的 Showcase/ });
     expect(generate).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: /温暖创意/ }));
+    fireEvent.click(screen.getByRole("button", { name: /暖调马卡龙/ }));
     expect(generate).toBeEnabled();
   });
 
@@ -548,11 +548,11 @@ describe("showcase builder", () => {
   it("fills the generation contract from the selected template without manual questions", async () => {
     render(<App />);
     await reachStyle();
-    fireEvent.click(screen.getByRole("button", { name: /温暖创意/ }));
+    fireEvent.click(screen.getByRole("button", { name: /暖调马卡龙/ }));
     expect(screen.queryAllByRole("radio")).toHaveLength(0);
-    expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /暖调马卡龙/ })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: /理性简约/ }));
-    expect(screen.getByRole("button", { name: /温暖创意/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /暖调马卡龙/ })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(screen.getByRole("button", { name: /生成我的 Showcase/ }));
     await screen.findByRole("heading", { name: "04 网站预览与轻量编辑" });
     const firstBrief = vi.mocked(generationApi.generatePortfolio).mock.calls[0][0];
@@ -660,6 +660,16 @@ describe("showcase builder", () => {
     const json = await screen.findByTestId("design-config-json");
     expect((JSON.parse(json.textContent ?? "") as DesignConfig).content.profile.name).toBe("Alex Morgan");
     expect(screen.getByRole("heading", { name: "04 网站预览与轻量编辑" })).toBeInTheDocument();
+  });
+  it("restores a warm macaron task with its direct hero photo", async () => {
+    const draft = { ...normalizeResumeDraft(resumeDraftFixture), revision: 1 };
+    const config = { ...rawConfig, templateId: "warm-macaron-v1", content: projectConfirmedResumeV3(draft) } as DesignConfigV4;
+    vi.mocked(generationApi.resumeGeneration).mockResolvedValueOnce({ config,
+      heroPhoto: { assetUrl: "/api/portraits/portrait-id", alt: "合成用户的个人照片" } });
+    render(<App />);
+    const json = () => JSON.parse(screen.getByTestId("design-config-json").textContent || "{}") as DesignConfigV4;
+    await waitFor(() => expect(json().heroPhoto).toEqual({ assetUrl: "/api/portraits/portrait-id", alt: "合成用户的个人照片" }));
+    expect(await screen.findByTestId("warm-macaron-page")).toBeInTheDocument();
   });
   it("offers photo upload without portrait style choices", async () => {
     render(<App />);

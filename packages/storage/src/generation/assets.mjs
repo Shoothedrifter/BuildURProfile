@@ -46,7 +46,7 @@ export function createAssetStore({ db, assetRoot, minPixels, now, allowPortraits
     return { id, mime };
   }
   async function savePortrait(sessionId, dataUrl) {
-    if (!allowPortraits) throw new ServiceError(403, "当前环境未启用肖像生成。");
+    // 门控拆分：上传照片只进入私有资产区，生产同样可用；是否发送给图像生成供应商由队列的 allowPortraits 决定。
     const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl ?? "");
     if (!match || match[2].length > MAX_IMAGE * 4 / 3 + 8) throw new ServiceError(400, "请选择 PNG、JPEG 或 WebP 照片（最大 10 MiB）。");
     const bytes = Buffer.from(match[2], "base64");

@@ -9,7 +9,7 @@ import { openTestDatabase as openDatabase } from "./postgres-test-db.mjs";
 import { cleanGenerationBrief, createGenerationService } from "../../web/src/server/generations.mjs";
 import { createAssetStore } from "../../../packages/storage/src/generation/assets.mjs";
 import { createPaymentHttpServer } from "../../web/src/server/http.mjs";
-import { cleanConfig } from "../../web/src/server/service.mjs";
+import { cleanConfig, createPaymentService } from "../../web/src/server/service.mjs";
 
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl3AAAASUVORK5CYII=";
 const brief = {
@@ -171,17 +171,21 @@ test("structured resume survives queue and publication without accepting PDF evi
   } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
-test("production policy requires confirmed brief and denies portrait generation", async () => {
+test("production policy requires confirmed brief and denies portrait generation but allows photo upload", async () => {
   const db = await openDatabase();
   await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", 1, Date.now() + 99999);
   const root = mkdtempSync(join(tmpdir(), "burp-generation-policy-"));
   try {
     const service = createGenerationService({ db, assetRoot: root, minPixels: 1,
       allowPortraits: false, requireBrief: true });
-    await assert.rejects(async () => await service.savePortrait("owner", png), /未启用肖像/);
+    // 门控拆分：allowPortraits 只约束「发送给图像供应商」，上传照片进入私有资产区在生产亦可用。
+    const uploaded = await service.savePortrait("owner", png);
+    assert.match(uploaded.id, /^[a-f0-9-]{36}$/);
     await assert.rejects(async () => await service.enqueue("owner", { idempotencyKey: "missing" }), /确认简历/);
     await assert.rejects(async () => await service.enqueue("owner", { brief, portraitAssetId: "avatar", styleId: "lofi-print-anime",
       idempotencyKey: "portrait" }), /未启用肖像/);
+    await assert.rejects(async () => await service.enqueueResume("owner", { resumeId: "missing", revision: 1,
+      role: brief.role, templateId: "cyber-creator-v1", portraitAssetId: uploaded.id, idempotencyKey: "vendor-photo" }), /不存在/);
     assert.equal((await service.enqueue("owner", { brief, idempotencyKey: "text" })).status, "QUEUED");
   } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
@@ -391,7 +395,9 @@ test("new Pixel World photo tasks are local, session-owned and use the layered h
   assert.equal((await db.prepare("SELECT style_id FROM generations WHERE id=?").get(task.id)).style_id, "pixel-halfbody-v1");
   const lease = await service.leaseNext({ supportsPixelWorld: true, supportsPixelLayeredHairAvatar: true });
   assert.equal(lease?.workflow_version, "python-agent-v10");
-  await assert.rejects(() => closed.savePortrait("owner", png), { status: 403 });
+  // 门控拆分：allowPortraits=false 只禁止「发送给图像供应商」，上传照片进私有资产区仍可用。
+  const directPhoto = await closed.savePortrait("owner", png);
+  assert.match(directPhoto.id, /^[a-f0-9-]{36}$/);
   await assert.rejects(() => closed.enqueue("owner", options), { status: 403 });
   await assert.rejects(async () => await service.enqueue("other", options), { status: 404 });
   await assert.rejects(async () => await service.enqueue("owner", { ...options, styleId: "lofi-print-anime" }), { status: 400 });
@@ -475,6 +481,104 @@ test("cyber template derives its fixed portrait style and rejects a mismatched c
   } finally { await db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("warm macaron delivers the uploaded photo directly without a vendor portrait task", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "burp-macaron-photo-"));
+  const db = await openDatabase();
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
+  let time = Date.now();
+  for (const owner of ["owner", "other"]) await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run(owner, time, time + 365 * 86400000);
+  const draft = structuredClone(JSON.parse(readFileSync("packages/contracts/fixtures/resume-draft.v1.json", "utf8")));
+  await db.prepare("INSERT INTO resume_files(id,owner_session_id,file_name,size,page_count,uploaded_at,expires_at) VALUES(?,?,?,?,?,?,?)")
+    .run(draft.fileId, "owner", "synthetic.pdf", 100, 1, time, time + 30 * 86400000);
+  await db.prepare("INSERT INTO resumes(id,file_id,owner_session_id,status,draft_json,created_at,updated_at) VALUES(?,?,'owner','SUCCEEDED',?,?,?)")
+    .run(draft.resumeId, draft.fileId, JSON.stringify(draft), time, time);
+  const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
+  const photo = await service.savePortrait("owner", png);
+  const input = { resumeId: draft.resumeId, revision: 1, role: brief.role, templateId: "warm-macaron-v1",
+    photoAssetId: photo.id, idempotencyKey: "macaron-photo" };
+  const task = await service.enqueueResume("owner", input);
+  assert.equal(task.status, "QUEUED");
+  const row = await db.prepare("SELECT workflow_version,portrait_asset_id,style_id,resume_request_json FROM generations WHERE id=?").get(task.id);
+  assert.equal(row.workflow_version, "python-agent-v6");
+  // 直出照片不进入肖像生成链：无 portrait_asset_id、无风格，不发送给图像供应商。
+  assert.equal(row.portrait_asset_id, null);
+  assert.equal(row.style_id, null);
+  assert.equal(JSON.parse(row.resume_request_json).photoAssetId, photo.id);
+  const lease = await service.leaseNext();
+  assert.equal(lease.portrait_asset_id, null);
+  const content = JSON.parse(lease.brief_json).content;
+  const base = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8")).expected.config;
+  assert.equal(await service.complete(task.id, { leaseToken: lease.lease_token,
+    config: { ...base, templateId: "warm-macaron-v1", content } }), true);
+  const published = await service.getTask("owner", task.id);
+  assert.ok(published.projectId);
+  // 任务侧以预览 URL 形态返回 heroPhoto；自动创建的项目配置保持裸配置，不写死短期资产链接。
+  assert.equal(published.config.heroPhoto.assetUrl, `/api/portraits/${photo.id}`);
+  assert.equal(published.config.heroPhoto.alt, `${content.profile.name}的个人照片`);
+  assert.equal("heroPhoto" in JSON.parse((await db.prepare("SELECT config_json FROM projects WHERE id=?").get(published.projectId)).config_json), false);
+  // 幂等重放与互斥参数
+  assert.equal((await service.enqueueResume("owner", input)).id, task.id);
+  const second = await service.savePortrait("owner", png);
+  await assert.rejects(async () => await service.enqueueResume("owner", { ...input, photoAssetId: second.id }), { status: 409 });
+  await assert.rejects(async () => await service.enqueueResume("owner", { resumeId: draft.resumeId, revision: 1, role: brief.role,
+    templateId: "warm-macaron-v1", portraitAssetId: photo.id, idempotencyKey: "macaron-vendor" }), { status: 400 });
+  await assert.rejects(async () => await service.enqueueResume("owner", { resumeId: draft.resumeId, revision: 1, role: brief.role,
+    templateId: "warm-macaron-v1", portraitAssetId: photo.id, photoAssetId: second.id, idempotencyKey: "macaron-both" }), { status: 400 });
+  await assert.rejects(async () => await service.enqueueResume("owner", { ...input, styleId: "lofi-print-anime", idempotencyKey: "macaron-style" }), { status: 400 });
+  await assert.rejects(async () => await service.enqueueResume("owner", { resumeId: draft.resumeId, revision: 1, role: brief.role,
+    templateId: "warm-v1", photoAssetId: photo.id, idempotencyKey: "warm-direct" }), { status: 400 });
+  await assert.rejects(async () => await service.enqueueResume("owner", { resumeId: draft.resumeId, revision: 1, role: brief.role,
+    answers: {}, photoAssetId: photo.id, idempotencyKey: "legacy-direct" }), { status: 400 });
+  await assert.rejects(async () => await service.enqueueResume("owner", { ...input, photoAssetId: "0b7fe4b9-0000-4000-8000-000000000000",
+    idempotencyKey: "macaron-missing" }), { status: 404 });
+  const foreign = await service.savePortrait("other", png);
+  await assert.rejects(async () => await service.enqueueResume("owner", { ...input, photoAssetId: foreign.id, idempotencyKey: "macaron-foreign" }), { status: 404 });
+  // 门控拆分：allowPortraits=false 只拦「发送给图像供应商」，直出链路在生产同样可用。
+  const closed = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time, allowPortraits: false });
+  const closedPhoto = await closed.savePortrait("owner", png);
+  assert.equal((await closed.enqueueResume("owner", { ...input, photoAssetId: closedPhoto.id,
+    idempotencyKey: "macaron-closed" })).status, "QUEUED");
+  // 保存时服务端把预览 URL 内嵌为 data URL，并匹配自动创建的项目而不是新建。
+  const payment = createPaymentService(db, { paymentConfig: null, now: () => time,
+    readHeroPhotoAsset: (sessionId, id) => service.readAsset(sessionId, id, "portrait") });
+  const saved = await payment.createProject("owner", published.config, draft.resumeId);
+  assert.equal(saved.id, published.projectId);
+  assert.equal(saved.config.heroPhoto.assetUrl, `data:image/png;base64,${png.split(",")[1]}`);
+  assert.equal(saved.config.heroPhoto.alt, `${content.profile.name}的个人照片`);
+  assert.equal(saved.revision, 2);
+  const repeat = await payment.createProject("owner", published.config, draft.resumeId);
+  assert.equal(repeat.revision, saved.revision);
+  // 未接线照片读取器的服务不得静默保存短期链接。
+  await assert.rejects(async () => await createPaymentService(db, { paymentConfig: null, now: () => time })
+    .createProject("owner", published.config, draft.resumeId), { status: 400 });
+  // 照片资产过期后：任务预览退场，已保存项目的内嵌照片与列表不受影响。
+  time += 86400001;
+  assert.equal((await service.getTask("owner", task.id)).config.heroPhoto, undefined);
+  assert.equal((await payment.getProject("owner", saved.id)).config.heroPhoto.assetUrl, `data:image/png;base64,${png.split(",")[1]}`);
+  assert.equal((await payment.listProjects("owner")).length, 1);
+});
+
+test("publicTask keeps the hero photo alt meaningful when the profile name is blank", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "burp-macaron-alt-"));
+  const db = await openDatabase();
+  t.after(async () => { await db.close(); rmSync(root, { recursive: true, force: true }); });
+  const time = Date.now();
+  await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("owner", time, time + 365 * 86400000);
+  const service = createGenerationService({ db, assetRoot: root, minPixels: 1, now: () => time });
+  const photo = await service.savePortrait("owner", png);
+  const base = JSON.parse(readFileSync("packages/contracts/fixtures/agent-golden.v3.json", "utf8")).expected.config;
+  // 直插一条已成功的直出照片任务：姓名为空白时 alt 不得出现「的个人照片」裸前缀（与前端 设计师 兜底同口径）。
+  const blankName = JSON.stringify({ ...base, templateId: "warm-macaron-v1",
+    content: { ...base.content, profile: { ...base.content.profile, name: "  " } } });
+  await db.prepare(`INSERT INTO generations(id,owner_session_id,idempotency_key,workflow_version,status,config_json,resume_request_json,created_at,updated_at)
+    VALUES('blank-name-task','owner','blank-name','python-agent-v6','SUCCEEDED',?,?,'0','0')`)
+    .run(blankName, JSON.stringify({ resumeId: "blank-resume", revision: 1, role: "frontend-creative-developer",
+      templateId: "warm-macaron-v1", portraitAssetId: null, styleId: null, photoAssetId: photo.id }));
+  const task = await service.getTask("owner", "blank-name-task");
+  assert.equal(task.config.heroPhoto.assetUrl, `/api/portraits/${photo.id}`);
+  assert.equal(task.config.heroPhoto.alt, "设计师的个人照片");
+});
+
 test("generation enqueue is idempotent and owner-only", async () => {
   const db = await openDatabase();
   await db.prepare("INSERT INTO sessions VALUES(?,?,?)").run("a", 1, Date.now() + 99999);
@@ -534,6 +638,12 @@ test("HTTP generation endpoints require CSRF and do not expose another session's
     const other = await fetch(`${base}/api/session`);
     const otherCookie = other.headers.get("set-cookie").split(";")[0];
     assert.equal((await fetch(`${base}/api/hero-assets/${heroId}`, { headers: { cookie: otherCookie } })).status, 404);
+    // 直出照片走会话隔离的 /api/portraits/{id}，不经由 hero-assets。
+    const portrait = await fetch(`${base}/api/portraits/${id}`, { headers: { cookie } });
+    assert.equal(portrait.status, 200);
+    assert.equal(portrait.headers.get("content-type"), "image/png");
+    assert.equal(Buffer.from(await portrait.arrayBuffer()).toString("base64"), png.split(",")[1]);
+    assert.equal((await fetch(`${base}/api/portraits/${id}`, { headers: { cookie: otherCookie } })).status, 404);
     const cancelTarget = await generationService.enqueue(cookie.slice(13).split(".")[0], { brief, idempotencyKey: "http-cancel" });
     const cancelUrl = `${base}/api/generations/${cancelTarget.id}/cancel`;
     assert.equal((await fetch(cancelUrl, { method: "POST", headers: { cookie } })).status, 403);
@@ -548,6 +658,16 @@ test("HTTP generation endpoints require CSRF and do not expose another session's
 test("project config refuses an unembedded private hero asset URL", () => {
   const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json", import.meta.url)));
   assert.throws(() => cleanConfig({ ...config, heroArtwork: { assetUrl: "/api/hero-assets/x", styleId: "lofi-print-anime", alt: "avatar" } }), /肖像/);
+});
+
+test("project config cleans heroPhoto to alt plus embedded image and rejects other shapes", () => {
+  const config = JSON.parse(readFileSync(new URL("../../web/src/demo/config.json", import.meta.url)));
+  const clean = JSON.parse(cleanConfig({ ...config, templateId: "warm-macaron-v1",
+    heroPhoto: { assetUrl: "data:image/webp;base64,aGVsbG8=", alt: "合成用户的个人照片", forged: "strip me" } }));
+  assert.deepEqual(clean.heroPhoto, { assetUrl: "data:image/webp;base64,aGVsbG8=", alt: "合成用户的个人照片" });
+  assert.throws(() => cleanConfig({ ...config, heroPhoto: 123 }), /照片/);
+  assert.throws(() => cleanConfig({ ...config, heroPhoto: { assetUrl: "/api/portraits/x", alt: "" } }), /照片/);
+  assert.throws(() => cleanConfig({ ...config, heroPhoto: { assetUrl: "data:image/gif;base64,aGVsbG8=", alt: "" } }), /照片/);
 });
 
 test("local generation allows repeated portrait tests and removes expired photo files", async () => {

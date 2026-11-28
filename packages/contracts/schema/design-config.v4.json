@@ -101,6 +101,26 @@
       "title": "Expertise",
       "type": "object"
     },
+    "HeroPhoto": {
+      "additionalProperties": false,
+      "description": "暖调马卡龙等新模板的可选首页照片；由 Web 侧注入，Agent 不产出该字段。",
+      "properties": {
+        "assetUrl": {
+          "title": "Asseturl",
+          "type": "string"
+        },
+        "alt": {
+          "title": "Alt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assetUrl",
+        "alt"
+      ],
+      "title": "HeroPhoto",
+      "type": "object"
+    },
     "Marquee": {
       "additionalProperties": false,
       "properties": {
@@ -745,11 +765,23 @@
         "cyber-creator-v1",
         "pixel-world-v1",
         "warm-v1",
+        "warm-macaron-v1",
         "minimal-v1",
         "bold-v1"
       ],
       "title": "Templateid",
       "type": "string"
+    },
+    "heroPhoto": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HeroPhoto"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [

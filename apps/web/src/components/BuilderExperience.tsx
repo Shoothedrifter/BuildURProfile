@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, ReactNode } from "react";
-import type { DesignConfig, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
+import type { DesignConfig, DesignConfigV4, JobRole, ResumeContent, TemplateId } from "../../../../packages/contracts/src/config";
 import rawConfig from "../demo/config.json";
 import type { DraftField, ResumeDraft } from "../lib/resume";
 import type { Offer, OwnedProject } from "../lib/paymentApi";
@@ -29,7 +29,7 @@ export type DraftGroup = "basicInfo" | "jobIntent" | "selfEvaluation" | "workExp
 export type ReclassifyTarget = DraftGroup;
 export type DeliveryAction = "share" | "export";
 type ConfirmModule = "basic" | DraftGroup;
-type StylePresetId = "warm" | "minimal" | "bold" | "cyber" | "pixel";
+type StylePresetId = "macaron" | "minimal" | "bold" | "cyber" | "pixel";
 
 const confirmationGroups: Array<{ key: DraftGroup; title: string; hint: string }> = [
   { key: "basicInfo", title: "更多基本信息", hint: "电话、所在地等默认不展示，请主动选择" },
@@ -80,10 +80,10 @@ const stylePresets: Array<{
     description: "像素角色 / 开发者作品 / 项目导航", tone: "Pixel World", answers: {}
   },
   {
-    id: "warm",
-    templateId: "warm-v1",
-    label: "温暖创意",
-    description: "桃橙 / 描边 / 轻松表达",
+    id: "macaron",
+    templateId: "warm-macaron-v1",
+    label: "暖调马卡龙",
+    description: "马卡龙渐变 / 毛玻璃 / 衬线温柔",
     tone: "Aa / 你好",
     answers: {
       "e-presence": 3,
@@ -132,8 +132,10 @@ const stylePresets: Array<{
   }
 ];
 
-function AvatarPicker({ pixel = false, enabled, photoDataUrl, photoName, generating, disabledReason, inline = false, onPhoto, onClear }: {
+function AvatarPicker({ pixel = false, direct = false, enabled, photoDataUrl, photoName, generating, disabledReason, inline = false, onPhoto, onClear }: {
   pixel?: boolean;
+  /** 暖调马卡龙照片直出：原图进入作品集，不经过图像生成供应商。 */
+  direct?: boolean;
   enabled: boolean;
   photoDataUrl: string | null;
   photoName: string;
@@ -147,7 +149,9 @@ function AvatarPicker({ pixel = false, enabled, photoDataUrl, photoName, generat
     <h2 id="avatar-heading">个人头像</h2>
     <p>{pixel
       ? "照片可选。生成时会发送给 Cloudflare Workers AI，识别发型、发色、刘海和镜框，并合成你的像素 IP。原照片保留 1 天，候选头像保留 7 天，仅用于当前编辑预览，分享和导出使用默认角色。"
-      : "照片可选；此处不展示原图，生成后再查看与模板匹配的头像。"}</p>
+      : direct
+        ? "照片可选。上传后存储于私有资产区，并在作品集中直接展示原图；不发送给图像生成供应商，保存作品时嵌入页面。"
+        : "照片可选；此处不展示原图，生成后再查看与模板匹配的头像。"}</p>
     {enabled ? <>
       <label className="proof-avatar-upload">
         <strong>{photoDataUrl ? "重新选择照片" : "上传照片"}</strong>
@@ -271,7 +275,11 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   } = props;
   const selectedPreset = stylePresets.find(preset => preset.templateId === props.selectedTemplate)?.id ?? null;
   const pixelSelected = props.selectedTemplate === "pixel-world-v1";
+  // 暖调马卡龙：照片直出模板，上传不经过肖像生成门控。
+  const macaronSelected = props.selectedTemplate === "warm-macaron-v1";
   const pixelResult = generated && "templateId" in generated && generated.templateId === "pixel-world-v1";
+  // 结果页的马卡龙直出作品：照片是作品配置的一部分，设置页提供移除与重传。
+  const macaronResult = generated && "templateId" in generated && generated.templateId === "warm-macaron-v1";
   const pixelArtwork = props.pixelArtwork ?? null;
   const portraitPolicy = props.selectedTemplate ? TEMPLATE_PORTRAIT_POLICIES[props.selectedTemplate] : undefined;
   useEffect(() => { if (phase === "result") setPublishConfirmed(false); }, [phase]);
@@ -319,6 +327,14 @@ export function BuilderExperience(props: BuilderExperienceProps) {
   const applyPreset = (preset: (typeof stylePresets)[number]) => {
     props.onSelectTemplate(preset.templateId);
     if (!props.hasConfirmedResume) props.onApplyAnswers(preset.answers);
+  };
+  // 马卡龙直出：新照片以内嵌 data URL 写入作品配置，不创建供应商肖像任务。
+  const applyMacaronPhoto = () => {
+    if (!photoDataUrl) return;
+    props.onEditGenerated((current) => {
+      const name = "content" in current ? current.content.profile.name.trim() : "";
+      return { ...current, heroPhoto: { assetUrl: photoDataUrl, alt: name ? `${name}的个人照片` : "个人照片" } } as DesignConfig;
+    });
   };
   const isPresetSelected = (presetId: StylePresetId) => selectedPreset === presetId;
   const hasVisibleError = Boolean(error);
@@ -508,12 +524,13 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           <PortfolioSnapshot name={draft?.name.value ?? props.confirmedContent?.profile.name ?? ""} role={roles.find((entry) => entry.value === role)?.label ?? ""}
             intro={draft?.selfEvaluation[0]?.value ?? props.confirmedContent?.profile.summary ?? ""}
             project={previewProjectTitle} projectDescription={previewProjectDescription} tone={selectedPreset ?? "minimal"}
-            photo={selectedPreset === "cyber" ? "/cyber-neutral-print-anime.webp" : pixelSelected ? pixelDefaultPortrait : null}
-            draftPreview hidePortrait={selectedPreset !== "cyber" && !pixelSelected} />
-          <p>{pixelSelected ? "当前样张展示默认像素角色；上传照片后，生成你的个性化像素 IP。" : selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
+            photo={selectedPreset === "cyber" ? "/cyber-neutral-print-anime.webp" : pixelSelected ? pixelDefaultPortrait : macaronSelected ? photoDataUrl : null}
+            draftPreview hidePortrait={selectedPreset !== "cyber" && !pixelSelected && !macaronSelected} />
+          <p>{pixelSelected ? "当前样张展示默认像素角色；上传照片后，生成你的个性化像素 IP。" : selectedPreset === "cyber" ? "当前样张展示赛博科技默认形象；上传照片后的专属头像以生成结果为准。" : macaronSelected ? "马卡龙样张示意渐变首屏；上传照片后将直接展示原图。" : "完整首屏样张会随模板更新。头像位置暂时留空，生成后再查看头像效果。"}</p>
         </ProofCard>
         <ProofCard as="section" className="proof-style-controls" aria-label="头像与网站模板">
-        <AvatarPicker inline pixel={pixelSelected} enabled={pixelSelected ? Boolean(props.pixelAvatarEnabled) : avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
+        <AvatarPicker inline pixel={pixelSelected} direct={macaronSelected}
+          enabled={pixelSelected ? Boolean(props.pixelAvatarEnabled) : macaronSelected || avatarDemo && (!props.selectedTemplate || Boolean(portraitPolicy))}
           disabledReason={avatarDemo ? "当前模板暂不支持照片生成；移除照片后可继续生成。" : undefined}
           photoDataUrl={photoDataUrl} photoName={photoName}
           generating={generatingAvatar} onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
@@ -529,7 +546,7 @@ export function BuilderExperience(props: BuilderExperienceProps) {
           {isTouch && <p className="proof-note">检测到触屏：卡片可手动切换，跑马灯恒定滚动。</p>}
           {progress && <p className="proof-status" role="status">{progress}</p>}
           {error && <p className="proof-inline-error" role="alert">{error}</p>}
-          <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar || Boolean(!pixelSelected && photoDataUrl && !portraitPolicy)} onClick={props.onGenerate}>
+          <ProofButton variant="primary" disabled={!props.selectedTemplate || generatingAvatar || Boolean(!pixelSelected && !macaronSelected && photoDataUrl && !portraitPolicy)} onClick={props.onGenerate}>
             {generatingAvatar ? "正在生成作品…" : "生成我的 Showcase →"}
           </ProofButton>
         </section>
@@ -614,7 +631,18 @@ export function BuilderExperience(props: BuilderExperienceProps) {
               </div>}
               {resultTab === "settings" && <div className="result-tab-content">
                 <InteractionSettings config={generated} onChange={props.onEditGenerated} isTouch={isTouch} />
-                {(pixelResult ? props.pixelAvatarEnabled : avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId)))) && <details className="proof-regenerate">
+                {macaronResult ? <details className="proof-regenerate">
+                  <summary>更换照片 →</summary>
+                  <AvatarPicker enabled direct photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}
+                    onPhoto={props.onPhoto} onClear={props.onClearPhoto} />
+                  {(generated as DesignConfigV4).heroPhoto && !photoDataUrl && <>
+                    <p className="proof-note">作品当前已嵌入照片；若照片来源已过期，可先移除再重新上传。</p>
+                    <ProofButton variant="quiet" onClick={props.onClearPhoto}>移除作品中的照片</ProofButton>
+                  </>}
+                  <ProofButton variant="primary" disabled={!photoDataUrl || generatingAvatar} onClick={applyMacaronPhoto}>
+                    {generatingAvatar ? "正在应用照片…" : "应用新照片 →"}
+                  </ProofButton>
+                </details> : (pixelResult ? props.pixelAvatarEnabled : avatarDemo && (!("templateId" in generated) || (typeof generated.templateId === "string" && Object.hasOwn(TEMPLATE_PORTRAIT_POLICIES, generated.templateId)))) && <details className="proof-regenerate">
                   <summary>更换照片 →</summary>
                   <AvatarPicker enabled pixel={Boolean(pixelResult)} photoDataUrl={photoDataUrl} photoName={photoName} generating={generatingAvatar}
                     onPhoto={props.onPhoto} onClear={props.onClearPhoto} />

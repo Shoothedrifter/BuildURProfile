@@ -144,7 +144,8 @@ function PortfolioSheet({ template }: { template?: (typeof demoTemplates)[number
 }
 
 function ComparisonScene({ onSample }: { onSample: () => void }) {
-  const [templateId, setTemplateId] = useState<TemplateId>("warm-v1");
+  // 首页对比场景默认选中暖调马卡龙，与 demo 默认草稿同步。
+  const [templateId, setTemplateId] = useState<TemplateId>("warm-macaron-v1");
   const [reveal, setReveal] = useState(65);
   const template = demoTemplates.find(option => option.id === templateId);
 
